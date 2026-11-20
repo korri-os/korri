@@ -28,3 +28,7 @@ export component Network inherits VelvetPreview {
 export component Secret inherits VelvetPreview {
     VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "row", label: "SteamGridDB API key", value: "Configured", note: "Sent only to www.steamgriddb.com.", mark: "lock", focus-id: "s:plugin-credential:@korri:steamgriddb" }; }
 }
+
+export component Account inherits VelvetPreview {
+    VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "row", label: "Steam", value: "lantern_keeper_1987", mark: "more", focus-id: "v:account:@korri:steam", focused: true }; }
+}

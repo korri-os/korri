@@ -27,8 +27,10 @@ import { gameById, sameQuery } from "./lists"
 import { onForget } from "./memo"
 import { actionRow, connectionLine, connectionWords, question, settingRows, wifiRows, WIFI_PASSWORD_MAX, WIFI_SSID_MAX, numberFits } from "./settings"
 import { NONE, send, seq, type Act, type ButtonSpec, type Entry, type GameplayValue, type PageRef, type PanelSpec, type RowSpec, type SheetKind, type State } from "./types"
-import { bytes, duration, saved } from "./words"
-import { steamAccount, steamContent, steamTakesScreen, steamValue } from "./steam"
+import { bytes, caps, duration, saved } from "./words"
+import { accountContent, drawable, entryById, offered, QUIET, stateLine, stateWord, waitingEntry, type AccountContent } from "./account"
+import { breakLines, capsWidth, DISPLAY_LINE, fitCaps, textWidth, type Fit } from "./fit"
+import { codeSlot, CODE_MODULE_PX, plan, type Plan } from "./plan"
 
 const run = (actionId: string): Act => send({ _tag: "RunAction", actionId })
 const head = (id: string, label: string): RowSpec => ({ id, kind: "head", label })
@@ -110,9 +112,17 @@ function settingsPage(state: State, model: Model): PanelSpec {
   const places: RowSpec[] = []
   if (model.network !== undefined) places.push({ id: "v:wifi", kind: "row", label: "Wi-Fi", value: connectionWords(model.network.connection), mark: "more", press: { t: "open", page: { p: "wifi" } } })
   if (model.identityManagement !== undefined) places.push({ id: "v:identity", kind: "row", label: "Identity", mark: "more", press: { t: "open", page: { p: "identity" } } })
-  // ADR 0083: the person's Steam sign-in, while a Steam engine runner is installed.
-  const steam = steamAccount(model)
-  if (steam !== undefined) places.push({ id: "v:steam", kind: "row", label: "Steam", value: steamValue(steam), mark: "more", press: { t: "open", page: { p: "steam" } } })
+  // ADR 0089: a row for each account sign-in Korri publishes; its card holds the code and Korri's actions.
+  for (const entry of model.accountSignIns ?? []) {
+    const line = stateLine(entry.state)
+    places.push({
+      id: `v:account:${entry.id}`, kind: "row", label: entry.title, value: stateWord(entry.state), mark: "more",
+      ...(line === undefined ? {} : { note: line }),
+      press: { t: "open", page: { p: "account", id: entry.id } },
+    })
+    // A sign-in that needs the person ("needs sign-in", or a problem) says so at rest, not only under focus.
+    if (line !== undefined && (entry.state._tag === "SignedOut" || entry.state._tag === "Problem")) places.push(note(`v:account:${entry.id}:line`, line))
+  }
   if (places.length > 0) rows.push(head("v:head:places", "More"), ...places)
   rows.push(head("v:head:velvet", "Velvet"))
   rows.push({
@@ -243,18 +253,72 @@ function identityPage(state: State, model: Model): PanelSpec {
   return { key: "page:identity", title: "Identity", sub: "Your identity is the key your devices trust each other by.", rows, buttons: [], back: seq({ t: "identity", flow: { f: "idle" } }, CLOSE) }
 }
 
-/** The person's Steam sign-in: from Settings, or by itself while a launch waits for it. */
-function steamPage(model: Model, back: Act): PanelSpec {
-  const account = steamAccount(model)
-  if (account === undefined) return { key: "page:steam", title: "Steam", sub: "Steam is not installed on this device.", rows: [], buttons: [{ id: "b:back", label: "Back", press: back }], back }
-  const content = steamContent(account)
-  return {
-    key: "page:steam", title: "Steam", sub: content.sub, rows: content.rows, buttons: content.buttons,
+/**
+ * An account sign-in's card (ADR 0089): from Settings, or by itself while a
+ * launch waits for it. Korri may take the entry away while the page is open.
+ */
+function accountPage(id: string, state: State, model: Model, back: Act): PanelSpec {
+  const entry = entryById(model, id)
+  const key = `page:account:${id}`
+  if (entry === undefined) return { key, title: "Sign-in", sub: "This sign-in is no longer on this device.", rows: [], buttons: [{ id: "b:back", label: "Back", press: back }], back }
+  const content = accountContent(entry, false)
+  return codeFirst({
+    key, title: entry.title, sub: content.sub, rows: content.rows, buttons: content.buttons,
     ...(content.side === undefined ? {} : { side: content.side }),
     // While a sign-in runs, Back is its Cancel, so leaving never leaves a sign-in behind.
     back: content.cancel ?? back,
     ...(content.buttons[0] === undefined ? {} : { first: content.buttons[0].id }),
-  }
+  }, state, model)
+}
+
+/** First boot's place among its steps, as the page's head says it. */
+export const stepWords = (panel: PanelSpec): string => (panel.steps === undefined || panel.steps === 0 ? "" : `Step ${panel.step ?? 0} of ${panel.steps}`)
+
+/**
+ * A list page's title in the head: on one line at the head's size while it
+ * fits beside the step, else on two lines, as large as they fit, never under
+ * the body's size (a setup step's heading is Korri's offer, a sentence).
+ */
+export function pageTitle(p: Plan, title: string, step: string): Fit {
+  const room = p.width - 2 * p.padX - (step === "" ? 0 : textWidth(step) * p.fact + p.fact)
+  if (capsWidth(title) * p.head <= room) return { lines: [caps(title)], size: p.head }
+  return fitCaps(title, room, p.head * DISPLAY_LINE * 2, p.head, Math.min(p.head, p.body), 2)
+}
+
+/** The height of the head that holds a title: one line is the plan's; two add a line's pitch. */
+export const titleHeight = (p: Plan, fit: Fit): number => (fit.lines.length <= 1 ? p.headH : fit.size * (1.2 + DISPLAY_LINE))
+
+/**
+ * Where the window cannot give a page's code `CODE_MODULE_PX` a module beside
+ * or over the rows (320 x 240), the page is one list: the code first, as large
+ * as the window allows, its words, the rows and the buttons under it, the
+ * title and the step at the top. Nothing is left out; focus starts on the
+ * code, so the list stands where the whole code is in sight, and every other
+ * part is a press or a scroll away. With a window each (ADR 0086) the code
+ * has the Stage to itself and the page stays as it is.
+ */
+function codeFirst(panel: PanelSpec, state: State, model: Model): PanelSpec {
+  const qr = panel.side?.kind === "qr" ? panel.side.qr : undefined
+  // A grid Velvet cannot draw has no code to put first: the page says so in its rows.
+  if (qr === undefined || !drawable(qr) || (model.windows?.length ?? 0) >= 2) return panel
+  const p = plan(state.size.width, state.size.height)
+  const subLines = panel.sub === undefined || panel.sub === "" ? 0 : breakLines(panel.sub, p.fact, Math.min(p.width - 2 * p.padX, p.body * 34)).length
+  const head = titleHeight(p, pageTitle(p, panel.title, stepWords(panel)))
+  if (codeSlot(p, subLines, panel.buttons.length, head) >= CODE_MODULE_PX * (qr.size + 2 * QUIET)) return panel
+  const side = panel.side!
+  const step = stepWords(panel)
+  const rows: RowSpec[] = [
+    // The title rests at the top: Up from the code reads it, and the line under it.
+    { id: "a:title", kind: "row", label: panel.title, value: step, rests: true, ...(panel.sub === undefined || panel.sub === "" ? {} : { note: panel.sub }) },
+    { id: "a:code", kind: "code", label: side.title ?? "", rests: true },
+    ...(side.title === undefined || side.title === "" ? [] : [{ id: "a:kicker", kind: "head" as const, label: side.title }]),
+    ...(side.lines ?? []).map((line, index): RowSpec => note(`a:line:${index}`, line)),
+    ...(panel.sub === undefined || panel.sub === "" ? [] : [note("a:sub", panel.sub)]),
+    ...panel.rows,
+    // Korri's buttons become rows of the list, with their own ids: focus on one survives a resize.
+    ...panel.buttons.map((button): RowSpec => ({ id: button.id, kind: "row", label: button.label, ...(button.dim === true ? { dim: true } : {}), ...(button.danger === true ? { danger: true } : {}), press: button.press })),
+  ]
+  return { ...panel, rows, buttons: [], codeFirst: true, first: "a:code" }
 }
 
 export function pagePanel(page: PageRef, state: State, model: Model): PanelSpec {
@@ -273,20 +337,23 @@ export function pagePanel(page: PageRef, state: State, model: Model): PanelSpec 
       return invitesPage(model)
     case "identity":
       return identityPage(state, model)
-    case "steam":
-      return steamPage(model, CLOSE)
+    case "account":
+      return accountPage(page.id, state, model, CLOSE)
   }
 }
 
 // ---- Korri's own pages ----
 
+export type SetupStep = "controllers" | "wifi" | "name" | "starter" | "finish" | `account:${string}`
+
 /** The steps of first boot Korri gives reason for, in order. */
-export function onboardingSteps(model: Model): readonly ("controllers" | "wifi" | "name" | "starter" | "steam" | "finish")[] {
+export function onboardingSteps(model: Model): readonly SetupStep[] {
   return [
-    "controllers", ...(model.network === undefined ? [] : ["wifi" as const]), "name",
+    "controllers", ...(model.network === undefined ? [] : ["wifi" as const]),
+    // ADR 0089: each account sign-in Korri offers, right after Wi-Fi (a sign-in needs the network), each one skippable.
+    ...offered(model).map((entry): SetupStep => `account:${entry.id}`),
+    "name",
     ...(model.onboarding?.starterPack === undefined ? [] : ["starter" as const]),
-    // ADR 0083: the Steam sign-in, after the existing steps, while a Steam engine runner is installed.
-    ...(steamAccount(model) === undefined ? [] : ["steam" as const]),
     "finish",
   ]
 }
@@ -302,6 +369,22 @@ function onboardingPanel(state: State, model: Model): PanelSpec {
   const back: Act = at === 0 ? NONE : go(at - 1)
   const next = (enabled: boolean, label = "Next"): ButtonSpec => ({ id: "b:next", label, ...(enabled ? {} : { dim: true }), press: enabled ? go(at + 1) : NONE })
   const base = { key: `setup:${step}`, step: at + 1, steps: steps.length, back }
+  if (step.startsWith("account:")) {
+    const entry = entryById(model, step.slice("account:".length))
+    const content: AccountContent | undefined = entry === undefined ? undefined : accountContent(entry, true)
+    const done = entry?.state._tag === "SignedIn"
+    // Signed in: Next leads, Korri's Sign out stays beside it. Else Korri's actions lead and
+    // Skip waits beside them: the step can always be passed.
+    const own = content?.buttons ?? []
+    const buttons: ButtonSpec[] = done
+      ? [next(true), ...own.map(button => ({ ...button, quiet: true }))]
+      : [...own, { ...next(true, "Skip for now"), quiet: own.length > 0 }]
+    return codeFirst({
+      ...base, title: entry?.offer ?? "", sub: content?.sub ?? "", rows: content?.rows ?? [], buttons,
+      ...(content?.side === undefined ? {} : { side: content.side }),
+      first: buttons[0]!.id,
+    }, state, model)
+  }
   switch (step) {
     case "controllers": {
       const controllers = model.onboarding?.controllers ?? []
@@ -339,23 +422,8 @@ function onboardingPanel(state: State, model: Model): PanelSpec {
       }
       return { ...base, title: "Starter pack", rows, buttons, first: buttons[0]!.id }
     }
-    case "steam": {
-      const account = steamAccount(model)
-      const content = account === undefined ? undefined : steamContent(account)
-      const done = account?._tag === "SignedIn"
-      // Signed in: Next leads, Korri's Sign out stays beside it. Else Korri's actions lead and
-      // Skip waits beside them: the step can always be passed.
-      const own = content?.buttons ?? []
-      const buttons: ButtonSpec[] = done
-        ? [next(true), ...own.map(button => ({ ...button, quiet: true }))]
-        : [...own, { ...next(true, "Skip for now"), quiet: own.length > 0 }]
-      return {
-        ...base, title: "Steam", sub: content?.sub ?? "", rows: content?.rows ?? [], buttons,
-        ...(content?.side === undefined ? {} : { side: content.side }),
-        first: buttons[0]!.id,
-      }
-    }
-    case "finish":
+    default:
+      // "finish": the account steps were answered above.
       return {
         ...base, title: "The house is ready", sub: "This device makes its own person key when setup ends. For now, setup ends at a terminal: run korri setup finish on this device. It shows 12 recovery words to write down.", rows: [],
         buttons: [{ id: "b:finish", label: state.onboarding.finishing ? "Finishing" : "Finish", ...(state.onboarding.finishing ? { dim: true } : {}), press: state.onboarding.finishing ? NONE : seq({ t: "onboarding", step: at, finishing: true }, send({ _tag: "FinishOnboarding" })) }],
@@ -528,7 +596,7 @@ export function overlayPanel(overlay: SurfaceGameplayOverlayPresentation, state:
 
 // ---- Which panel holds the screen ----
 
-export type Shown = "overlay" | "setup" | "steam" | "runner" | "launch" | "saves" | "page" | "detail" | "set" | "home"
+export type Shown = "overlay" | "setup" | "account" | "runner" | "launch" | "saves" | "page" | "detail" | "set" | "home"
 
 export const runnerOpen = (model: Model): boolean => model.runnerChoice !== undefined && model.runnerChoice._tag !== "Closed"
 export const launchOpen = (model: Model): boolean => model.launchSettings !== undefined && model.launchSettings._tag !== "Closed"
@@ -537,8 +605,8 @@ export const launchOpen = (model: Model): boolean => model.launchSettings !== un
 export function shown(state: State, model: Model): Shown {
   if (model.presentation.kind === "gameplay-overlay") return "overlay"
   if (model.onboarding !== undefined) return "setup"
-  // A launch waits for the person's Steam sign-in: the code takes the screen.
-  if (steamTakesScreen(model)) return "steam"
+  // A launch waits for an account sign-in: its card takes the screen.
+  if (waitingEntry(model) !== undefined) return "account"
   if (runnerOpen(model)) return "runner"
   if (launchOpen(model)) return "launch"
   if (model.saveHistory !== undefined) return "saves"
@@ -565,8 +633,8 @@ export function screenPanel(state: State, model: Model): PanelSpec | undefined {
     case "setup":
       panel = onboardingPanel(state, model)
       break
-    case "steam":
-      panel = steamPage(model, NONE)
+    case "account":
+      panel = accountPage(waitingEntry(model)!.id, state, model, NONE)
       break
     case "runner":
       panel = runnerPanel(model)

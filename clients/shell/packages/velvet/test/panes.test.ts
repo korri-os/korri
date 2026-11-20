@@ -177,8 +177,8 @@ describe("a window each", () => {
   })
 
   test("a list page is the Floor's; its side content (a QR code) goes on the Stage", () => {
-    const scene = scenario("steam-code")
-    const run = opened("steam-code", TWO)
+    const scene = scenario("account-code")
+    const run = opened("account-code", TWO)
     for (const step of scene.steps) run.step(step, scene.models)
     const f = floor(run)
     const s = stage(run)

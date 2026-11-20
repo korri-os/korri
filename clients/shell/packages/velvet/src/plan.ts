@@ -53,6 +53,8 @@ export const TYPE_REACH = 2.5
 /** The keyboard's grid. */
 export const KEY_COLUMNS = 10
 export const KEY_ROWS = 5
+/** The least a QR code's module may be on the screen, px: phones read the pleated code from about 3.6 (the QR brief). */
+export const CODE_MODULE_PX = 4
 
 export interface Plan {
   readonly width: number
@@ -342,4 +344,24 @@ export function plan(width: number, height: number, floor = false): Plan {
   }
   last = { plan: made, floor }
   return made
+}
+
+/**
+ * The side a list page gives its QR code (with its quiet zone), px, as
+ * ui/organisms/VelvetProgramme.slint lays it out: beside the rows, over
+ * them, or over its own words on a narrow window. `subLines`: the lines of
+ * the words under the title; `buttons`: how many buttons the page has;
+ * `headH`: the head's height, when its title takes two lines.
+ * A page whose code would come out under `CODE_MODULE_PX` a module is laid
+ * out as one list instead, the code a row as large as the window allows
+ * (src/pages.ts, `codeFirst`).
+ */
+export function codeSlot(p: Plan, subLines: number, buttons: number, headH = p.headH): number {
+  const subH = subLines === 0 ? 0 : subLines * p.fact * 1.25 + p.fact * 0.4
+  const bodyTop = p.headY + headH + subH + p.fact * 1.1
+  const block = buttons === 0 ? 0 : p.stack ? buttons * p.button * 2.8 - p.button * 0.5 : p.button * 2.3
+  const buttonsH = buttons === 0 ? 0 : block + p.body * 0.9
+  if (p.panelBeside) return Math.max(0, Math.min((p.height - bodyTop - p.padY) * 0.62, p.panelW))
+  if (p.stack) return Math.max(0, Math.min(p.width - 2 * p.padX, (p.height - bodyTop - p.padY - buttonsH - p.fact) * 0.75 - p.fact * 5))
+  return Math.max(0, Math.min((p.height - bodyTop - p.padY - buttonsH) * 0.75, (p.width - 2 * p.padX) * 0.5))
 }

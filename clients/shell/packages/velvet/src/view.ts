@@ -15,14 +15,14 @@
  * under it is drawn inert (no target, no tap).
  */
 import type { SurfaceModel as Model } from "../../../../../contracts/generated/surface"
-import { gameCard, marqueeOf, NO_IMAGE, NO_MARQUEE, pictures, stageOf, type Pictures, type StageView } from "./art"
+import { gameCard, marqueeOf, NO_IMAGE, NO_MARQUEE, pictures, stageOf, take, type Pictures, type StageView } from "./art"
 import { detailGame, detailView, focusedGame, homeExits, homeView, NO_PILL, pill, pillsStack, setExits, setView, type PillView } from "./browse"
 import { curtainLayout, curtainOf } from "./curtain"
 import { breakLines, fitCaps } from "./fit"
 import { keyGrid } from "./keys"
 import { gameById, homeOf } from "./lists"
-import { entryHeading, screenPanel, sheetPanel, shown } from "./pages"
-import { QUIET, qrPath } from "./steam"
+import { entryHeading, pageTitle, screenPanel, sheetPanel, shown, stepWords } from "./pages"
+import { badgeModules, QUIET, qrPath } from "./account"
 import { plan, type Plan } from "./plan"
 import type { PanelSpec, RowSpec, State } from "./types"
 import { emptyAt, emptyButtons, panelFocus, panelStacks, split, takesFocus, topLayer } from "./update"
@@ -70,17 +70,31 @@ function pageView(asked: Pictures, panel: PanelSpec, state: State, p: Plan, live
   const focus = panelFocus(panel, state.panels[panel.key]).focus
   const side = panel.side
   const game = side?.kind === "tile" ? side.game : undefined
+  const qr = side?.kind === "qr" ? side.qr : undefined
+  // The badge's logo, when Korri serves one and the pixel budget holds it; else the letter.
+  const logo = side?.logo !== undefined && take(asked, side.logo.url, side.logo.width, side.logo.height) ? side.logo : undefined
+  // A title too long for one line beside the step takes two, smaller.
+  const heading = pageTitle(p, panel.title, stepWords(panel))
+  const broken = heading.lines.length > 1
   return {
     list: {
       shown: true,
       key: panel.key,
       title: caps(panel.title),
+      titleFirst: broken ? heading.lines[0]! : "",
+      titleNext: broken ? heading.lines[1]! : "",
+      titleSize: broken ? heading.size : 0,
       sub: panel.sub ?? "",
       step: panel.step ?? 0,
       steps: panel.steps ?? 0,
       stack: panelStacks(p, panel),
       panel: side?.kind ?? "none",
       panelTitle: side?.title ?? "",
+      codeFirst: panel.codeFirst === true,
+      codeBadge: qr === undefined ? 0 : badgeModules(qr),
+      codeMark: logo === undefined ? side?.mark ?? "" : "",
+      codeLogoShown: logo !== undefined,
+      codeLogo: logo === undefined ? NO_IMAGE : { $image: logo.url },
     },
     rows: panel.rows.map(row => rowView(row, "rows", focus, live)),
     // Down from the rows lands on the first button that can be pressed (a dimmed Next waits
@@ -94,8 +108,8 @@ function pageView(asked: Pictures, panel: PanelSpec, state: State, p: Plan, live
     // A code's words stand beside it or under it, at a width the view decides: they wrap there.
     panelLines: side?.kind === "qr" ? side.lines ?? [] : (side?.lines ?? []).flatMap(line => breakLines(line.length > 60 && !line.includes(" ") ? chunk(line, 28) : line, p.fact, p.panelW)),
     tiles: game === undefined ? [] : [gameCard(asked, game)],
-    qr: side?.kind === "qr" && side.qr !== undefined ? qrPath(side.qr) : "",
-    qrSize: side?.kind === "qr" && side.qr !== undefined ? side.qr.size + 2 * QUIET : 0,
+    qr: qr === undefined ? "" : qrPath(qr),
+    qrSize: qr === undefined ? 0 : qr.size + 2 * QUIET,
   }
 }
 

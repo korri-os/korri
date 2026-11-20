@@ -78,7 +78,7 @@ export function start(model: Model, preferences: Readonly<Record<string, string>
  * marks the targets by it, so what is drawn as a target is what a press
  * can reach.
  */
-export const takesFocus = (row: RowSpec): boolean => (row.kind === "row" || row.kind === "range") && (row.press !== undefined || row.step !== undefined || row.rests === true)
+export const takesFocus = (row: RowSpec): boolean => (row.kind === "row" || row.kind === "range" || row.kind === "code") && (row.press !== undefined || row.step !== undefined || row.rests === true)
 
 /** Where a panel's focus is: on the kept row or button, else by its place, else where the panel opens. */
 export function panelFocus(panel: PanelSpec, kept: PanelState | undefined): PanelState {

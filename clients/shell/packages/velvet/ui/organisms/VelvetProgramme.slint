@@ -4,11 +4,15 @@
 // identity, saves, a runner, launch settings and first boot are all this one
 // page with other rows.
 //
-// A page may hold a panel: a game's card, or a QR code Korri encoded (the
-// Steam sign-in, ADR 0083), and its text. Beside the rows while the window
+// A page may hold a panel: a game's card, or a QR code Korri encoded (an
+// account sign-in, ADR 0089), and its text. Beside the rows while the window
 // is wide for its height (the plan decides), else over them. A code stands
 // on a light plate with its quiet zone, as large as the panel allows: over
 // the rows it takes three quarters of the height left and half the width.
+// Where that would leave a module under the least size (`code-first`, the
+// logic decides it from the plan), the page is one list from the window's
+// top: the title, the code as a row as large as the window allows, its
+// words, the rows and the buttons, each a row (src/pages.ts).
 // First boot shows where it stands among its steps.
 
 import { Tokens } from "../tokens.slint";
@@ -17,6 +21,7 @@ import { VelvetHead } from "../atoms/VelvetHead.slint";
 import { VelvetWords } from "../atoms/VelvetWords.slint";
 import { VelvetButtons } from "../molecules/VelvetButtons.slint";
 import { VelvetTile } from "../molecules/VelvetTile.slint";
+import { VelvetCode } from "../molecules/VelvetCode.slint";
 import { VelvetRows } from "VelvetRows.slint";
 
 export component VelvetProgramme inherits Rectangle {
@@ -36,10 +41,12 @@ export component VelvetProgramme inherits Rectangle {
     property <length> body: Tokens.screen.body * u;
     property <length> fact: Tokens.screen.fact * u;
     property <bool> beside: Tokens.screen.panel-beside;
-    property <bool> coded: page.panel == "qr" && qr != "" && qr-size > 0;
+    property <bool> alone: page.code-first;
+    property <bool> coded: page.panel == "qr" && qr != "" && qr-size > 0 && !alone;
     property <bool> panelled: page.panel == "text" || page.panel == "tile" || coded;
-    property <length> page-w: panelled || beside ? Tokens.screen.page-w * u : Math.min(self.width - 2 * pad-x, Tokens.page-most);
-    property <length> head-foot: (Tokens.screen.head-y + Tokens.screen.head-h) * u;
+    property <length> page-w: (panelled || beside) && !alone ? Tokens.screen.page-w * u : Math.min(self.width - 2 * pad-x, Tokens.page-most);
+    property <bool> broken: page.title-next != "";
+    property <length> head-foot: Tokens.screen.head-y * u + (broken ? page.title-size * (1.2 + Tokens.display-line) * u : Tokens.screen.head-h * u);
     property <length> sub-h: page.sub == "" ? 0px : sub.preferred-height + fact * 0.4;
     property <length> body-top: head-foot + sub-h + fact * 1.1;
     // The panel over the rows takes at most two fifths of what is left.
@@ -51,14 +58,44 @@ export component VelvetProgramme inherits Rectangle {
         : qr-under ? qr-side + fact + qr-words
         : coded ? Math.max(0px, Math.min((self.height - body-top - pad-y - buttons-h) * 0.75, (self.width - 2 * pad-x) * 0.5))
         : Math.min((self.height - body-top - pad-y) * 0.4, self.width - 2 * pad-x);
-    property <length> rows-y: body-top + (panelled && !beside ? panel-h + fact : 0px);
+    property <length> rows-y: alone ? pad-y : body-top + (panelled && !beside ? panel-h + fact : 0px);
     property <length> buttons-h: buttons.length == 0 ? 0px : pills.block + body * 0.9;
     property <length> rows-h: Math.max(0px, self.height - rows-y - pad-y - buttons-h);
+    // One list: the code's row is as large as the list's width and height allow.
+    property <length> code-side: Math.max(0px, Math.min(page-w, rows-h));
     property <bool> in;
     init => { in = true; }
     opacity: in ? 1 : 0;
     animate opacity { duration: Tokens.t-level; easing: cubic-bezier(0.22, 1, 0.36, 1); }
-    HorizontalLayout {
+    // A title too long for one line beside the step: two lines, the step beside the second.
+    if !root.alone && root.broken: VelvetHead {
+        x: root.pad-x;
+        y: Tokens.screen.head-y * root.u;
+        width: parent.width - 2 * root.pad-x;
+        height: root.page.title-size * 1.2 * root.u;
+        size: root.page.title-size * root.u;
+        text: root.page.title-first;
+    }
+    if !root.alone && root.broken: HorizontalLayout {
+        x: root.pad-x;
+        y: Tokens.screen.head-y * root.u + root.page.title-size * Tokens.display-line * root.u;
+        width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+        height: root.page.title-size * 1.2 * root.u;
+        spacing: root.fact;
+        next := VelvetHead {
+            horizontal-stretch: 0;
+            size: root.page.title-size * root.u;
+            text: root.page.title-next;
+        }
+        if root.page.steps > 0: VerticalLayout {
+            alignment: end;
+            padding-bottom: next.drop - root.fact * 0.24;
+            VelvetWords {
+                text: "Step " + root.page.step + " of " + root.page.steps;
+            }
+        }
+    }
+    if !root.alone && !root.broken: HorizontalLayout {
         x: root.pad-x;
         y: Tokens.screen.head-y * root.u;
         width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
@@ -77,6 +114,7 @@ export component VelvetProgramme inherits Rectangle {
         }
     }
     sub := VelvetWords {
+        visible: !root.alone;
         x: root.pad-x;
         y: root.head-foot + root.fact * 0.3;
         width: Math.min(parent.width - 2 * root.pad-x, root.body * 34);
@@ -91,6 +129,10 @@ export component VelvetProgramme inherits Rectangle {
         height: Math.min(root.rows-h, self.content);
         rows: root.rows;
         inert: root.inert;
+        qr: root.alone ? root.qr : "";
+        qr-size: root.qr-size;
+        code-side: root.code-side;
+        page: root.page;
         activated(target, at, released) => { root.activated(target, at, released); }
     }
     pills := VelvetButtons {
@@ -109,20 +151,16 @@ export component VelvetProgramme inherits Rectangle {
         height: root.panel-h;
         property <length> art: root.coded ? (root.beside ? Math.min(self.height * 0.62, self.width) : root.qr-under ? root.qr-side : self.height)
             : Math.min(self.height * (root.beside ? 0.56 : 1), root.beside ? self.width : self.width * 0.42);
-        if root.coded: Rectangle {
+        if root.coded: VelvetCode {
             x: 0;
             y: 0;
             width: parent.art;
-            height: parent.art;
-            background: Tokens.house-light;
-            Path {
-                width: parent.width;
-                height: parent.height;
-                viewbox-width: root.qr-size;
-                viewbox-height: root.qr-size;
-                commands: root.qr;
-                fill: Tokens.ink;
-            }
+            qr: root.qr;
+            qr-size: root.qr-size;
+            badge: root.page.code-badge;
+            mark: root.page.code-mark;
+            logo-shown: root.page.code-logo-shown;
+            logo: root.page.code-logo;
         }
         for tile in root.tiles: VelvetTile {
             x: 0;

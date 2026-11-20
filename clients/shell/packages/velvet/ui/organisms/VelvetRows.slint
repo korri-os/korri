@@ -3,9 +3,13 @@
 // marks the edge). A finger scrolls it too (ADR 0055): it is a Flickable,
 // and the place focus gives it is set again whenever focus moves, or a
 // button follows touch.
+//
+// A list page that is one list (`code-first`) holds its QR code as a row:
+// the page hands the code down (`qr`, `qr-size`, its badge in `page`) with
+// the side the row takes (`code-side`).
 
 import { Tokens } from "../tokens.slint";
-import { Row } from "../types.slint";
+import { Row, Page } from "../types.slint";
 import { VelvetRow } from "../molecules/VelvetRow.slint";
 
 export component VelvetRows inherits Rectangle {
@@ -15,8 +19,13 @@ export component VelvetRows inherits Rectangle {
     in property <length> size: Tokens.screen.body * Tokens.unit;
     // The fade at a cut edge is drawn in this colour (what stands behind the list).
     in property <color> ground: Tokens.house-down;
+    in property <string> qr;
+    in property <int> qr-size;
+    in property <length> code-side;
+    in property <Page> page;
     in-out property <length> focus-y;
     in-out property <length> focus-h;
+    in-out property <bool> focus-code;
     property <length> list-h: list.preferred-height;
     property <length> scroll: list-h <= self.height ? 0 : Math.clamp(focus-y + focus-h / 2 - self.height / 2, 0, list-h - self.height);
     property <bool> touching: Tokens.touching;
@@ -49,11 +58,16 @@ export component VelvetRows inherits Rectangle {
                 // The overlay's tiers: its session's controls larger, a plugin's smaller.
                 size: r.tier == "lead" ? root.size * 1.12 : r.tier == "minor" ? root.size * 0.9 : root.size;
                 inert: root.inert;
+                qr: root.qr;
+                qr-size: root.qr-size;
+                code-side: root.code-side;
+                page: root.page;
                 // Slint cannot read a repeated row's place from outside, so the row reports it.
                 function keep() {
                     if (self.holds) {
                         root.focus-y = self.y;
                         root.focus-h = self.height;
+                        root.focus-code = self.coded;
                     }
                 }
                 init => { self.keep(); }
@@ -66,13 +80,19 @@ export component VelvetRows inherits Rectangle {
     }
     // More above, more below. Each names its place: a part with no `y` is centred in its parent,
     // and the fade for "more above" then lies across the middle of the list.
+    // No fade lies over a code that holds the focus: it would darken the quiet zone a phone
+    // reads. Where the code fills the list, words beside it say there is more.
+    property <bool> above: flick.content-y < -1px;
+    property <bool> below: root.list-h + flick.content-y > root.height + 1px;
+    property <bool> filled: root.focus-code && root.focus-h >= root.height - 1px;
+    property <length> beside-x: root.code-side + root.size * 1.5;
     Rectangle {
         x: 0;
         y: 0;
         width: root.width;
         height: root.size * 1.4;
         background: @linear-gradient(180deg, root.ground 0%, root.ground.with-alpha(0) 100%);
-        opacity: flick.content-y < -1px ? 1 : 0;
+        opacity: root.above && !root.focus-code ? 1 : 0;
     }
     Rectangle {
         x: 0;
@@ -80,6 +100,26 @@ export component VelvetRows inherits Rectangle {
         width: root.width;
         height: root.size * 1.4;
         background: @linear-gradient(0deg, root.ground 0%, root.ground.with-alpha(0) 100%);
-        opacity: root.list-h + flick.content-y > root.height + 1px ? 1 : 0;
+        opacity: root.below && !root.focus-code ? 1 : 0;
+    }
+    if root.filled && root.above: Text {
+        x: root.beside-x;
+        y: 0;
+        width: Math.max(0px, root.width - self.x - root.size * 0.9);
+        text: "More above";
+        color: Tokens.usher;
+        font-family: Tokens.text;
+        font-size: root.size * 0.74;
+        overflow: elide;
+    }
+    if root.filled && root.below: Text {
+        x: root.beside-x;
+        y: root.height - self.preferred-height;
+        width: Math.max(0px, root.width - self.x - root.size * 0.9);
+        text: "More below";
+        color: Tokens.usher;
+        font-family: Tokens.text;
+        font-size: root.size * 0.74;
+        overflow: elide;
     }
 }

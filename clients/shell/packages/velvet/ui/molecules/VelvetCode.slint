@@ -1,0 +1,67 @@
+// VelvetCode: a QR code Korri encoded, the way Velvet draws it ("Pleats",
+// ADR 0089): Ink on a House light plate that holds the quiet zone, every
+// vertical run of dark modules a capsule, the finders rounded squares. The
+// middle is cleared for the badge: an Ink rounded square with the service's
+// logo, or the first letter of its title, in House light. Never inverted,
+// never faded: a new code replaces the old one in the same frame, so a phone
+// never catches two.
+//
+// Square: its width is its side. `qr` is the ink as path commands in a
+// viewbox `qr-size` modules square (src/account.ts); `badge` the badge's
+// side in modules, 0 for none.
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetCode inherits Rectangle {
+    in property <string> qr;
+    in property <int> qr-size;
+    in property <int> badge;
+    in property <string> mark;
+    in property <bool> logo-shown;
+    in property <image> logo;
+    property <length> module: root.qr-size <= 0 ? 0px : root.width / root.qr-size;
+    height: self.width;
+    background: Tokens.house-light;
+    Path {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: root.qr-size;
+        viewbox-height: root.qr-size;
+        commands: root.qr;
+        fill: Tokens.ink;
+        fill-rule: FillRule.evenodd;
+    }
+    if root.badge > 0: Rectangle {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        width: root.badge * root.module;
+        height: self.width;
+        border-radius: 2 * root.module;
+        background: Tokens.ink;
+        if root.logo-shown: Image {
+            x: parent.width * 0.14;
+            y: parent.height * 0.14;
+            width: parent.width * 0.72;
+            height: parent.height * 0.72;
+            source: root.logo;
+            image-fit: contain;
+        }
+        if !root.logo-shown: Text {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            text: root.mark;
+            color: Tokens.house-light;
+            font-family: Tokens.display;
+            font-weight: Tokens.display-weight;
+            font-size: parent.height * 0.72;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

@@ -127,8 +127,14 @@ const withActions = (model: object) => ({ ...model, focusedGame: { gameId: "", a
 const identity = (state: object) => ({ ...ready, identityManagement: state })
 const store = (state: object) => ({ ...ready, store: state })
 const overlay = (presentation: object, more: object = {}) => ({ ...ready, presentation, ...more })
-const steamSignIn = (state: object) => ({ accountSignIns: [{ id: "@korri:steam", title: "Steam", offer: "Steam: play the games in your Steam library", state }] })
-const steam = (account: object, model: object = ready) => ({ ...model, ...steamSignIn(account) })
+/** Korri's account sign-ins (ADR 0089): Steam's and a plugin's (Tailscale), each in one state. */
+const accounts = korri.accounts
+const entry = (service: "steam" | "tailscale", state: string, more: object = {}) => {
+  const { states: _states, ...rest } = accounts[service]
+  return { ...rest, state: accounts[service].states[state], ...more }
+}
+const signIns = (...entries: object[]) => ({ accountSignIns: entries })
+const signedIn = (...entries: object[]) => ({ ...ready, ...signIns(...entries) })
 const firstBoot = (more: object = {}) => ({ ...ready, catalog: { _tag: "Empty" }, settings: korri.onboarding.settings, network: korri.onboarding.network, onboarding: korri.onboarding.onboarding, ...more })
 
 const invites = [{
@@ -162,8 +168,8 @@ const busyProgress = { ...korri.status.progress, gameId: "tide-pool" }
 const failedSetting = { _tag: "Problem", settingId: "device-name", message: "That name is already used by another device." }
 const wifiFailed = { ...korri.networkFailed, wifi: { ...korri.networkFailed.wifi, attempt: { _tag: "Failed", ssid: "Attic 5G", message: "The password was not accepted.", passwordRejected: false } } }
 
-/** Presses from the first row of Settings to its Steam row. */
-const STEAM_ROW_DOWNS = 10
+/** Presses from the first row of Settings to its first account row (under More, after Wi-Fi and Identity). */
+const ACCOUNT_ROW_DOWNS = 10
 
 interface Scenario {
   readonly name: string
@@ -176,9 +182,10 @@ const toSettings = ["menu", "down", "confirm"]
 const toWifi = ["menu", "down", "down", "confirm"]
 const toIdentity = ["menu", "down", "down", "down", "confirm"]
 const toStore = ["menu", "confirm"]
-/** Settings, down to the Steam row under More (after Wi-Fi and Identity). */
-const toSteamRow = [...toSettings, ...Array.from({ length: STEAM_ROW_DOWNS }, () => "down")]
-const toSteam = [...toSteamRow, "confirm"]
+/** Settings, down to the first account row under More (after Wi-Fi and Identity), and the second. */
+const toAccountRow = [...toSettings, ...Array.from({ length: ACCOUNT_ROW_DOWNS }, () => "down")]
+const toAccount = [...toAccountRow, "confirm"]
+const toSecondAccount = [...toAccountRow, "down", "confirm"]
 /** First boot: past the controllers, and past Wi-Fi with "Skip for now". */
 const pastWifi = ["confirm", "down", "down", "down", "down", "down", "confirm"]
 const toLobby = ["down", "down"]
@@ -288,18 +295,30 @@ const scenarios: Scenario[] = [
   { name: "first-boot-names", models: [firstBoot()], steps: [...pastWifi] },
   { name: "first-boot-ready", models: [firstBoot()], steps: [...pastWifi, "down", "confirm"] },
   { name: "first-boot-starter", models: [firstBoot({ onboarding: { ...korri.onboarding.onboarding, starterPack: { _tag: "Offered", actions: [{ id: "starter-pack:install", label: "Get the Starter pack", enabled: true }] } } })], steps: [...pastWifi, "down", "confirm"] },
-  // The Steam sign-in (ADR 0083): Settings, the page, first boot, and a launch that waits for it.
-  { name: "steam-row", models: [steam(korri.steam.signedIn)], steps: toSteamRow },
-  { name: "steam-signed-out", models: [steam(korri.steam.signedOut)], steps: toSteam },
-  { name: "steam-code", models: [steam(korri.steam.code)], steps: toSteam },
-  { name: "steam-signed-in", models: [steam(korri.steam.signedIn)], steps: toSteam },
-  { name: "steam-problem", models: [steam(korri.steam.problem)], steps: toSteam },
-  { name: "steam-refused", models: [steam(korri.steam.refused)], steps: toSteam },
-  { name: "steam-for-game", models: [steam(korri.steam.codeForGame)], steps: [] },
-  { name: "steam-working", models: [steam(korri.steam.working)], steps: [] },
-  { name: "first-boot-steam", models: [firstBoot(steamSignIn(korri.steam.signedOut))], steps: [...pastWifi, "down", "confirm"] },
-  { name: "first-boot-steam-code", models: [firstBoot(steamSignIn(korri.steam.code))], steps: [...pastWifi, "down", "confirm"] },
-  { name: "first-boot-steam-done", models: [firstBoot(steamSignIn(korri.steam.signedIn))], steps: [...pastWifi, "down", "confirm"] },
+  // Account sign-ins (ADR 0083, ADR 0089): Settings, the card in each state, setup, and a launch that waits for one.
+  { name: "account-rows", models: [signedIn(entry("steam", "signedIn"), entry("tailscale", "expired"))], steps: toAccountRow },
+  { name: "account-rows-busy", models: [signedIn(entry("steam", "problem"), entry("tailscale", "starting"))], steps: [...toAccountRow, "down"] },
+  { name: "account-signed-out", models: [signedIn(entry("tailscale", "signedOut"))], steps: toAccount },
+  { name: "account-expired", models: [signedIn(entry("steam", "signedIn"), entry("tailscale", "expired"))], steps: toSecondAccount },
+  { name: "account-checking", models: [signedIn(entry("tailscale", "checking"))], steps: toAccount },
+  { name: "account-starting", models: [signedIn(entry("tailscale", "starting"))], steps: toAccount },
+  { name: "account-code", models: [signedIn(entry("steam", "code"))], steps: toAccount },
+  { name: "account-code-tailscale", models: [signedIn(entry("tailscale", "code"))], steps: toAccount },
+  { name: "account-code-renewed", models: [signedIn(entry("steam", "code")), signedIn(entry("steam", "codeRenewed"))], steps: [...toAccount, "model 1"] },
+  { name: "account-code-smallest", models: [signedIn(entry("steam", "codeSmallest"))], steps: toAccount },
+  { name: "account-code-largest", models: [signedIn(entry("tailscale", "codeLargest"))], steps: toAccount },
+  { name: "account-code-malformed", models: [signedIn(entry("steam", "codeMalformed"))], steps: toAccount },
+  { name: "account-code-no-detail", models: [signedIn(entry("tailscale", "code", { state: { ...accounts.tailscale.states.code, detail: undefined } }))], steps: toAccount },
+  { name: "account-signed-in", models: [signedIn(entry("steam", "signedIn"))], steps: toAccount },
+  { name: "account-signed-in-long", models: [signedIn(entry("tailscale", "signedIn", { state: { ...accounts.tailscale.states.signedIn, accountName: "a.very.long.account.name.without.any.break.points@example-tailnet.ts.net" } }))], steps: toAccount },
+  { name: "account-problem", models: [signedIn(entry("tailscale", "problem"))], steps: toAccount },
+  { name: "account-refused", models: [signedIn(entry("steam", "refused"))], steps: toAccount },
+  { name: "account-for-game", models: [signedIn(entry("steam", "codeForGame"))], steps: [] },
+  { name: "account-working", models: [signedIn(entry("steam", "working"))], steps: [] },
+  { name: "first-boot-account", models: [firstBoot(signIns(entry("tailscale", "signedOut")))], steps: pastWifi },
+  { name: "first-boot-account-code", models: [firstBoot(signIns(entry("tailscale", "code")))], steps: pastWifi },
+  { name: "first-boot-account-done", models: [firstBoot(signIns(entry("tailscale", "signedIn")))], steps: pastWifi },
+  { name: "first-boot-accounts", models: [firstBoot(signIns(entry("steam", "signedIn"), entry("tailscale", "expired")))], steps: [...pastWifi, "confirm"] },
   // The gameplay overlay.
   { name: "overlay", models: [overlay(korri.overlay.plain)], steps: [] },
   { name: "overlay-groups", models: [overlay(korri.overlay.groups)], steps: ["down", "down"] },

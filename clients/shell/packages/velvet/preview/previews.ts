@@ -116,6 +116,11 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     { name: "Stack", body: one("VelvetButtons", `${pad} y: parent.height * 0.3; width: parent.width - 2 * self.x; pills: ${l(two)}; stack: true;`) },
     { name: "Centred", body: one("VelvetButtons", `${pad} y: parent.height / 2; width: parent.width - 2 * self.x; pills: ${l(view("problem").curtainButtons)}; centred: true;`) },
   ])
+  const code = (name: string, scene: string) => {
+    const v = view(scene)
+    return { name, body: one("VelvetCode", `${centre("Math.min(parent.width, parent.height) * 0.8", "self.width")} qr: ${JSON.stringify(v.listQr)}; qr-size: ${v.listQrSize}; badge: ${v.list.codeBadge}; mark: ${JSON.stringify(v.list.codeMark)};`) }
+  }
+  add("molecules", "VelvetCode", [code("Steam", "account-code"), code("Tailscale", "account-code-tailscale"), code("Smallest", "account-code-smallest"), code("Largest", "account-code-largest")])
   add("molecules", "VelvetFactLine", [{ name: "Four", body: one("VelvetFactLine", `${pad} y: parent.height / 2; line: ${l(home.home.mark.facts.first)};`) }])
   add("molecules", "VelvetFacts", [
     { name: "WithBadge", body: one("VelvetFacts", `${pad} y: parent.height / 2; width: parent.width - 2 * self.x; facts: ${l(home.home.mark.facts)}; badge: "PC";`) },
@@ -136,6 +141,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     rowOf("Range", overlay.find(row => row.kind === "range")),
     rowOf("Network", wifi.find(row => row.focusId?.startsWith("w:net:"))),
     rowOf("Secret", settings.find(row => row.focusId?.startsWith("s:plugin-credential:"))),
+    rowOf("Account", (view("account-rows").listRows as any[]).find(row => row.focused)),
   ])
   add("molecules", "VelvetSteps", [
     { name: "ThreeOfFour", body: one("VelvetSteps", `x: parent.width * 0.2; y: parent.height / 2; width: parent.width * 0.6; steps: ${l(view("busy-steps").curtainSteps)}; line: ${JSON.stringify(view("busy-steps").curtain.stepLine ?? "Step 3 of 4")};`) },
@@ -205,7 +211,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     const ll = lit(layer)
     return { name, body: one(component, `${FILL} page: ${ll(v.list)}; rows: ${ll(v.listRows)}; buttons: ${ll(v.listButtons)}; panel-lines: ${ll(v.listPanelLines)}; tiles: ${ll(v.listTiles)};${v.listQr === "" ? "" : ` qr: ${JSON.stringify(v.listQr)}; qr-size: ${v.listQrSize};`}`) }
   }
-  add("organisms", "VelvetProgramme", [["Settings", "settings"], ["Wifi", "wifi"], ["Store", "store-results"], ["Offer", "store-offer"], ["FirstBoot", "first-boot"], ["SteamCode", "steam-code"]].map(([name, scene]) => programme("VelvetProgramme", "organisms")(name!, scene!)))
+  add("organisms", "VelvetProgramme", [["Settings", "settings"], ["Wifi", "wifi"], ["Store", "store-results"], ["Offer", "store-offer"], ["FirstBoot", "first-boot"], ["AccountCode", "account-code"]].map(([name, scene]) => programme("VelvetProgramme", "organisms")(name!, scene!)))
   add("organisms", "VelvetRows", [
     { name: "Settings", body: one("VelvetRows", `x: Tokens.screen.pad-x * ${U}; y: Tokens.screen.pad-y * ${U}; width: Tokens.screen.page-w * ${U}; height: parent.height - 2 * self.y; rows: ${l(view("settings").listRows)};`) },
     { name: "Launch", body: one("VelvetRows", `x: Tokens.screen.pad-x * ${U}; y: Tokens.screen.pad-y * ${U}; width: Tokens.screen.page-w * ${U}; height: parent.height - 2 * self.y; rows: ${l(view("launch-settings").listRows)};`) },
@@ -235,7 +241,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     return { name, body: one("VelvetHouse", `${FILL} empty: ${p(v.empty)}; title: ${p(v.emptyTitle)}; lines: ${p(v.emptyLines)}; buttons: ${p(v.emptyButtons)};`) }
   }
   add("pages", "VelvetHouse", [house("Invitation", "empty"), house("Error", "error")])
-  add("pages", "VelvetList", [["Settings", "settings"], ["Wifi", "wifi"], ["Identity", "identity"], ["Saves", "saves"], ["Runner", "runner"], ["LaunchSettings", "launch-settings"], ["LaunchChanges", "launch-keep"], ["LaunchUnreachable", "launch-unreachable"], ["Invites", "invites"], ["Store", "store"], ["SteamSignedOut", "steam-signed-out"], ["SteamCode", "steam-code"], ["SteamForGame", "steam-for-game"], ["SteamWorking", "steam-working"], ["SteamSignedIn", "steam-signed-in"], ["SteamProblem", "steam-problem"], ["SteamRefused", "steam-refused"], ["FirstBootSteam", "first-boot-steam"], ["FirstBootSteamCode", "first-boot-steam-code"]].map(([name, scene]) => programme("VelvetList", "pages")(name!, scene!)))
+  add("pages", "VelvetList", [["Settings", "settings"], ["Wifi", "wifi"], ["Identity", "identity"], ["Saves", "saves"], ["Runner", "runner"], ["LaunchSettings", "launch-settings"], ["LaunchChanges", "launch-keep"], ["LaunchUnreachable", "launch-unreachable"], ["Invites", "invites"], ["Store", "store"], ["AccountSignedOut", "account-signed-out"], ["AccountExpired", "account-expired"], ["AccountCode", "account-code"], ["AccountCodeTailscale", "account-code-tailscale"], ["AccountForGame", "account-for-game"], ["AccountWorking", "account-working"], ["AccountSignedIn", "account-signed-in"], ["AccountProblem", "account-problem"], ["AccountRefused", "account-refused"], ["FirstBootAccount", "first-boot-account"], ["FirstBootAccountCode", "first-boot-account-code"]].map(([name, scene]) => programme("VelvetList", "pages")(name!, scene!)))
   add("pages", "VelvetPaused", [pause("VelvetPaused", "pages")("Plain", "overlay"), pause("VelvetPaused", "pages")("Stream", "overlay-stream")])
   const set = (name: string, scene: string) => {
     const v = view(scene)

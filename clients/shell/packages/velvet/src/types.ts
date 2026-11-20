@@ -17,6 +17,7 @@ import type {
   SurfaceGame,
   SurfaceGameplayControlValue,
   SurfaceIdentityDisposition,
+  SurfaceMedia,
   SurfaceQrCode,
   SurfaceRequest,
   SurfaceWifiAttempt,
@@ -166,7 +167,8 @@ export const seq = (...acts: Act[]): Act => ({ t: "seq", acts })
 
 export interface RowSpec {
   readonly id: string
-  readonly kind: "row" | "head" | "note" | "problem" | "range" | "meter" | "rule" | "space"
+  /** "code": the page's QR code as a row of its own, where the window is too small to hold it beside or over the rows. */
+  readonly kind: "row" | "head" | "note" | "problem" | "range" | "meter" | "rule" | "space" | "code"
   readonly label: string
   /** A tier of the overlay's list: "lead" (the session's own, large), "minor" (a plugin's, compact). */
   readonly tier?: "lead" | "minor"
@@ -205,6 +207,9 @@ export interface PanelSide {
   readonly game?: Game
   /** A QR code Korri encoded (ADR 0083): the view draws its modules. */
   readonly qr?: SurfaceQrCode
+  /** The code's badge: the service's logo, else this letter. */
+  readonly mark?: string
+  readonly logo?: SurfaceMedia
 }
 
 export interface PanelSpec {
@@ -222,6 +227,8 @@ export interface PanelSpec {
   /** First boot's place among its steps. */
   readonly step?: number
   readonly steps?: number
+  /** The page is one list, its code a row in it (src/pages.ts, `codeFirst`). */
+  readonly codeFirst?: boolean
   /** Where focus lands when the panel opens: a row or button id. */
   readonly first?: string
 }
@@ -241,7 +248,7 @@ export type PageRef =
   | { readonly p: "entry" }
   | { readonly p: "invites" }
   | { readonly p: "identity" }
-  | { readonly p: "steam" }
+  | { readonly p: "account"; readonly id: string }
 
 export type SheetKind = "menu" | "sort" | "actions"
 
