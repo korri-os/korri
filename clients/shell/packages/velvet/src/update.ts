@@ -344,6 +344,17 @@ export function focusSize(state: State, model: Model): { readonly width: number;
   return split(model) && floorHolds(state, model) ? state.floor ?? state.size : state.size
 }
 
+/**
+ * The plan of the window a set is drawn in. With a window each (ADR 0086) a set is always
+ * the Floor's, whether or not it holds focus (the detail over it is the Stage's), so its
+ * columns and rows are the Floor's own (#576).
+ */
+function setPlan(state: State, model: Model): Plan {
+  const floor = split(model)
+  const size = floor ? state.floor ?? state.size : state.size
+  return plan(size.width, size.height, floor)
+}
+
 function pressed(state: State, button: SurfaceButton, model: Model, out: Request[]): State {
   const size = focusSize(state, model)
   const p = plan(size.width, size.height, split(model) && floorHolds(state, model))
@@ -519,10 +530,9 @@ function published(state: State, model: Model): State {
 
 function settle(state: State, model: Model, out: Request[], tick: boolean): State {
   let next = state
-  const p = plan(next.size.width, next.size.height)
   // The set's window; else the home's lists.
   if (next.set !== undefined) {
-    const settled = settleSet(next.set, model.catalog, p)
+    const settled = settleSet(next.set, model.catalog, setPlan(next, model))
     if (settled.request !== undefined) out.push(settled.request)
     else if (tick && setWindow(next.set, model.catalog) === undefined && model.catalog._tag === "Ready") out.push(openSet(next.set))
     if (settled.set !== next.set) next = { ...next, set: settled.set }
@@ -603,7 +613,7 @@ export function update(state: State, message: Message, model: Model): { state: S
       if (!Number.isInteger(message.by) || message.by === 0) break
       if (!next.touched || next.drift) next = { ...next, touched: true, drift: false }
       if (message.region === "grid" && next.set !== undefined && topLayer(next, model) === "screen" && shown(next, model) === "set") {
-        const set = dragSet(next.set, message.by, model, plan(next.size.width, next.size.height))
+        const set = dragSet(next.set, message.by, model, setPlan(next, model))
         if (set !== next.set) next = { ...next, set }
       } else if ((message.region === "row" || message.region.startsWith("shelf:")) && topLayer(next, model) === "screen" && shown(next, model) === "home") {
         next = dragHome(next, message.region, message.by, model)

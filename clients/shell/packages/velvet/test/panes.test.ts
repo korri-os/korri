@@ -127,6 +127,31 @@ describe("a window each", () => {
     exitsWithin(f)
   })
 
+  test("a set on the Floor keeps its focused row in sight by the Floor's own columns (#576)", () => {
+    const run = opened("set-deep", TWO)
+    for (const step of scenario("set-deep").steps) run.step(step, scenario("set-deep").models)
+    for (let press = 0; press < 8; press++) {
+      run.press("down")
+      const f = floor(run)
+      expect(f.page).toBe("set")
+      const set = run.state.set!
+      const row = Math.floor((set.at - set.low) / f.screen.columns)
+      expect(row).toBeGreaterThanOrEqual(f.setFirstRow)
+      expect(row).toBeLessThan(f.setFirstRow + f.screen.gridRows)
+    }
+  })
+
+  test("a drag on the Floor's set stops at the Floor's last row (#576)", () => {
+    const run = opened("set-deep", TWO)
+    for (const step of scenario("set-deep").steps) run.step(step, scenario("set-deep").models)
+    run.deliver({ _tag: "Dragged", region: "grid", by: 100000 } as any)
+    const f = floor(run)
+    const set = run.state.set!
+    const window = (run.model as any).catalog
+    const count = window.total - set.low
+    expect(set.scrolled).toBe(Math.max(0, Math.ceil(count / f.screen.columns) - f.screen.gridRows))
+  })
+
   test("the Floor's light is the Stage's, dimmer", () => {
     const run = opened("home", TWO)
     run.press("down")
