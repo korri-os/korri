@@ -1,5 +1,6 @@
 # Controller data for the controllers paired with this tablet. It has a
-# device file only: the GameSir-G8+ uses upstream's dinput_generic map. The
+# device files only: the GameSir-G8+ and the Razer Kishi V2 use upstream's
+# dinput_generic map. The
 # shared validator requires capability maps, so it checks this device file
 # beside the pinned InputPlumber's own maps, which also proves the map exists.
 { pkgs, inputplumber }:

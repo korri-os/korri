@@ -1,0 +1,55 @@
+# The Razer Kishi V2 (USB HID 1532:0712) exposes two joystick event nodes:
+# interface 0 carries every button and axis, interface 2 never sends a report
+# (hidraw capture on the tablet, 2026-11-21). Under Generic Gamepad each made
+# its own composite, and inputd refuses a controller that is two composites.
+# Its layout is DirectInput like the GameSir-G8+'s: right stick ABS_Z/ABS_RZ
+# centred at 128, triggers ABS_GAS/ABS_BRAKE. Generic Gamepad reads Z/RZ as
+# triggers resting at 128, which holds every gameplay press back
+# (input_seat.rs, requires_neutral); dinput_generic reads them correctly.
+# Use interface 0's joystick node, by its USB path, and tell InputPlumber to
+# leave interface 2's node alone so it makes no second composite.
+version: 1
+kind: CompositeDevice
+name: Razer Kishi V2
+matches: []
+maximum_sources: 1
+source_devices:
+  - group: gamepad
+    udev:
+      attributes:
+        - name: id/vendor
+          value: "1532"
+        - name: id/product
+          value: "0712"
+      properties:
+        - name: ID_INPUT_JOYSTICK
+          value: "1"
+        - name: ID_PATH
+          value: "*:1.0"
+      sys_name: "event*"
+      subsystem: input
+    capability_map_id: dinput_generic
+  - group: gamepad
+    ignore: true
+    udev:
+      attributes:
+        - name: id/vendor
+          value: "1532"
+        - name: id/product
+          value: "0712"
+      properties:
+        - name: ID_INPUT_JOYSTICK
+          value: "1"
+        - name: ID_PATH
+          value: "*:1.2"
+      sys_name: "event*"
+      subsystem: input
+# Same targets and options Korri gives every selected external profile
+# (services/inputd/nix/inputplumber-data.nix).
+target_devices:
+  - xb360
+  - mouse
+  - keyboard
+options:
+  auto_manage: true
+  persist: true

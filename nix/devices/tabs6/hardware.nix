@@ -181,6 +181,8 @@ in
   # The GameSir-G8+ needs its own InputPlumber composite: under Generic
   # Gamepad its right stick reads as half-pressed triggers and no gameplay
   # press reaches a seat (inputplumber/devices/61-korri-gamesir_g8_plus.yaml).
+  # The Razer Kishi V2 (USB) needs the same, and one composite for its two
+  # joystick interfaces (inputplumber/devices/61-korri-razer_kishi_v2.yaml).
   services.korriLinuxInput.provider.extraDataPackages = [
     korri.packages.${pkgs.stdenv.hostPlatform.system}.tabs6-inputplumber-data
   ];
