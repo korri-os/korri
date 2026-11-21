@@ -643,11 +643,13 @@ fn installed_repositories() -> RpcResponse {
                 source_url: "https://example.com/catalog".into(),
                 release_version: "0".into(),
                 enabled: true,
+                account: None,
             }],
             other_installs: vec![plugin_admin::PluginOtherInstall {
                 id: "seeded".into(),
                 title: None,
                 enabled: false,
+                account: None,
             }],
         },
     ))
