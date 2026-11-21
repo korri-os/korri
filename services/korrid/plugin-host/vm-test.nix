@@ -1446,9 +1446,19 @@ pkgs.testers.runNixOSTest {
     assert [entry.get("installed") for entry in plugin_ok("system.plugins.catalog", {"url": source_a})["entries"]] == ["Disabled"] * len(records)
     assert plugin_ok("system.plugins.setEnabled", {"id": "@korri:tailscale", "enabled": True}) == {}
     machine.wait_for_unit(report["unit"])
-    assert plugin_ok("system.plugins.repositories", {})["repositoryInstalls"] == [
+    installs = plugin_ok("system.plugins.repositories", {})["repositoryInstalls"]
+    # ADR 0089: the install carries the package's `account`, on or off. The
+    # core fixture declares none; the published plugin declares one.
+    accounts = [entry.pop("account", None) for entry in installs]
+    assert installs == [
         {"id": "@korri:tailscale", "sourceUrl": source_a, "releaseVersion": "v1", "enabled": True}
-    ]
+    ], installs
+    with open("${tailscalePackage}/plugin.ts") as declaration:
+        declares_account = "export const account" in declaration.read()
+    if declares_account:
+        assert accounts[0] is not None and accounts[0]["title"] == "Tailscale", accounts
+    else:
+        assert accounts == [None], accounts
     # The install outlives its repository and keeps working on and off.
     assert plugin_ok("system.plugins.repository.remove", {"url": source_a}) == "Removed"
     assert plugin_ok("system.plugins.setEnabled", {"id": "@korri:tailscale", "enabled": False}) == {}
@@ -1731,7 +1741,9 @@ pkgs.testers.runNixOSTest {
     # files, but daemon-reload/start never ran. Restore must clean that stage.
     staged = install("${tailscalePackage}")
     staged_native = next(iter(staged["native_units"].values()))
-    staged_policy = staged["unit_configuration"].split(staged_native["source"] + "\n", 1)[1]
+    # The native unit's policy alone: the rendered set also holds the
+    # host-generated account units of a plugin that declares one (ADR 0089).
+    staged_policy = staged["unit_configuration"].split(staged_native["source"] + "\n", 1)[1].split("\n# account unit: ", 1)[0]
     staged_ownership = "/run/korri-plugin-host/units/" + managed_name(staged) + ".units"
     machine.succeed("install -d -m 0700 /run/korri-plugin-host/units; mkdir -p /run/systemd/system/" + staged["unit"] + ".d")
     machine.succeed("printf %s " + shlex.quote(staged["unit"] + "\n") + " > " + staged_ownership)
