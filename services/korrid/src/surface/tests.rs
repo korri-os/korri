@@ -6037,3 +6037,230 @@ async fn a_steam_cloud_conflict_on_launch_goes_to_the_split_choice() {
         "{status:?}"
     );
 }
+
+/// korrid's Steam engine side for the launch-sync question: the question a
+/// session holds, and the answers it was sent.
+#[derive(Default)]
+struct PendingAccess {
+    question: std::sync::Mutex<Option<crate::steam_engine::sessions::CloudQuestion>>,
+    answers: std::sync::Mutex<Vec<(String, u32, crate::steam_engine::protocol::Answer)>>,
+}
+
+impl super::steam_account::SteamEngineAccess for PendingAccess {
+    fn facts(&self) -> super::steam_account::SteamFacts {
+        super::steam_account::SteamFacts::Absent
+    }
+    fn runs_on_engine(&self, _: &str, _: Option<&str>) -> bool {
+        false
+    }
+    fn use_client_runner(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn take_conflict(&self, _: &str) -> bool {
+        false
+    }
+    fn presence(&self) -> String {
+        String::new()
+    }
+    fn engine_artifacts(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn cloud_question(&self) -> Option<crate::steam_engine::sessions::CloudQuestion> {
+        self.question.lock().unwrap().clone()
+    }
+    fn answer_cloud(
+        &self,
+        launch_id: &str,
+        appid: u32,
+        answer: crate::steam_engine::protocol::Answer,
+    ) -> Result<(), String> {
+        self.answers
+            .lock()
+            .unwrap()
+            .push((launch_id.into(), appid, answer));
+        self.question.lock().unwrap().take();
+        Ok(())
+    }
+}
+
+/// ADR 0083, owner decision 2026-11-21: the launch sync met another
+/// device's save that has not finished uploading. The launch holds and
+/// asks: Play anyway or Retry go to that session's host; Back cancels the
+/// launch and answers nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pending_upload_on_another_device_holds_the_launch_and_asks() {
+    use crate::steam_engine::{
+        protocol::{Answer, PendingOperation},
+        sessions::CloudQuestion,
+    };
+    let mut outcomes = idle_outcomes(2);
+    outcomes.insert(
+        "app.session.reserve".into(),
+        json!({ "_tag": "Ok", "payload": { "gameId": "g00001", "launchId": "exact" } }),
+    );
+    outcomes.insert(
+        "app.session.start".into(),
+        json!({ "_tag": "Ok", "payload": { "session": { "gameId": "g00001", "launchId": "exact" }, "warnings": [] } }),
+    );
+    let outcomes = Arc::new(std::sync::Mutex::new(outcomes));
+    let requests = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    // The game unit runs and waits at the runner's "Syncing saves" step.
+    outcomes.lock().unwrap().insert(
+        "app.session.status".into(),
+        json!({"_tag":"Ok","payload":{"active":{"launchId":"exact","gameId":"g00001","phase":"running","initialHandoff":"waiting","steps":{"labels":["Updating the game","Syncing saves","Starting the game"],"current":1}}}}),
+    );
+    let access = Arc::new(PendingAccess::default());
+    let base = in_memory_korrid(Arc::clone(&outcomes));
+    let korrid = Korrid::new(Arc::new({
+        let requests = Arc::clone(&requests);
+        move |request: RpcRequest| {
+            let base = base.clone();
+            let requests = Arc::clone(&requests);
+            Box::pin(async move {
+                requests
+                    .lock()
+                    .unwrap()
+                    .push(serde_json::to_value(&request).unwrap());
+                base.rpc(super::korrid::Mapping::Unreachable, request)
+                    .await
+                    .map_err(|failure| Refusal::Unreachable(failure.message))
+            })
+        }
+    }))
+    .with_steam_engine(Arc::clone(&access) as Arc<dyn super::steam_account::SteamEngineAccess>);
+    let directory = tempfile::tempdir().unwrap();
+    let intent = crate::overlay_intent::OverlayIntent::default();
+    let hub = SurfaceHub::new(
+        korrid,
+        directory.path().join("private"),
+        intent.subscribe(),
+        Arc::default(),
+    );
+    settled(&hub, "pico").await;
+    hub.request(
+        "pico",
+        SurfaceRequest::LaunchGame {
+            game_id: "game:g00001".into(),
+            launch_location_id: None,
+        },
+    )
+    .unwrap();
+    let status_until = |done: &dyn Fn(&SurfaceStatus) -> bool| {
+        let hub = Arc::clone(&hub);
+        let done = |status: &SurfaceStatus| done(status);
+        let mut last = None;
+        for _ in 0..800 {
+            let status = hub.model("pico").unwrap().status;
+            if done(&status) {
+                return Ok(status);
+            }
+            last = Some(status);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        Err(last)
+    };
+    let cancellable = |status: &SurfaceStatus| {
+        matches!(status, SurfaceStatus::Busy { actions: Some(actions), .. }
+            if actions.iter().any(|action| action.id == "cancel-launch" && action.enabled))
+    };
+    let busy =
+        tokio::task::block_in_place(|| status_until(&cancellable)).expect("the launch starts");
+    let SurfaceStatus::Busy { game_id, .. } = &busy else {
+        unreachable!()
+    };
+    let game_id = game_id.clone();
+    let serial = std::sync::atomic::AtomicU64::new(0);
+    let ask = |machine: Option<&str>| {
+        *access.question.lock().unwrap() = Some(CloudQuestion {
+            launch_id: "exact".into(),
+            serial: serial.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1,
+            appid: 584400,
+            operations: vec![PendingOperation {
+                operation: "upload_pending".into(),
+                machine: machine.map(Into::into),
+            }],
+        });
+    };
+    let asking = |status: &SurfaceStatus| matches!(status, SurfaceStatus::Confirm { .. });
+    for (machine, answer, label) in [
+        (Some("Living room"), Answer::PlayAnyway, "Play anyway"),
+        (None, Answer::Retry, "Retry"),
+    ] {
+        ask(machine);
+        let question = tokio::task::block_in_place(|| status_until(&asking)).expect("asked");
+        let SurfaceStatus::Confirm {
+            kicker,
+            detail,
+            actions,
+            decline_action_id,
+            game_id: asked_about,
+        } = &question
+        else {
+            unreachable!()
+        };
+        assert_eq!(
+            kicker,
+            "Your save on another device hasn't finished uploading"
+        );
+        assert!(
+            detail
+                .as_deref()
+                .unwrap()
+                .contains(machine.unwrap_or("another device")),
+            "{detail:?}"
+        );
+        assert_eq!(
+            actions.iter().map(|a| a.label.as_str()).collect::<Vec<_>>(),
+            ["Play anyway", "Retry"]
+        );
+        assert_eq!(decline_action_id.as_deref(), Some("cancel-launch"));
+        assert_eq!(asked_about, &game_id, "about the launching game");
+        let chosen = actions
+            .iter()
+            .find(|a| a.label == label)
+            .unwrap()
+            .id
+            .clone();
+        hub.request("pico", SurfaceRequest::RunAction { action_id: chosen })
+            .unwrap();
+        tokio::task::block_in_place(|| status_until(&cancellable))
+            .expect("the launch goes on at its step");
+        for _ in 0..200 {
+            if !access.answers.lock().unwrap().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(
+            access.answers.lock().unwrap().drain(..).collect::<Vec<_>>(),
+            [("exact".to_string(), 584400, answer)]
+        );
+    }
+    // Back: the launch's Cancel; no answer reaches the host.
+    ask(None);
+    tokio::task::block_in_place(|| status_until(&asking)).expect("asked");
+    hub.request(
+        "pico",
+        SurfaceRequest::RunAction {
+            action_id: "cancel-launch".into(),
+        },
+    )
+    .unwrap();
+    let after = tokio::task::block_in_place(|| status_until(&|status| !asking(status)))
+        .expect("the question is gone");
+    assert!(!matches!(after, SurfaceStatus::Confirm { .. }));
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(access.answers.lock().unwrap().is_empty());
+    assert!(
+        requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|request| request["_tag"]
+                .as_str()
+                .is_some_and(|tag| tag.contains("cancel"))),
+        "the launch was cancelled"
+    );
+}

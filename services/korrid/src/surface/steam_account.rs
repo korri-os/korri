@@ -62,6 +62,20 @@ pub trait SteamEngineAccess: Send + Sync {
     /// Steam package and whether it carries the engine host). A change means
     /// the account is read again.
     fn presence(&self) -> String;
+    /// Cheap: a launch sync of this device that waits for the person,
+    /// because another device's save has not finished uploading.
+    fn cloud_question(&self) -> Option<crate::steam_engine::sessions::CloudQuestion> {
+        None
+    }
+    /// Blocking: send the person's answer to that launch's host.
+    fn answer_cloud(
+        &self,
+        _launch_id: &str,
+        _appid: u32,
+        _answer: crate::steam_engine::protocol::Answer,
+    ) -> Result<(), String> {
+        Err("no Steam engine session on this device".into())
+    }
 }
 
 /// A QR session lasts at most this long; Steam rotates the code inside it.

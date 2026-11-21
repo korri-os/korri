@@ -25,6 +25,18 @@ pub enum Command {
     SignOut,
     ListApps,
     Resolve(AppId, Side),
+    /// The person's answer to a launch's pending remote operation.
+    Answer(AppId, Answer),
+}
+
+/// What a person chooses when another device's save has not finished
+/// uploading (ADR 0083, owner decision 2026-11-21), as in Valve's client.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Answer {
+    /// Ask Steam again.
+    Retry,
+    /// Start with what Steam Cloud holds now: the engine's `ignore pending`.
+    PlayAnyway,
 }
 
 /// The side a person keeps in a Steam Cloud conflict.
@@ -51,8 +63,21 @@ impl Command {
             Self::ListApps => "list-apps\n".into(),
             Self::Resolve(app, Side::Local) => format!("resolve {app} local\n"),
             Self::Resolve(app, Side::Cloud) => format!("resolve {app} cloud\n"),
+            Self::Answer(app, Answer::Retry) => format!("retry {app}\n"),
+            Self::Answer(app, Answer::PlayAnyway) => format!("play-anyway {app}\n"),
         }
     }
+}
+
+/// One pending remote operation as the host read it. `operation` is the
+/// engine's kind (`upload_pending`, `upload_in_progress`,
+/// `app_session_active`, `app_session_suspended` or `unknown`); `machine`
+/// is the other device's name, when Steam gave one.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct PendingOperation {
+    pub operation: String,
+    #[serde(default)]
+    pub machine: Option<String>,
 }
 
 /// Where an app in the person's list comes from.
@@ -143,6 +168,16 @@ pub enum Event {
         #[serde(default)]
         remote_time: u64,
     },
+    /// The launch sync found another device's pending operation and waits
+    /// for `retry` or `play-anyway`.
+    CloudPending {
+        appid: AppId,
+        operations: Vec<PendingOperation>,
+    },
+    /// The host took the answer; the launch sync runs again.
+    CloudPendingAnswered {
+        appid: AppId,
+    },
     SaveExport {
         appid: AppId,
         archive: String,
@@ -224,6 +259,39 @@ mod tests {
         assert_eq!(Command::ListApps.line(), "list-apps\n");
         assert_eq!(Command::Resolve(1, Side::Local).line(), "resolve 1 local\n");
         assert_eq!(Command::Resolve(1, Side::Cloud).line(), "resolve 1 cloud\n");
+        assert_eq!(Command::Answer(7, Answer::Retry).line(), "retry 7\n");
+        assert_eq!(
+            Command::Answer(7, Answer::PlayAnyway).line(),
+            "play-anyway 7\n"
+        );
+    }
+
+    /// The host's lines for a launch that met another device's pending
+    /// operation (plugins engine-host `pending_event`).
+    #[test]
+    fn a_pending_operation_and_its_answer_parse() {
+        assert_eq!(
+            parse(
+                r#"{"event":"cloud_pending","appid":584400,"operations":[{"operation":"upload_pending"},{"operation":"app_session_active","machine":"Living room"}]}"#
+            ),
+            Some(Event::CloudPending {
+                appid: 584400,
+                operations: vec![
+                    PendingOperation {
+                        operation: "upload_pending".into(),
+                        machine: None
+                    },
+                    PendingOperation {
+                        operation: "app_session_active".into(),
+                        machine: Some("Living room".into())
+                    },
+                ]
+            })
+        );
+        assert_eq!(
+            parse(r#"{"event":"cloud_pending_answered","appid":7,"answer":"retry"}"#),
+            Some(Event::CloudPendingAnswered { appid: 7 })
+        );
     }
 
     /// Lines copied from the spike host's output (FINDINGS sections 7, 8,

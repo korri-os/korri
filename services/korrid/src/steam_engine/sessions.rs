@@ -9,7 +9,7 @@
 use super::{
     availability::{EngineHealth, Unavailable},
     host::{Channel, EventReader, HostPlan, HostUnits, Mode},
-    protocol::{Command, Event},
+    protocol::{Answer, Command, Event, PendingOperation},
     saves::Conflicts,
 };
 use crate::saves::{store::NativeSaveStore, types::SnapshotRecord};
@@ -36,6 +36,19 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 /// no word from the host.
 pub const NO_GAME: &str = "The Steam engine session ended before the game started.";
 
+/// A launch sync that waits for the person: another device's save has not
+/// finished uploading (ADR 0083, owner decision 2026-11-21). The session
+/// program waits too, until korrid answers or stops the game unit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CloudQuestion {
+    pub launch_id: String,
+    /// Counts this session's questions: a question asked again after
+    /// `retry` is a new one, even with the same words.
+    pub serial: u64,
+    pub appid: u32,
+    pub operations: Vec<PendingOperation>,
+}
+
 /// Who and what the session is, for its save snapshots.
 #[derive(Clone, Debug)]
 pub struct SessionContext {
@@ -57,6 +70,10 @@ struct Running {
     refusal: Arc<Mutex<Option<String>>>,
     /// The launch sync finished or the game exited: a game ran.
     game_started: Arc<AtomicBool>,
+    /// The launch sync's open question, while it waits for the person.
+    question: Arc<Mutex<Option<CloudQuestion>>>,
+    /// Steam answered the launch intent with a question: it knows a session.
+    intent: Arc<AtomicBool>,
     /// korrid stopped the game unit itself: no refusal of its own.
     stopped: AtomicBool,
     watcher: Option<JoinHandle<()>>,
@@ -161,6 +178,8 @@ impl Sessions {
         let exit_synced = Arc::new(AtomicBool::new(false));
         let refusal = Arc::new(Mutex::new(None));
         let game_started = Arc::new(AtomicBool::new(false));
+        let question = Arc::new(Mutex::new(None));
+        let intent = Arc::new(AtomicBool::new(false));
         let watcher = {
             let watch = Watch {
                 launch_id: launch_id.into(),
@@ -174,6 +193,9 @@ impl Sessions {
                 exit_synced: Arc::clone(&exit_synced),
                 refusal: Arc::clone(&refusal),
                 game_started: Arc::clone(&game_started),
+                question: Arc::clone(&question),
+                intent: Arc::clone(&intent),
+                asked: 0,
                 conflict: None,
             };
             let stop = Arc::clone(&stop);
@@ -192,6 +214,8 @@ impl Sessions {
                 exit_synced,
                 refusal,
                 game_started,
+                question,
+                intent,
                 stopped: AtomicBool::new(false),
                 watcher: Some(watcher),
             },
@@ -262,6 +286,38 @@ impl Sessions {
         (!running.stopped.swap(true, Ordering::SeqCst)).then(|| NO_GAME.to_owned())
     }
 
+    /// The open launch-sync question of this device's sessions, if any.
+    pub fn cloud_question(&self) -> Option<CloudQuestion> {
+        self.running
+            .lock()
+            .expect("sessions poisoned")
+            .values()
+            .find_map(|running| running.question.lock().ok()?.clone())
+    }
+
+    /// The person's answer: the host gets `retry` or `play-anyway` for the
+    /// app it asked about. The question closes once the host has the line.
+    pub fn answer(&self, launch_id: &str, appid: u32, answer: Answer) -> Result<(), String> {
+        let (channel, question) = {
+            let guard = self.running.lock().expect("sessions poisoned");
+            let running = guard.get(launch_id).ok_or("this launch has ended")?;
+            (running.channel.clone(), Arc::clone(&running.question))
+        };
+        let asked = question
+            .lock()
+            .expect("question poisoned")
+            .as_ref()
+            .map(|open| open.appid);
+        if asked != Some(appid) {
+            return Err("the Steam engine is not asking about this game".into());
+        }
+        Channel::open(&channel)
+            .send_within(Command::Answer(appid, answer), Duration::from_secs(5))
+            .map_err(|error| format!("cannot answer the Steam engine: {error}"))?;
+        *question.lock().expect("question poisoned") = None;
+        Ok(())
+    }
+
     /// korrid is stopping this session's game unit: its end is no failure.
     pub fn stopping(&self, launch_id: &str) {
         if let Some(running) = self
@@ -287,8 +343,11 @@ impl Sessions {
             return Ok(());
         };
         let _live = Live(&self.live);
-        // With no game there is no exit sync to wait for.
-        let bound = if running.game_started.load(Ordering::SeqCst) {
+        // With no game there is no exit sync to wait for, unless the launch
+        // sync already told Steam that a session starts (a launch cancelled
+        // at the question): its exit sync ends that session for Steam.
+        let intent = running.intent.load(Ordering::SeqCst);
+        let bound = if running.game_started.load(Ordering::SeqCst) || intent {
             bound
         } else {
             Duration::ZERO
@@ -346,6 +405,10 @@ struct Watch {
     exit_synced: Arc<AtomicBool>,
     refusal: Arc<Mutex<Option<String>>>,
     game_started: Arc<AtomicBool>,
+    question: Arc<Mutex<Option<CloudQuestion>>>,
+    intent: Arc<AtomicBool>,
+    /// The questions this session asked so far.
+    asked: u64,
     /// A `sync_conflict` whose split is not written yet: its app, Steam's
     /// remote time, and whether its job was the exit sync.
     conflict: Option<Pending>,
@@ -418,6 +481,36 @@ impl Watch {
         };
         if ran {
             self.game_started.store(true, Ordering::SeqCst);
+        }
+        // The launch sync's question opens on `cloud_pending` and closes on
+        // the host's answer or the sync's end.
+        match event {
+            Event::CloudPending { appid, operations } => {
+                eprintln!(
+                    "korrid steam engine: session {}: {appid} waits for another device's Steam Cloud operation ({})",
+                    self.launch_id,
+                    operations
+                        .iter()
+                        .map(|operation| operation.operation.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                self.asked += 1;
+                self.intent.store(true, Ordering::SeqCst);
+                *self.question.lock().expect("question poisoned") = Some(CloudQuestion {
+                    launch_id: self.launch_id.clone(),
+                    serial: self.asked,
+                    appid: *appid,
+                    operations: operations.clone(),
+                });
+            }
+            Event::CloudPendingAnswered { .. } => {
+                *self.question.lock().expect("question poisoned") = None;
+            }
+            Event::SyncFinished { kind, .. } if kind == "launch" => {
+                *self.question.lock().expect("question poisoned") = None;
+            }
+            _ => {}
         }
         // The host's events go with its channel; the journal keeps what
         // each Steam Cloud sync of the session found.
@@ -1008,6 +1101,121 @@ while read -r line <&3; do :; done"#,
         sessions.finish(LAUNCH, Duration::from_millis(100)).unwrap();
     }
 
+    /// Owner decision, 2026-11-21: a launch sync that meets another device's
+    /// pending upload waits; korrid shows the question and sends the answer.
+    #[test]
+    fn a_pending_upload_holds_the_launch_until_korrid_answers() {
+        for (answer, line) in [
+            (Answer::PlayAnyway, "play-anyway 70\n"),
+            (Answer::Retry, "retry 70\n"),
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let (sessions, plan) = silent_sessions(
+                temp.path(),
+                r#"channel="$(dirname "$fifo")"
+exec 3<>"$fifo"
+while read -r line <&3; do
+  case "$line" in
+    "launched "*) echo '{"event":"cloud_pending","appid":70,"operations":[{"operation":"upload_pending","machine":"Living room"}]}' ;;
+    "retry "*|"play-anyway "*) echo "$line" >> "$channel/answers"; echo '{"event":"cloud_pending_answered","appid":70}'; echo '{"event":"sync_finished","appid":70,"kind":"launch","result":"downloaded"}' ;;
+    shutdown) exit 0 ;;
+  esac
+done"#,
+            );
+            sessions.start(LAUNCH, &plan, None).unwrap();
+            assert_eq!(sessions.cloud_question(), None);
+            assert!(
+                sessions.answer(LAUNCH, 70, answer).is_err(),
+                "no question yet"
+            );
+            Channel::open(&sessions.channel(LAUNCH))
+                .send_within(Command::Launched(70), Duration::from_secs(5))
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let question = loop {
+                if let Some(question) = sessions.cloud_question() {
+                    break question;
+                }
+                assert!(Instant::now() < deadline, "no question");
+                std::thread::sleep(Duration::from_millis(20));
+            };
+            assert_eq!(
+                question,
+                CloudQuestion {
+                    launch_id: LAUNCH.into(),
+                    serial: 1,
+                    appid: 70,
+                    operations: vec![PendingOperation {
+                        operation: "upload_pending".into(),
+                        machine: Some("Living room".into())
+                    }],
+                }
+            );
+            assert!(sessions.answer(LAUNCH, 71, answer).is_err(), "another game");
+            sessions.answer(LAUNCH, 70, answer).unwrap();
+            assert_eq!(sessions.cloud_question(), None, "closed at once");
+            let answers = sessions.channel(LAUNCH).join("answers");
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !answers.exists() {
+                assert!(Instant::now() < deadline, "the host got no answer");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            std::thread::sleep(Duration::from_millis(3 * POLL.as_millis() as u64));
+            assert_eq!(fs::read_to_string(&answers).unwrap(), line);
+            assert_eq!(sessions.cloud_question(), None);
+            assert!(
+                sessions.answer(LAUNCH, 70, answer).is_err(),
+                "answered once"
+            );
+            assert_eq!(sessions.take_refusal(LAUNCH), None, "the game goes on");
+            sessions.finish(LAUNCH, Duration::from_millis(100)).unwrap();
+            assert_eq!(sessions.cloud_question(), None);
+        }
+    }
+
+    /// Cancel at the question: Steam already knows a session from the launch
+    /// intent, so korrid still waits for the exit sync that ends it.
+    #[test]
+    fn a_launch_cancelled_at_the_question_still_gets_its_exit_sync() {
+        let temp = tempfile::tempdir().unwrap();
+        let (sessions, plan) = silent_sessions(
+            temp.path(),
+            r#"channel="$(dirname "$fifo")"
+exec 3<>"$fifo"
+while read -r line <&3; do
+  case "$line" in
+    "launched "*) echo '{"event":"cloud_pending","appid":70,"operations":[{"operation":"unknown"}]}' ;;
+    "exited "*) sleep 0.5; echo exit >> "$channel/order"; echo '{"event":"sync_finished","appid":70,"kind":"exit","result":"remote_changes_not_downloaded"}' ;;
+    shutdown) echo shutdown >> "$channel/order"; cp "$channel/order" "$channel/../order-$$"; exit 0 ;;
+  esac
+done"#,
+        );
+        sessions.start(LAUNCH, &plan, None).unwrap();
+        let channel = Channel::open(&sessions.channel(LAUNCH));
+        channel
+            .send_within(Command::Launched(70), Duration::from_secs(5))
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while sessions.cloud_question().is_none() {
+            assert!(Instant::now() < deadline, "no question");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // The game unit is stopped; the host's session-lock watch sends the
+        // implied `exited` (here the test does).
+        sessions.stopping(LAUNCH);
+        channel
+            .send_within(Command::Exited(70), Duration::from_secs(5))
+            .unwrap();
+        sessions.finish(LAUNCH, Duration::from_secs(10)).unwrap();
+        let order = fs::read_dir(sessions.channel(LAUNCH).parent().unwrap())
+            .unwrap()
+            .flatten()
+            .find(|entry| entry.file_name().to_string_lossy().starts_with("order-"))
+            .map(|entry| fs::read_to_string(entry.path()).unwrap());
+        assert_eq!(order.as_deref(), Some("exit\nshutdown\n"));
+        assert_eq!(sessions.cloud_question(), None);
+    }
+
     #[test]
     fn an_export_outside_the_channel_is_refused() {
         let temp = tempfile::tempdir().unwrap();
@@ -1023,6 +1231,9 @@ while read -r line <&3; do :; done"#,
             exit_synced: Arc::default(),
             refusal: Arc::default(),
             game_started: Arc::default(),
+            question: Arc::default(),
+            intent: Arc::default(),
+            asked: 0,
             conflict: None,
         };
         assert_eq!(

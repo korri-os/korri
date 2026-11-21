@@ -275,6 +275,8 @@ const scenarios: Scenario[] = [
   { name: "problem", models: [withStatus({ ...korri.status.problem, gameId: "tide-pool", gameTitle: "Tide Pool" })], steps: [] },
   { name: "problem-long", models: [withStatus(korri.status.problemLong)], steps: ["down", "down"] },
   { name: "confirm", models: [withStatus(korri.status.confirm)], steps: [] },
+  // ADR 0083: a Steam engine launch that waits on another device's save.
+  { name: "confirm-steam-cloud", models: [withStatus({ ...korri.status.steamCloudPending, gameId: "tide-pool" })], steps: [] },
   { name: "choose-save", models: [withStatus(chooseSave)], steps: [] },
   { name: "paused-stream", models: [withStatus(paused)], steps: [] },
   { name: "ended", models: [withStatus(ended)], steps: [] },

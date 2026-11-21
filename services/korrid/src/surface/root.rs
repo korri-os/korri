@@ -375,6 +375,8 @@ pub struct Root {
     pub owner_binding: Arc<OwnerBinding>,
     pub starter_pack: Arc<StarterPack>,
     pub steam: Arc<super::steam_account::SteamAccount>,
+    /// ADR 0083: a Steam engine launch that waits for the person.
+    pub steam_cloud: Arc<super::steam_cloud::SteamCloudQuestion>,
     /// ADR 0089: every other plugin's account sign-in.
     pub accounts: Arc<super::account_sign_ins::PluginAccounts>,
     /// The last launch through the gate: a Steam Cloud conflict refused on
@@ -689,6 +691,7 @@ impl Root {
                 owner_binding,
                 starter_pack,
                 steam: super::steam_account::SteamAccount::new(korrid.clone(), notify.clone()),
+                steam_cloud: super::steam_cloud::SteamCloudQuestion::new(&korrid, notify.clone()),
                 accounts: super::account_sign_ins::PluginAccounts::new(
                     korrid.clone(),
                     notify.clone(),
@@ -1042,6 +1045,7 @@ impl Root {
             loop {
                 tokio::time::sleep(Duration::from_millis(250)).await;
                 this.steam_conflict_again();
+                this.steam_cloud.poll();
             }
         });
         self.shared.start();
@@ -1259,6 +1263,7 @@ impl Root {
             status = problem;
         }
         let status = self.with_launch_steps(status, &state);
+        let status = self.steam_cloud.over(status);
         let onboarding = (onboarding_needed == Some(true) && owner.is_unsupported()).then(|| {
             SurfaceOnboarding {
                 controllers: self.controllers.snapshot(),
@@ -1852,6 +1857,7 @@ impl Root {
                     || self.saves.act(&action_id)
                     || self.starter_pack.act(&action_id)
                     || self.steam.act(&action_id)
+                    || self.steam_cloud.act(&action_id)
                     || self.accounts.act(&action_id)
                     || self.store.act(&action_id)
                     || self.acquisition.act(&action_id)
@@ -1865,6 +1871,8 @@ impl Root {
                     if self.acquisition.back() {
                         return;
                     }
+                    // A launch that waits on a Steam Cloud question ends unplayed.
+                    self.steam_cloud.cancelled();
                     self.runner.cancel();
                     launchables.cancel_launch();
                 } else if let Some(runner_action) = action_id.strip_prefix("runner:") {

@@ -5685,6 +5685,21 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
         conflicts.take_fresh(&person, game_id)
     }
 
+    fn cloud_question(&self) -> Option<steam_engine::sessions::CloudQuestion> {
+        steam_engine::started_sessions()?.cloud_question()
+    }
+
+    fn answer_cloud(
+        &self,
+        launch_id: &str,
+        appid: u32,
+        answer: steam_engine::protocol::Answer,
+    ) -> Result<(), String> {
+        steam_engine::started_sessions()
+            .ok_or("no Steam engine session on this device")?
+            .answer(launch_id, appid, answer)
+    }
+
     fn presence(&self) -> String {
         plugin_installation::read()
             .ok()

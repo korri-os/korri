@@ -137,3 +137,29 @@ the split's two snapshots (`local` and `cloud`, both in the save store) and the
 side the person `picked`, until korrid sends it to the engine. `launches` holds
 the launches whose session hit a conflict, so their completion adds no third
 head. Both survive a korrid restart.
+
+## A save that another device has not finished uploading
+
+Owner decision, 2026-11-21 (korri#595, korri#532). At the launch sync the
+engine tells Steam that a session starts. Steam can answer that another
+device of the account has a session open or a save that is not uploaded
+yet. Steam then refuses the download. Before this decision the engine
+runner started the game anyway, without a word.
+
+- The engine runner asks the person, as Valve's client does: "Your save on
+  another device hasn't finished uploading", with **Play anyway** and
+  **Retry**. Korri holds the launch at its "Syncing saves" step while it
+  asks. Retry asks Steam again. Play anyway starts with what Steam Cloud
+  holds now, through the engine's own "ignore pending" request. Cancel or
+  Back ends the launch, and no game runs.
+- The engine host reports the pending operation with its kind and, when
+  Steam gives one, the other device's name. The engine keeps these facts
+  only in an object that the host cannot read. So the host reads the two
+  lines that the engine writes about them to its own `logs/cloud_log.txt`.
+  That read is fragile: an engine update can change the words. The host
+  reads only new lines, at most 1 MiB, and parses only those two line
+  shapes. When it cannot read them, it still asks, with an unknown device.
+- Every exit sync ends with the notice that Steam expects at the end of a
+  session. Without it, Steam kept each engine session as an upload that
+  is still pending, and refused later launch downloads. The host names the
+  device to Steam with the device's Korri title.

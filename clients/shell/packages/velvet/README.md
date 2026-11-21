@@ -74,7 +74,7 @@ shell, `VELVET_FRAMES` (below) through the test harness.
 | Empty library, loading, error | `empty`, `empty-no-store`, `loading`, `error` | `pages/VelvetHouse`, `VelvetEmpty` |
 | The house menu | `menu`, `menu-invite` | `VelvetSheet.Menu` |
 | Status: Busy, steps, progress | `busy-plain`, `busy-steps`, `busy-progress`, `running`, `ended`, `paused-stream` | `VelvetCurtain`, `VelvetSteps`, `VelvetBar` |
-| Problem, Confirm, ChooseSave | `problem`, `problem-long`, `confirm`, `choose-save` | `VelvetCurtain` |
+| Problem, Confirm, ChooseSave | `problem`, `problem-long`, `confirm`, `confirm-steam-cloud` (a Steam engine launch that waits on another device's save, ADR 0083), `choose-save` | `VelvetCurtain` |
 | Settings and every interaction | `settings`, `settings-choice`, `settings-text`, `settings-text-symbols`, `settings-secret`, `settings-destructive`, `settings-saving`, `settings-problem`, `settings-foot` | `pages/VelvetList.Settings`, `VelvetRow`, `VelvetKeyboard` |
 | Wi-Fi and hidden networks | `wifi`, `wifi-password`, `wifi-hidden`, `wifi-failed`, `wifi-none` | `VelvetList.Wifi`, `VelvetSignal` |
 | First boot | `first-boot`, `first-boot-wifi`, `first-boot-names`, `first-boot-starter`, `first-boot-ready` | `VelvetProgramme.FirstBoot` |

@@ -1411,6 +1411,24 @@
     }
    ]
   },
+  "steamCloudPending": {
+   "_tag": "Confirm",
+   "kicker": "Your save on another device hasn't finished uploading",
+   "detail": "Steam is still waiting for the save from Living room. Play anyway starts with the save in Steam Cloud now.",
+   "actions": [
+    {
+     "id": "steam-cloud:1:play-anyway",
+     "label": "Play anyway",
+     "enabled": true
+    },
+    {
+     "id": "steam-cloud:1:retry",
+     "label": "Retry",
+     "enabled": true
+    }
+   ],
+   "declineActionId": "cancel-launch"
+  },
   "running": {
    "_tag": "Running",
    "kicker": "Playing on zao",

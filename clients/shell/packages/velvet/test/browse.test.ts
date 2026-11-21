@@ -18,7 +18,7 @@
 import { describe, expect, test } from "bun:test"
 import { pickRoom } from "../src/browse"
 import { plan, ROW_SLOTS, SHELF_SLOTS } from "../src/plan"
-import { Play, scenario, SIZES, targets } from "./korri"
+import { Play, play, scenario, SIZES, targets } from "./korri"
 
 const model = (name: string) => scenario(name).models[0]
 const focus = (run: Play) => targets(run.view).find(entry => entry.focused === true)
@@ -470,6 +470,35 @@ describe("the launch curtain (the prototype's)", () => {
     expect((run.view as any).curtain.solid).toBe(false)
     expect((run.view as any).curtain.logoShown).toBe(false)
     expect((run.view as any).curtainKicker).toEqual(["CHECKING SAVES"])
+  })
+})
+
+// ADR 0083, owner decision 2026-11-21: a launch on the Steam engine runner holds when another
+// device's save has not finished uploading. Korri asks with a Confirm; Velvet draws its two
+// actions as they come, and Back is Korri's decline, the launch's Cancel.
+describe("a launch that waits on another device's save", () => {
+  const asking = () => new Play(model("confirm-steam-cloud"))
+  const runs = (requests: readonly any[]) => requests.filter(request => request._tag === "RunAction").map(request => request.actionId)
+  test("the question names the game, says why, and offers Play anyway and Retry", () => {
+    const view = asking().view as any
+    expect(view.curtain.shown).toBe(true)
+    expect(view.curtain.kind).toBe("ask")
+    expect(view.curtain.name).toBe("Tide Pool")
+    expect(view.curtainKicker.join(" ")).toBe("YOUR SAVE ON ANOTHER DEVICE HASN'T FINISHED UPLOADING")
+    expect(view.curtainLines.join(" ")).toContain("Living room")
+    expect(view.curtainButtons.map((button: any) => button.label)).toEqual(["Play anyway", "Retry"])
+    expect(view.curtainButtons.filter((button: any) => button.focused).map((button: any) => button.label)).toEqual(["Play anyway"])
+  })
+  test("each choice is Korri's action; Back ends the launch through Korri's Cancel", () => {
+    expect(runs(asking().press("confirm"))).toEqual(["steam-cloud:1:play-anyway"])
+    expect(runs(asking().press("right", "confirm"))).toEqual(["steam-cloud:1:retry"])
+    expect(runs(asking().press("back"))).toEqual(["cancel-launch"])
+  })
+  test("at every size both choices stay on the screen", () => {
+    for (const [width, height] of SIZES) {
+      const run = play(scenario("confirm-steam-cloud"), width, height)
+      expect((run.view as any).curtainButtons.length, `${width}x${height}`).toBe(2)
+    }
   })
 })
 
