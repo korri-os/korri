@@ -1,5 +1,27 @@
 use super::*;
 #[test]
+fn viewer_asks_for_the_picture_as_seen_on_a_quarter_turned_main_display() {
+    // The Thor on 2026-11-20: portrait panels shown landscape; both outputs active.
+    let thor = r#"[
+        {"name":"DSI-1","active":true,"transform":"90","current_mode":{"width":1080,"height":1240}},
+        {"name":"DSI-2","active":true,"transform":"90","current_mode":{"width":1080,"height":1920}}
+    ]"#;
+    assert_eq!(viewer_dimensions(thor, Some("DSI-2")), Ok((1920, 1080)));
+    // Without display facts the first active output is used, turned.
+    assert_eq!(viewer_dimensions(thor, None), Ok((1240, 1080)));
+    // An inactive main display falls back to the first active output.
+    let off = r#"[{"name":"DSI-2","active":false,"current_mode":{"width":1080,"height":1920}},
+                  {"name":"HDMI-A-1","active":true,"transform":"normal","current_mode":{"width":1280,"height":720}}]"#;
+    assert_eq!(viewer_dimensions(off, Some("DSI-2")), Ok((1280, 720)));
+    // Unturned and transform-less outputs keep their mode.
+    let plain = r#"[{"active":true,"current_mode":{"width":1280,"height":720}}]"#;
+    assert_eq!(viewer_dimensions(plain, None), Ok((1280, 720)));
+    let odin = r#"[{"name":"DSI-1","active":true,"transform":"270","current_mode":{"width":1080,"height":1920}}]"#;
+    assert_eq!(viewer_dimensions(odin, Some("DSI-1")), Ok((1920, 1080)));
+    assert!(viewer_dimensions("[]", None).is_err());
+}
+
+#[test]
 fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
     let files = ViewerFiles {
         executable: "/nix/store/viewer/bin/moonlight".into(),

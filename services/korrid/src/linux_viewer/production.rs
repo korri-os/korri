@@ -104,6 +104,38 @@ pub(super) struct ProductionLinuxStreamViewer {
 type ResolveFiles =
     Arc<dyn Fn(ViewerPlugin) -> Result<ViewerFiles, LinuxViewerError> + Send + Sync>;
 
+/// The stream size the viewer asks for: the main display's picture as the
+/// person sees it. Sway's `current_mode` is the panel's native size, so a
+/// quarter-turned panel (the Thor's portrait panels shown landscape) swaps it.
+/// The configured main display wins when it is active; otherwise the first
+/// active output, as before.
+fn viewer_dimensions(outputs: &str, main: Option<&str>) -> Result<(u64, u64), String> {
+    let outputs: Vec<serde_json::Value> =
+        serde_json::from_str(outputs).map_err(|e| e.to_string())?;
+    let active = |o: &&serde_json::Value| o["active"] == true;
+    let output = main
+        .and_then(|name| outputs.iter().filter(active).find(|o| o["name"] == name))
+        .or_else(|| outputs.iter().find(active))
+        .ok_or("no active compositor output")?;
+    let side = |key: &str| {
+        output["current_mode"][key]
+            .as_u64()
+            .filter(|v| *v > 0 && *v <= 16384)
+    };
+    let (width, height) = side("width")
+        .zip(side("height"))
+        .ok_or("active output has no valid dimensions")?;
+    let quarter_turn = matches!(
+        output["transform"].as_str(),
+        Some("90" | "270" | "flipped-90" | "flipped-270")
+    );
+    Ok(if quarter_turn {
+        (height, width)
+    } else {
+        (width, height)
+    })
+}
+
 fn unit_error(value: crate::host::LaunchUnitError) -> LinuxViewerError {
     error(value.message)
 }
@@ -520,20 +552,11 @@ impl ProductionLinuxStreamViewer {
     }
     fn dimensions(&self) -> Result<(u64, u64), LinuxViewerError> {
         let output = self.control()?.outputs().map_err(error)?;
-        let outputs: Vec<serde_json::Value> = serde_json::from_str(&output).map_err(error)?;
-        let output = outputs
-            .iter()
-            .find(|o| o["active"] == true)
-            .ok_or_else(|| error("no active compositor output"))?;
-        let width = output["current_mode"]["width"]
-            .as_u64()
-            .filter(|w| *w > 0 && *w <= 16384);
-        let height = output["current_mode"]["height"]
-            .as_u64()
-            .filter(|h| *h > 0 && *h <= 16384);
-        width
-            .zip(height)
-            .ok_or_else(|| error("active output has no valid dimensions"))
+        let main = crate::host::display_placement::configured_displays()
+            .ok()
+            .and_then(|displays| displays.into_iter().find(|d| d.main))
+            .map(|d| d.name);
+        viewer_dimensions(&output, main.as_deref()).map_err(error)
     }
     fn observe(&self, launch: &str) -> Result<LinuxViewerStatus, LinuxViewerError> {
         match self.units.state(launch).map_err(unit_error)? {
