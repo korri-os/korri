@@ -2,12 +2,26 @@
 # Everything else about the phone (kernel, firmware, modem, Wi-Fi, boot.img)
 # comes from the Mobile NixOS fork (default.nix).
 {
+  korri,
   lib,
   pkgs,
   op6Kernel,
   ...
 }:
 let
+  # The Tab S6's pairing helper; it only drives bluetoothctl and names no
+  # board (nix/devices/tabs6/bluetooth/tabs6-bt-pair.sh).
+  pair = pkgs.writeShellApplication {
+    name = "op6-bt-pair";
+    runtimeInputs = [
+      pkgs.bluez
+      pkgs.coreutils
+      pkgs.gnugrep
+      pkgs.gnused
+    ];
+    text = builtins.readFile ../tabs6/bluetooth/tabs6-bt-pair.sh;
+  };
+
   # Stage-1 of Mobile NixOS builds its own gadget, g1 (NCM ncm.usb0 and ACM),
   # and leaves it on the controller at switch_root; its stage-2 gadget tears
   # it down first. Korri's gadget replaces the stage-2 one, so it does the
@@ -58,6 +72,25 @@ in
 
   # No sleep state is verified with Korri's session freeze.
   services.korriProduct.sleep.states = [ ];
+
+  # Bluetooth controllers, as on the Tab S6. The WCN3990 (hci0) has no
+  # factory address on mainline; the fork derives a stable one. A trusted
+  # controller reconnects by itself; op6-bt-pair pairs it the first time.
+  hardware.bluetooth = {
+    enable = true;
+    powerOnBoot = true;
+  };
+  environment.systemPackages = [ pair ];
+  # The GameSir-G8+ needs its own InputPlumber composite and the BlueZ HOG
+  # fix (nix/devices/tabs6/hardware.nix).
+  services.korriLinuxInput.provider.extraDataPackages = [
+    korri.packages.${pkgs.stdenv.hostPlatform.system}.tabs6-inputplumber-data
+  ];
+  hardware.bluetooth.package = pkgs.bluez.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [
+      ../tabs6/bluetooth/bluez-hog-read-report-map-after-failed-reads.patch
+    ];
+  });
 
   services.korriLinuxHost = {
     label = "op6";
