@@ -7,6 +7,15 @@
     # The Galaxy Tab S6 kernel: Linux 7.3.4 and the cross toolchain it was
     # proven with on the tablet (nix/devices/tabs6/kernel/README.md).
     tabs6-nixpkgs.url = "github:NixOS/nixpkgs/d5cc6833999746cffdfe0598f7bc801a57b887a9";
+    # The OnePlus 6 (op6): the Mobile NixOS fork that carries its hardware,
+    # and the nixpkgs its 7.4.0-rc3 kernel was built from on the phone
+    # (phoneputer ea5810e), so the kernel stays the same store path
+    # (nix/devices/op6/README.md).
+    op6-mobile-nixos = {
+      url = "github:mwlaboratories/mobile-nixos/a64dd6570519ddb3921654cf6b9ba41ac8ba6e88";
+      flake = false;
+    };
+    op6-nixpkgs.url = "github:NixOS/nixpkgs/04906337b6d53e8bb0eaf0470ae9f070a4d4eb55";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -28,6 +37,8 @@
       nixpkgs,
       inputplumber-nixpkgs,
       tabs6-nixpkgs,
+      op6-mobile-nixos,
+      op6-nixpkgs,
       flake-utils,
       rust-overlay,
       crane,
@@ -75,6 +86,10 @@
         inherit nixpkgs tabs6-nixpkgs;
         korri = self;
       };
+      op6 = import ./nix/devices/op6 {
+        inherit nixpkgs op6-nixpkgs op6-mobile-nixos;
+        korri = self;
+      };
       nixosModules = {
         korri-product = import ./nix/product/nixos-module.nix { korri = self; };
         # The server part alone, for a device that only serves peers (ADR 0051).
@@ -109,6 +124,7 @@
         rg35xxsp = rg35xxsp.configuration;
         rg35xxpro = rg35xxpro.configuration;
         tabs6 = tabs6.configuration;
+        op6 = op6.configuration;
       };
     }
     // flake-utils.lib.eachDefaultSystem (
@@ -288,6 +304,9 @@
         # The Tab S6 kernel cross-builds on x86_64; its firmware, images and
         # deploy tool stay on that host (nix/devices/tabs6/README.md).
         // tabs6.packages
+        # The OnePlus 6 kernel is the one already on the phone; its deploy tool
+        # signs on this host (nix/devices/op6/README.md).
+        // op6.packages
         // {
           # The NDK's compilers run on x86_64 Linux only.
           korri-viewer-android-apk = viewer.android.apk;
@@ -360,6 +379,7 @@
                   rg35xxsp
                   rg35xxpro
                   tabs6
+                  op6
                   ;
               };
             };

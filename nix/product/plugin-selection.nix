@@ -90,4 +90,8 @@ in
   # Pad 5 port's Iris driver (nix/devices/tabs6/kernel/README.md, "Video
   # codec").
   tabs6 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
+  # The OnePlus 6 (SDM845, Adreno 630) spike takes the R36T Max's set: the
+  # shared runners and SSH. No other runner or the Sunshine encoder has been
+  # tried on it yet (nix/devices/op6/README.md).
+  op6 = shared ++ ssh;
 }

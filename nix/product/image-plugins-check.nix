@@ -22,6 +22,7 @@ let
     "rg35xxsp"
     "rg35xxpro"
     "tabs6"
+    "op6"
   ];
   exactImage =
     name:
