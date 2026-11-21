@@ -666,6 +666,7 @@ done"#,
             engine: root.join("steamclient.so"),
             proton: None,
             account_root: root.to_path_buf(),
+            device_name: None,
         }
     }
 

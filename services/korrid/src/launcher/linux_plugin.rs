@@ -422,6 +422,7 @@ fn inspect_route(
                 &route.runner_id,
                 &input.artifacts,
                 &account_root,
+                crate::steam_engine::device_title(snapshot).as_deref(),
             )
             .map_err(error)?,
         );

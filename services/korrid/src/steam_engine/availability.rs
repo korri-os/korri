@@ -255,6 +255,7 @@ mod tests {
             engine: dir.join("steamclient.so"),
             proton: None,
             account_root: dir.into(),
+            device_name: None,
         }
     }
 

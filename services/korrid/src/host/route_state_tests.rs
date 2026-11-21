@@ -914,6 +914,7 @@ async fn an_unavailable_steam_engine_runner_falls_back_to_the_client_runner() {
         engine: files.path().join("steamclient.so"),
         proton: None,
         account_root: files.path().into(),
+        device_name: None,
     };
     let health = crate::steam_engine::health();
     health.observe(

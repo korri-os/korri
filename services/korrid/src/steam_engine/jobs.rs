@@ -270,6 +270,7 @@ done"#,
                 engine: temp.path().join("steamclient.so"),
                 proton: None,
                 account_root: temp.path().into(),
+                device_name: None,
             })
             .unwrap();
         assert!(job.running());
@@ -316,6 +317,7 @@ mod end_tests {
             engine: temp.join("steamclient.so"),
             proton: None,
             account_root: temp.into(),
+            device_name: None,
         })
         .unwrap()
     }
@@ -427,6 +429,7 @@ mod wait_tests {
             engine: temp.path().join("steamclient.so"),
             proton: None,
             account_root: temp.path().into(),
+            device_name: None,
         };
         assert_eq!(runner.start(&plan).err().as_deref(), Some(GAME_RUNNING));
         let never = Arc::new(std::sync::atomic::AtomicBool::new(false));

@@ -5642,7 +5642,17 @@ impl surface::steam_account::SteamEngineAccess for SteamEngineFacts {
                 steam_engine::availability::Unavailable::PackageNotDownloaded,
             );
         };
-        match steam_engine::launch_plan(&registry, &runner_id, &artifacts, &account_root) {
+        // The same title a launch passes, so the host's state matches its plan.
+        let title = config::snapshot::ConfigSnapshotCoordinator::new(root)
+            .reload()
+            .snapshot;
+        match steam_engine::launch_plan(
+            &registry,
+            &runner_id,
+            &artifacts,
+            &account_root,
+            steam_engine::device_title(&title).as_deref(),
+        ) {
             Ok(plan) => match steam_engine::health().current(&plan) {
                 // What a host reported for these very files, while it holds.
                 Some(reason) => SteamFacts::Unavailable(reason),

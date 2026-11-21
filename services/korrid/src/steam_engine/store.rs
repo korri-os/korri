@@ -477,6 +477,7 @@ done"#;
                 engine: temp.join("steamclient.so"),
                 proton: None,
                 account_root: temp.into(),
+                device_name: None,
             },
             JobRunner {
                 units: Arc::new(ProcessHostUnits::new(&launches)),

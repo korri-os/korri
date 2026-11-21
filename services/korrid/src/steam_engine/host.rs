@@ -161,6 +161,22 @@ pub struct HostPlan {
     pub proton: Option<PathBuf>,
     /// The person's account root; the engine folder is under it.
     pub account_root: PathBuf,
+    /// The device's Korri title, the name Steam shows for this device: the
+    /// QR sign-in's device and the machine of its cloud operations
+    /// (korri#595). `None` when the device has no usable title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_name: Option<String>,
+}
+
+/// The variable the host reads the device's name from.
+pub const DEVICE_NAME_ENV: &str = "KORRI_STEAM_DEVICE_NAME";
+
+/// A title Steam can show as the device's name: one line of at most 64
+/// bytes. `%` is left out, as systemd may read it as a specifier.
+pub fn device_name(title: &str) -> Option<String> {
+    let title = title.trim();
+    (!title.is_empty() && title.len() <= 64 && !title.chars().any(|c| c.is_control() || c == '%'))
+        .then(|| title.to_owned())
 }
 
 /// The channel: made by korrid, writable by the game user.
@@ -417,6 +433,9 @@ pub fn environment(plan: &HostPlan) -> Vec<(String, String)> {
     if let Some(proton) = &plan.proton {
         environment.push(("KORRI_PROTON_CACHYOS".into(), proton.display().to_string()));
     }
+    if let Some(name) = plan.device_name.as_deref().and_then(device_name) {
+        environment.push((DEVICE_NAME_ENV.into(), name));
+    }
     environment
 }
 
@@ -659,6 +678,7 @@ pub(crate) mod tests {
                     .into(),
             proton: Some("/var/lib/korri/cache/proton/cachyos/11.0".into()),
             account_root: "/var/lib/korri/accounts/p1".into(),
+            device_name: None,
         }
     }
 
@@ -715,6 +735,38 @@ pub(crate) mod tests {
                 "/var/lib/korri/cache/steam/engine-package/1792618285/linuxarm64/steamclient.so",
             ]
         );
+    }
+
+    /// korri#595: the host names the device to Steam with its Korri title.
+    #[test]
+    fn the_host_gets_the_device_title_as_its_steam_device_name() {
+        let mode = Mode::Job {
+            id: "fedcba9876543210fedcba9876543210".into(),
+        };
+        let arguments = |name: Option<&str>| {
+            let mut plan = plan();
+            plan.device_name = name.map(Into::into);
+            unit_arguments(
+                &plan,
+                &mode,
+                &identity(),
+                Path::new("/run/korrid/launches"),
+                &[],
+            )
+            .unwrap()
+        };
+        assert!(arguments(Some("OnePlus 6 Korri"))
+            .contains(&"--setenv=KORRI_STEAM_DEVICE_NAME=OnePlus 6 Korri".to_string()));
+        for none in [None, Some(""), Some("two\nlines"), Some("100%")] {
+            assert!(
+                !arguments(none)
+                    .iter()
+                    .any(|a| a.starts_with("--setenv=KORRI_STEAM_DEVICE_NAME")),
+                "{none:?}"
+            );
+        }
+        assert_eq!(device_name(" Living room ").as_deref(), Some("Living room"));
+        assert_eq!(device_name(&"x".repeat(65)), None);
     }
 
     #[test]
@@ -866,6 +918,7 @@ while read -r line <&3; do case "$line" in shutdown) exit 0 ;; esac; done"#,
             engine: temp.path().join("steamclient.so"),
             proton: None,
             account_root: temp.path().into(),
+            device_name: None,
         };
         for mode in [&job, &gone, &playing] {
             Channel::create(&mode.channel(&launches), me).unwrap();

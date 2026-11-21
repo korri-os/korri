@@ -573,6 +573,7 @@ mod tests {
                 engine: temp.join("steamclient.so"),
                 proton: None,
                 account_root: temp.into(),
+                device_name: None,
             },
             runner: JobRunner {
                 units: Arc::new(ProcessHostUnits::new(&launches)),

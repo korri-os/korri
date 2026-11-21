@@ -150,6 +150,7 @@ pub fn launch_plan(
     runner_id: &str,
     artifacts: &std::collections::BTreeMap<String, String>,
     account_root: &std::path::Path,
+    device_title: Option<&str>,
 ) -> Result<host::HostPlan, String> {
     let host_program = registry
         .installed_file(runner_id, HOST_FILE)
@@ -167,7 +168,13 @@ pub fn launch_plan(
             .find(|(id, _)| is_proton_artifact(id))
             .map(|(_, path)| path.into()),
         account_root: account_root.to_path_buf(),
+        device_name: device_title.and_then(host::device_name),
     })
+}
+
+/// The device's Korri title (`host.title`), as peers and streams name it.
+pub fn device_title(snapshot: &crate::config::ConfigSnapshot) -> Option<String> {
+    crate::federation::coordinator::device_label(snapshot, None)
 }
 
 static CONFLICTS: std::sync::OnceLock<std::sync::Arc<saves::Conflicts>> =
