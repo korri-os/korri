@@ -773,6 +773,76 @@ async fn a_game_without_a_runner_blocks_only_itself() {
     );
 }
 
+/// Issue #592: after a game was removed, the library listing and every launch
+/// settings call failed with another game's "has no installed Linux runner".
+/// Each game's route failure belongs to that game alone.
+#[tokio::test]
+async fn a_game_without_a_runner_fails_neither_the_listing_nor_other_games_launch_settings() {
+    let root = tempfile::tempdir().unwrap();
+    let app = library(root.path(), false);
+    let path = root.path().join("catalog/library.yaml");
+    let mut library = fs::read_to_string(&path).unwrap();
+    library.push_str("  no-runner:\n    title: No Runner\n    releases:\n      - id: dos\n        system: dos\n        identity: {kind: hash, value: 'sha1:0123456789abcdef0123456789abcdef01234567'}\n");
+    fs::write(&path, library).unwrap();
+
+    let listed = rpc(&app, "app.local-games.list", json!({})).await;
+    assert_eq!(listed["_tag"], "Ok", "{listed}");
+    assert_eq!(listed["payload"]["games"][0]["id"], GAME, "{listed}");
+    assert_eq!(
+        listed["payload"]["unrouted"],
+        json!(["no-runner"]),
+        "{listed}"
+    );
+
+    let routes = rpc(&app, "app.local-games.routes", json!({"gameId": GAME})).await;
+    assert_eq!(routes["_tag"], "Ok", "{routes}");
+    let own = rpc(
+        &app,
+        "app.local-games.routes",
+        json!({"gameId": "no-runner"}),
+    )
+    .await;
+    assert_eq!(own["_tag"], "Err", "{own}");
+    assert!(
+        own["payload"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("no-runner")),
+        "{own}"
+    );
+
+    for game in [GAME, "no-runner"] {
+        let shown = rpc(
+            &app,
+            "app.launch-settings.snapshot",
+            json!({"gameId": game}),
+        )
+        .await;
+        assert_eq!(shown["_tag"], "Ok", "{game}: {shown}");
+        let expected_layers = if game == GAME {
+            "Present"
+        } else {
+            "Unavailable"
+        };
+        assert_eq!(
+            shown["payload"]["routeLayers"]["_tag"], expected_layers,
+            "{game}: {shown}"
+        );
+        // `korri launch-settings runner --inherit --game <game>`.
+        let inherited = rpc(
+            &app,
+            "app.launch-settings.set",
+            json!({
+                "place": {"layer": {"_tag": "Game", "id": game}, "scope": {"_tag": "Any"}},
+                "path": {"_tag": "Runner"},
+                "value": null,
+                "expectedRevision": shown["payload"]["revisions"]["games"],
+            }),
+        )
+        .await;
+        assert_eq!(inherited["_tag"], "Ok", "{game}: {inherited}");
+    }
+}
+
 fn steam_library(root: &Path) -> Router {
     crate::plugin_test_fixtures::write_gba_library(root);
     fs::create_dir(root.join("roms")).unwrap();

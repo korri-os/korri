@@ -1806,10 +1806,12 @@ fn play_library_another_games_failure_does_not_block_this_launch() {
     let RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(mut listed)) = games() else {
         unreachable!()
     };
-    listed.failures = Some(vec![RpcFailure {
+    let own = RpcFailure {
         code: "LocalRouteUnavailable".into(),
         message: "game other-game has no installed Linux runner".into(),
-    }]);
+    };
+    listed.failures = Some(vec![own.clone()]);
+    listed.unrouted = Some(vec!["other-game".into()]);
     let listed = RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(listed));
     let check = RpcResponse::SavesCheck(SaveCheckOutcome::Ok(SaveCheck {
         status: SaveMark::Synced,
@@ -1845,13 +1847,17 @@ fn play_library_another_games_failure_does_not_block_this_launch() {
             serde_json::json!([check, accepted])
         );
     }
-    // The game that has the failure is still refused, with the failure.
-    let server = Server::start(vec![listed.clone()]);
+    // The game that has the failure is still refused, with its own failure.
+    let refused = RpcResponse::GameRoutes(GameRoutesOutcome::Err(own));
+    let server = Server::start(vec![listed.clone(), refused.clone()]);
     let output = server.run(&["play", "other-game", "--json"]);
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap(),
-        serde_json::json!([listed])
+        serde_json::json!([refused])
+    );
+    assert!(
+        matches!(&server.calls.lock().unwrap()[1], RpcRequest::GameRoutes(r) if r.game_id == "other-game")
     );
 }
 /// Device run on bundle dhqzvb3k: `korri get vvvvvv-2` and `korri library
@@ -1894,9 +1900,110 @@ fn play_library_another_games_failure_does_not_block_get_or_the_listing() {
             "{game}"
         );
     }
-    // The listing shows the failures and succeeds, since it lists games.
+    // The listing shows each game's failure and succeeds.
     let server = Server::start(vec![listed.clone()]);
     let output = server.run(&["library", "games", "list"]);
     assert_eq!(output.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&output.stdout).contains("game\tA Game"));
+    let human = String::from_utf8_lossy(&output.stdout);
+    assert!(human.contains("game\tA Game"), "{human}");
+    assert!(
+        human.contains("game vvvvvv-2 has no installed Linux runner"),
+        "{human}"
+    );
+    assert!(!human.contains("unknown"), "{human}");
+    // Issue #592: it also succeeds when every game failed its route.
+    let RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(mut none_routed)) = listed.clone()
+    else {
+        unreachable!()
+    };
+    none_routed.games.clear();
+    let none_routed = RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(none_routed));
+    let server = Server::start(vec![none_routed]);
+    let output = server.run(&["library", "games", "list"]);
+    assert_eq!(output.status.code(), Some(0));
+    // A failure of the library itself still fails the listing.
+    let RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(mut broken)) = listed else {
+        unreachable!()
+    };
+    broken.failures.as_mut().unwrap().push(RpcFailure {
+        code: "LocalConfigReloadFailed".into(),
+        message: "library.yaml is unreadable".into(),
+    });
+    let server = Server::start(vec![RpcResponse::LocalGamesList(
+        LocalGamesListOutcome::Ok(broken),
+    )]);
+    let output = server.run(&["library", "games", "list"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stdout)
+        .contains("Library: unknown (library.yaml is unreadable)"));
+}
+
+/// Issue #592: after each Steam engine game was removed, `korri launch-settings
+/// show --game <game>` and `runner --inherit --game <game>` failed with "game
+/// flinthook has no installed Linux runner", another game's route failure.
+#[test]
+fn play_library_another_games_failure_does_not_block_launch_settings() {
+    use launch_settings::*;
+    let RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(mut listed)) = games() else {
+        unreachable!()
+    };
+    listed.failures = Some(vec![
+        RpcFailure {
+            code: "LocalRouteUnavailable".into(),
+            message: "game flinthook has no installed Linux runner".into(),
+        },
+        RpcFailure {
+            code: "LocalRouteUnavailable".into(),
+            message: "game sonic-mania has no installed Linux runner".into(),
+        },
+    ]);
+    listed.unrouted = Some(vec!["flinthook".into(), "sonic-mania".into()]);
+    let listed = RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(listed));
+    // A routed game, and the removed game whose only entry is its own failure.
+    for game in ["game", "sonic-mania"] {
+        let mut snapshot = test_snapshot();
+        snapshot.places.push(LaunchPlaceSnapshot {
+            place: LaunchPlace {
+                layer: LaunchLayer::Game(game.into()),
+                scope: LaunchRunnerScope::Any,
+            },
+            title: "Game".into(),
+            body: serde_json::json!({}),
+            editable_kinds: vec!["runner".into()],
+        });
+        let server = Server::start(vec![listed.clone(), snapshot_response(snapshot.clone())]);
+        let output = server.run(&["launch-settings", "show", "--game", game]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{game}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        assert!(
+            matches!(&server.calls.lock().unwrap()[1], RpcRequest::LaunchSettingsSnapshot(r) if r.game_id.as_deref() == Some(game)),
+            "{game}"
+        );
+        let written = RpcResponse::LaunchSettingsSet(LaunchSettingsWriteOutcome::Ok(
+            snapshot.revisions.clone(),
+        ));
+        let server = Server::start(vec![listed.clone(), snapshot_response(snapshot), written]);
+        let output = server.run(&["launch-settings", "runner", "--inherit", "--game", game]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{game}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        assert!(
+            matches!(&server.calls.lock().unwrap()[2], RpcRequest::LaunchSettingsSet(r)
+                if r.value.is_none() && r.place.layer == LaunchLayer::Game(game.into())
+                    && r.expected_revision == "games-revision"),
+            "{game}"
+        );
+    }
+    // A game the library does not hold is not another game's failure.
+    let server = Server::start(vec![listed]);
+    let output = server.run(&["launch-settings", "show", "--game", "absent"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("flinthook"));
 }

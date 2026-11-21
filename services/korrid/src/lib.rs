@@ -2367,6 +2367,16 @@ fn route_diagnostic_failure(diagnostic: &config::resolver::RouteDiagnostic) -> R
     }
 }
 
+/// Whether this `LocalGames.failures` entry is one game's route diagnostic.
+/// It belongs to that game (`LocalGames.unrouted`), not to the library, so it
+/// fails no other game's call and not the listing.
+pub fn is_route_failure(failure: &RpcFailure) -> bool {
+    use config::resolver::RouteDiagnosticCode::*;
+    [LocalRomMissing, LocalRouteUnavailable, LocalRouteCollision]
+        .into_iter()
+        .any(|code| route_diagnostic_code(code) == failure.code)
+}
+
 fn route_diagnostic_code(code: config::resolver::RouteDiagnosticCode) -> &'static str {
     match code {
         config::resolver::RouteDiagnosticCode::LocalRomMissing => "LocalRomMissing",

@@ -246,12 +246,17 @@ impl Module for Library {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            let lines = if games.failures.as_ref().is_some_and(|v| !v.is_empty()) {
-                format!("{lines}\n{}", output::unknown("Library", &response))
-            } else {
-                lines
-            };
-            return Ok(Output::listing(response, lines));
+            // Each game's route failure is shown as that game's own line; only
+            // a library failure fails the listing.
+            let mut lines = std::iter::once(lines)
+                .chain(output::game_failures(games).map(|f| output::text(&f.message)))
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n");
+            if output::failure(&response).is_some() {
+                lines = format!("{lines}\n{}", output::unknown("Library", &response));
+            }
+            return Ok(Output::one(response, lines));
         }
         Ok(finish(response))
     }
@@ -301,6 +306,12 @@ pub(crate) fn game(
     if let Some(game) = games.games.iter().find(|g| g.id == query) {
         return Ok(Ok(game.id.clone()));
     }
+    // A library game with no route here is listed by korrid only in
+    // `unrouted`. It is still this game: the next call reports its own state
+    // (issue #592: `launch-settings runner --inherit` after a removal).
+    if games.unrouted.iter().flatten().any(|id| id == query) {
+        return Ok(Ok(query.to_owned()));
+    }
     let choices = games
         .games
         .iter()
@@ -308,8 +319,9 @@ pub(crate) fn game(
         .map(|g| (g.id.clone(), g.title.clone()))
         .collect::<Vec<_>>();
     // Another game's failure (a missing runner, a missing file) never blocks
-    // this one. With no match, the failures may say why the game is absent.
-    if choices.is_empty() && games.failures.as_ref().is_some_and(|v| !v.is_empty()) {
+    // this one. With no match, a library failure may say why the game is
+    // absent; another game's route failure cannot.
+    if choices.is_empty() && output::failure(&response).is_some() {
         return Ok(Err(response));
     }
     Ok(Ok(choose("game", &choices, json)?))

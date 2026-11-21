@@ -11,9 +11,6 @@ pub enum Responses {
 pub struct Output {
     pub responses: Responses,
     pub human: String,
-    /// The library listing: it succeeds when it lists any game, and shows
-    /// other games' route failures without failing for them.
-    pub listing: bool,
 }
 
 impl Output {
@@ -21,28 +18,18 @@ impl Output {
         Self {
             responses: Responses::Text,
             human,
-            listing: false,
         }
     }
     pub fn one(response: RpcResponse, human: String) -> Self {
         Self {
             responses: Responses::One(Box::new(response)),
             human,
-            listing: false,
-        }
-    }
-    /// `library games list`: see `listing`.
-    pub fn listing(response: RpcResponse, human: String) -> Self {
-        Self {
-            listing: true,
-            ..Self::one(response, human)
         }
     }
     pub fn many(responses: Vec<RpcResponse>, human: String) -> Self {
         Self {
             responses: Responses::Many(responses),
             human,
-            listing: false,
         }
     }
     pub fn print(&self, json: bool) -> Result<u8, CliError> {
@@ -68,11 +55,7 @@ impl Output {
             Responses::Many(responses) => responses,
             Responses::Text => &[],
         };
-        let failures: Vec<_> = responses
-            .iter()
-            .filter(|response| !(self.listing && lists_games(response)))
-            .filter_map(failure)
-            .collect();
+        let failures: Vec<_> = responses.iter().filter_map(failure).collect();
         Ok(
             if failures
                 .iter()
@@ -88,14 +71,6 @@ impl Output {
     }
 }
 
-fn lists_games(response: &RpcResponse) -> bool {
-    matches!(
-        response,
-        RpcResponse::LocalGamesList(korrid::LocalGamesListOutcome::Ok(games))
-            if !games.games.is_empty()
-    )
-}
-
 /// Exit status follows both outer Err outcomes and canonical failure-bearing
 /// payloads. The response itself is always serialized unchanged.
 pub fn failure(response: &RpcResponse) -> Option<RpcFailure> {
@@ -105,7 +80,7 @@ pub fn failure(response: &RpcResponse) -> Option<RpcFailure> {
             return status.observation_failure.clone()
         }
         RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(games)) => {
-            return games.failures.as_ref().and_then(|v| v.first()).cloned()
+            return library_failures(games).next().cloned()
         }
         RpcResponse::AcquisitionAcquire(AcquireJobOutcome::Ok(job))
         | RpcResponse::AcquisitionAcquireStatus(AcquireJobOutcome::Ok(job))
@@ -152,6 +127,26 @@ pub fn failure(response: &RpcResponse) -> Option<RpcFailure> {
     (value["outcome"]["_tag"] == "Err")
         .then(|| serde_json::from_value(value["outcome"]["payload"].clone()).ok())
         .flatten()
+}
+
+/// The listing's failures that belong to the library, not to one game. A
+/// game's route failure belongs to that game alone (issue #592): it fails
+/// neither the listing nor a call about another game.
+fn library_failures(games: &korrid::LocalGames) -> impl Iterator<Item = &RpcFailure> {
+    games
+        .failures
+        .iter()
+        .flatten()
+        .filter(|failure| !korrid::is_route_failure(failure))
+}
+
+/// The listing's failures that each belong to one game.
+pub fn game_failures(games: &korrid::LocalGames) -> impl Iterator<Item = &RpcFailure> {
+    games
+        .failures
+        .iter()
+        .flatten()
+        .filter(|failure| korrid::is_route_failure(failure))
 }
 
 pub fn text(value: &str) -> String {
