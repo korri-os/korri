@@ -17,6 +17,13 @@ impl Drop for Namespaces {
         }
     }
 }
+struct ChildProcess(std::process::Child);
+impl Drop for ChildProcess {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
 fn wait_file(path: &Path) -> String {
     let start = std::time::Instant::now();
     loop {
@@ -60,22 +67,43 @@ fn connection_survives_removing_the_selected_local_path() {
             ip(&["-n", name, "link", "set", &format!("path{n}"), "up"]);
         }
     }
+    // Give each namespace ordinary default routes too. iroh's network watcher
+    // must see a real network, not only two sockets supplied by a test lookup.
+    for (name, other) in [(&namespaces.0[0], 2), (&namespaces.0[1], 1)] {
+        for n in 0..2 {
+            ip(&[
+                "-n",
+                name,
+                "route",
+                "add",
+                "default",
+                "via",
+                &format!("10.203.{n}.{other}"),
+                "dev",
+                &format!("path{n}"),
+                "metric",
+                &format!("{}", 100 + n),
+            ]);
+        }
+    }
     let dir = tempfile::tempdir().unwrap();
     let executable = std::env::current_exe().unwrap();
     let launch = |name: &str, side: &str| {
-        Command::new("ip")
-            .args(["netns", "exec", name])
-            .arg(&executable)
-            .args([
-                "--exact",
-                "federation::reach::path_change_tests::path_child",
-                "--ignored",
-                "--nocapture",
-            ])
-            .env("KORRI_PATH_SIDE", side)
-            .env("KORRI_PATH_DIR", dir.path())
-            .spawn()
-            .unwrap()
+        ChildProcess(
+            Command::new("ip")
+                .args(["netns", "exec", name])
+                .arg(&executable)
+                .args([
+                    "--exact",
+                    "federation::reach::path_change_tests::path_child",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env("KORRI_PATH_SIDE", side)
+                .env("KORRI_PATH_DIR", dir.path())
+                .spawn()
+                .unwrap(),
+        )
     };
     let mut server = launch(&namespaces.0[1], "server");
     let mut client = launch(&namespaces.0[0], "client");
@@ -90,8 +118,8 @@ fn connection_survives_removing_the_selected_local_path() {
         ip(&["-n", name, "link", "set", path, "down"]);
     }
     std::fs::write(dir.path().join("dropped"), "").unwrap();
-    assert!(client.wait().unwrap().success());
-    assert!(server.wait().unwrap().success());
+    assert!(client.0.wait().unwrap().success());
+    assert!(server.0.wait().unwrap().success());
 }
 
 #[test]
@@ -106,20 +134,38 @@ fn path_child() {
         .build()
         .unwrap()
         .block_on(async {
+            let host = if side == "server" { 2 } else { 1 };
             let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+                .clear_ip_transports()
+                .bind_addr_with_opts(
+                    format!("10.203.0.{host}:0"),
+                    iroh::endpoint::BindOpts::default()
+                        .set_prefix_len(24)
+                        .set_is_default_route(false),
+                )
+                .unwrap()
+                .bind_addr_with_opts(
+                    format!("10.203.1.{host}:0"),
+                    iroh::endpoint::BindOpts::default().set_prefix_len(24),
+                )
+                .unwrap()
                 .alpns(vec![ALPN.to_vec()])
                 .relay_mode(iroh::RelayMode::Disabled)
                 .portmapper_config(iroh::endpoint::PortmapperConfig::Disabled)
+                .address_lookup(iroh_mdns_address_lookup::MdnsAddressLookup::builder())
                 .bind()
                 .await
                 .unwrap();
             if side == "server" {
-                let address = endpoint.addr();
-                let mut value = format!("{}\n", address.id);
-                for address in address.addrs {
-                    if let iroh::TransportAddr::Ip(address) = address {
-                        value.push_str(&format!("{address}\n"));
-                    }
+                let addresses = endpoint.bound_sockets();
+                assert_eq!(
+                    addresses.len(),
+                    2,
+                    "the fixture requires two real local transports"
+                );
+                let mut value = format!("{}\n", endpoint.id());
+                for address in addresses {
+                    value.push_str(&format!("{address}\n"));
                 }
                 std::fs::write(dir.join("address"), value).unwrap();
                 let connection = tokio::time::timeout(Duration::from_secs(30), async {
@@ -137,7 +183,7 @@ fn path_child() {
                     tokio::sync::broadcast::channel(64).0,
                     None,
                 ));
-                tokio::time::timeout(Duration::from_secs(60), async {
+                tokio::time::timeout(Duration::from_secs(90), async {
                     while !dir.join("done").exists() {
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
@@ -149,16 +195,9 @@ fn path_child() {
                 let address = wait_file(&dir.join("address"));
                 let mut lines = address.lines();
                 let id = lines.next().unwrap().parse::<iroh::EndpointId>().unwrap();
-                let mut address = iroh::EndpointAddr::new(id);
-                for line in lines {
-                    address
-                        .addrs
-                        .insert(iroh::TransportAddr::Ip(line.parse().unwrap()));
-                }
-                endpoint
-                    .address_lookup()
-                    .unwrap()
-                    .add(iroh::address_lookup::memory::MemoryLookup::from_endpoint_info([address]));
+                assert_eq!(lines.count(), 2, "the peer has two real local transports");
+                // Use the production offline discovery service, including its
+                // address updates after a link disappears, not a static lookup.
                 let connection = endpoint.connect(id, ALPN).await.unwrap();
                 let stable = connection.stable_id();
                 async fn call(connection: &iroh::endpoint::Connection) {
@@ -187,7 +226,7 @@ fn path_child() {
                 })
                 .await
                 .unwrap();
-                tokio::time::timeout(Duration::from_secs(30), call(&connection))
+                tokio::time::timeout(Duration::from_secs(45), call(&connection))
                     .await
                     .unwrap();
                 assert_eq!(stable, connection.stable_id());
