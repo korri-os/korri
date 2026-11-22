@@ -127,7 +127,15 @@ before starting. Use this order:
    restart the old korrid between clearing the events and switching the bundle.
 
 Complete steps 2–4 as one maintenance operation. If bundle activation cannot
-complete, leave korrid stopped instead of restarting the old bundle. On ibuki,
+complete, leave korrid stopped instead of restarting the old bundle.
+`korri-bundle-select switch` restores and restarts the old bundle when the new
+one fails (`services/inputd/src/bundle_select.rs`), so it cannot keep that
+promise. Where the device allows the downtime, use
+`korri-bundle-select offline-select <expected-current> <new-bundle>
+--acknowledge-exclusive-quiescence` with every Korri consumer stopped, then
+start the Korri services. A failed start then leaves the old korrid stopped.
+With `switch`, a failed start brings the old korrid back; clear the events
+again before the next attempt. On ibuki,
 clearing the events before the system switch let the restarted old korrid write five old-format
 values back; the new korrid then refused startup with
 `open federation authority: Identity`.
