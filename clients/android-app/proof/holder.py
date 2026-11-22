@@ -112,7 +112,7 @@ class Holder:
     what holder.ts passes on (the certificate control of the sender).
     """
 
-    def __init__(self, run: Path, executable: str, moonlight: str,
+    def __init__(self, run: Path, executable: str,
                  user: "tuple[int, int] | None" = None, environment: "dict[str, str] | None" = None):
         self.run = run
         drop = None
@@ -128,7 +128,7 @@ class Holder:
                 os.setgid(gid)
                 os.setuid(uid)
         self.process = subprocess.Popen(
-            ["bun", str(HERE / "holder.ts"), str(run), str(ROOT), executable, moonlight],
+            ["bun", str(HERE / "holder.ts"), str(run), str(ROOT), executable],
             stdout=(run / "holder-ts.log").open("w"), stderr=subprocess.STDOUT, start_new_session=True,
             preexec_fn=drop, env=dict(os.environ, **environment),
         )
@@ -275,7 +275,7 @@ def main() -> int:
         result["moonlight_address"] = moonlight
 
         log("starting the holder and its relay")
-        holder = Holder(scratch, fixture, moonlight)
+        holder = Holder(scratch, fixture)
         result["holder"] = {"port": holder.port, "device": holder.key, "relay_port": holder.relay}
         device = d8.run([fixture, "member", str(member)]).stdout.strip()
         result["member_device"] = device

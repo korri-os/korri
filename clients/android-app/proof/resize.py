@@ -375,7 +375,7 @@ def main() -> int:
 
         receiver = seats.SeatReceiver(Path("/run"), holder_user[1], out / "seat-receiver.jsonl")
         log(f"starting the holder as uid {holder_user[0]}, with the sender's certificate control")
-        holder = d9.Holder(scratch, fixture, moonlight, user=holder_user,
+        holder = d9.Holder(scratch, fixture, user=holder_user,
                            environment={**control, **receiver.environment()})
         result["holder"] = {"port": holder.port, "device": holder.key, "relay_port": holder.relay}
         emulator.adb("reverse", f"tcp:{device_relay}", f"tcp:{holder.relay}")

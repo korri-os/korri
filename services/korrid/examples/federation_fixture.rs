@@ -4,14 +4,10 @@
 //!
 //! Two uses:
 //!
-//! - `ROOT PORT RELAYS [MOONLIGHT]`: the holder. Its one game streams from the
-//!   Sunshine at `MOONLIGHT`, the address of a private sender (stream-cadence's
-//!   sender fixture, #434 D9). Without it the address is `127.0.0.1:9`, which
-//!   serves no video: the session-preparation flow needs none. Its device
-//!   settings live in `ROOT/storage`, as a host's do, so that it can reconcile
-//!   its input seats and launch (#434 D10); the seat receiver is the caller's
-//!   (`KORRID_INPUT_SEAT_CONTROL_SOCKET`). Its game units live in memory
-//!   (korrid's feature `fixture`): a launch runs nothing and needs no systemd.
+//! - `ROOT PORT RELAYS`: the holder. Sunshine must run on this host's
+//!   loopback at its standard ports. Peer traffic always uses iroh. The
+//!   holder's game units live in memory (korrid's feature `fixture`): a
+//!   launch runs nothing and needs no systemd.
 //! - `member DIRECTORY`: a new private state root for another device, bound to
 //!   the same owner by the same producer as the holder's own. The Android
 //!   app's proof seeds its korrid with it. Prints the device's public key.
@@ -41,16 +37,12 @@ use std::{
 type Failure = Box<dyn std::error::Error>;
 
 const HOST_CONFIG: &str = "label = \"federation-acceptance\"\n[[games]]\nid = \"acceptance-game\"\ntitle = \"Acceptance Game\"\ncommand = [\"/bin/true\"]\n";
-/// The holder's Moonlight address when none is given: the discard port.
-const NO_VIDEO: &str = "127.0.0.1:9";
-
 #[derive(Debug, PartialEq)]
 enum Command {
     Holder {
         root: PathBuf,
         port: u16,
         relays: RelayList,
-        moonlight_address: String,
     },
     Member {
         directory: PathBuf,
@@ -87,16 +79,15 @@ fn parse(args: &[String]) -> Result<Command, Failure> {
                 height: height.parse()?,
             })
         }
-        [root, port, relays, moonlight @ ..] if moonlight.len() <= 1 => {
+        [root, port, relays] => {
             let relays = RelayList::configured(serde_json::from_str(relays)?)?;
             Ok(Command::Holder {
                 root: absolute(root)?,
                 port: port.parse()?,
                 relays,
-                moonlight_address: moonlight.first().map_or(NO_VIDEO, String::as_str).to_owned(),
             })
         }
-        _ => Err("fixture requires root, port, relay JSON and an optional Moonlight address, member and a directory, or resize, a host UUID, a certificate file and a size".into()),
+        _ => Err("fixture requires root, port and relay JSON, member and a directory, or resize, a host UUID, a certificate file and a size".into()),
     }
 }
 
@@ -125,15 +116,10 @@ fn bind_to_fixture_owner(private: &Path) -> Result<String, Failure> {
     Ok(device.device_public_key().ok_or("device key")?.to_owned())
 }
 
-/// What the holder publishes: its loopback endpoint, its label and the
-/// address of the Sunshine that its game streams from.
-fn holder_inputs(relays: RelayList, port: u16, moonlight_address: &str) -> DiscoveryInputs {
+/// The holder publishes its authenticated transport key, never an address.
+fn holder_inputs(relays: RelayList) -> DiscoveryInputs {
     DiscoveryInputs {
         relays: Some(relays),
-        advertised_endpoints: vec![format!("http://127.0.0.1:{port}")],
-        // Existing HostConfig label and UpstreamHostConfig Moonlight address semantics.
-        label: Some("federation-acceptance".into()),
-        moonlight_address: Some(moonlight_address.into()),
     }
 }
 
@@ -161,21 +147,11 @@ async fn main() -> Result<(), Failure> {
                 Err(failure) => Err(format!("{}: {}", failure.code, failure.message).into()),
             }
         }
-        Command::Holder {
-            root,
-            port,
-            relays,
-            moonlight_address,
-        } => holder(root, port, relays, moonlight_address).await,
+        Command::Holder { root, port, relays } => holder(root, port, relays).await,
     }
 }
 
-async fn holder(
-    root: PathBuf,
-    port: u16,
-    relays: RelayList,
-    moonlight_address: String,
-) -> Result<(), Failure> {
+async fn holder(root: PathBuf, port: u16, relays: RelayList) -> Result<(), Failure> {
     let private = root.join("private");
     let config = root.join("host.toml");
     let storage = root.join("storage");
@@ -197,11 +173,7 @@ async fn holder(
         .to_owned();
     let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
     let port = listener.local_addr()?.port();
-    let inputs = holder_inputs(relays, port, &moonlight_address);
-    // The publication's own bounds, before anything is published or ready.
-    inputs
-        .validate()
-        .map_err(|_| "the Moonlight address cannot be published")?;
+    let inputs = holder_inputs(relays);
     let discovery = Discovery::new(
         resources.directory.clone(),
         resources.credentials.clone(),
@@ -319,56 +291,31 @@ mod tests {
     }
 
     #[test]
-    fn the_holder_streams_from_the_given_sunshine_or_from_none() {
-        let given = parse(&args(&["/tmp/holder", "0", &relays(), "192.0.2.7:47989"])).unwrap();
-        let Command::Holder {
-            root,
-            port,
-            moonlight_address,
-            ..
-        } = given
+    fn the_holder_accepts_only_its_root_port_and_record_relays() {
+        let Command::Holder { root, port, .. } =
+            parse(&args(&["/tmp/holder", "0", &relays()])).unwrap()
         else {
             panic!("not a holder");
         };
         assert_eq!((root, port), (PathBuf::from("/tmp/holder"), 0));
-        assert_eq!(moonlight_address, "192.0.2.7:47989");
-        let Command::Holder {
-            moonlight_address, ..
-        } = parse(&args(&["/tmp/holder", "41000", &relays()])).unwrap()
-        else {
-            panic!("not a holder");
-        };
-        assert_eq!(moonlight_address, NO_VIDEO);
         for refused in [
             args(&["relative", "0", &relays()]),
             args(&["/tmp/holder", "port", &relays()]),
             args(&["/tmp/holder", "0", "[\"ws://192.0.2.1:7000\"]"]),
-            args(&["/tmp/holder", "0", &relays(), "a", "b"]),
+            args(&["/tmp/holder", "0", &relays(), "192.0.2.7:47989"]),
             args(&["/tmp/holder", "0"]),
         ] {
             assert!(parse(&refused).is_err(), "{refused:?}");
         }
     }
-
     #[test]
-    fn the_holder_publishes_its_loopback_endpoint_and_its_sunshine() {
+    fn the_holder_supplies_record_relays_not_network_addresses() {
         let relays = RelayList::configured(vec!["ws://127.0.0.1:7000".into()]).unwrap();
-        let inputs = holder_inputs(relays.clone(), 41000, "192.0.2.7:47989");
         assert_eq!(
-            inputs,
+            holder_inputs(relays.clone()),
             DiscoveryInputs {
-                relays: Some(relays.clone()),
-                advertised_endpoints: vec!["http://127.0.0.1:41000".into()],
-                label: Some("federation-acceptance".into()),
-                moonlight_address: Some("192.0.2.7:47989".into()),
+                relays: Some(relays)
             }
         );
-        inputs.validate().unwrap();
-        // The holder refuses to start with an address it cannot publish.
-        for refused in ["", " ", "192.0.2.7:47989\n"] {
-            assert!(holder_inputs(relays.clone(), 41000, refused)
-                .validate()
-                .is_err());
-        }
     }
 }

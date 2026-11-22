@@ -2,9 +2,9 @@
 // federation fixture's real korrid host (services/korrid/examples/
 // federation_fixture.rs) and its NIP-01 relay (nostr-relay-fixture.ts, from
 // the Artemis app's federation acceptance at the tag `artemis-final`). The
-// holder's game streams from the Sunshine at MOONLIGHT.
+// holder's Sunshine runs on its own loopback; peer traffic uses iroh.
 //
-//   bun holder.ts RUN PROJECT EXECUTABLE MOONLIGHT
+//   bun holder.ts RUN PROJECT EXECUTABLE
 //
 // RUN/ready gets "hostPort hostKey relayPort" when the holder serves. On
 // SIGTERM or SIGINT the relay's events go to RUN/events.json, the holder
@@ -35,7 +35,7 @@ export function holderEnvironment(run: string, project: string, path: string, ni
   return { ...hostEnvironment(run, project, path, nixPath), ...passed, HOME: join(run, "home") };
 }
 
-export async function startHolder(run: string, project: string, executable: string, moonlight: string) {
+export async function startHolder(run: string, project: string, executable: string) {
   if (![run, project, executable].every(isAbsolute) || existsSync(join(run, "host"))) throw new Error("fresh absolute run directory required");
   mkdirSync(join(run, "units"), { recursive: true });
   mkdirSync(join(run, "home"), { recursive: true, mode: 0o700 });
@@ -45,7 +45,7 @@ export async function startHolder(run: string, project: string, executable: stri
   try {
     // The same isolated environment as the acceptance flow's host: no caller
     // KORRID_* value, HOME or XDG state reaches it.
-    holder = Bun.spawn([executable, join(run, "host"), "0", JSON.stringify([relay.url]), moonlight], {
+    holder = Bun.spawn([executable, join(run, "host"), "0", JSON.stringify([relay.url])], {
       env: holderEnvironment(run, project, process.env.PATH ?? "", process.env.NIX_PATH ?? "", process.env), stdout: log, stderr: log,
     });
   } catch (error) { closeSync(log); await relay.stop(); throw error; }
@@ -71,9 +71,9 @@ export async function startHolder(run: string, project: string, executable: stri
 }
 
 if (import.meta.main) {
-  const [run, project, executable, moonlight] = process.argv.slice(2);
-  if (!run || !project || !executable || !moonlight || process.argv.length !== 6) throw new Error("run project executable moonlight required");
-  const holder = await startHolder(run, project, executable, moonlight);
+  const [run, project, executable] = process.argv.slice(2);
+  if (!run || !project || !executable || process.argv.length !== 5) throw new Error("run project executable required");
+  const holder = await startHolder(run, project, executable);
   let stopping = false;
   const stop = async () => {
     if (stopping) return;

@@ -12,7 +12,7 @@ const owner = "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
 test.skipIf(!executable)("the holder serves, publishes its owner statement to its relay, and joins on stop", async () => {
   const run = mkdtempSync(join(tmpdir(), "android-app-holder-test-"));
   try {
-    const holder = await startHolder(run, project, executable!, "192.0.2.7:47989");
+    const holder = await startHolder(run, project, executable!);
     expect(holder.hostPort).toBeGreaterThan(0);
     expect(holder.relayPort).toBeGreaterThan(0);
     const deadline = Date.now() + 10_000;
@@ -22,14 +22,6 @@ test.skipIf(!executable)("the holder serves, publishes its owner statement to it
     expect(events).toHaveLength(1);
     expect(events[0].pubkey).toBe(owner);
     expect(events[0].tags).toContainEqual(["d", `org.korri.device-owner:${holder.hostKey}`]);
-  } finally { rmSync(run, { recursive: true, force: true }); }
-}, 30_000);
-
-test.skipIf(!executable)("a Moonlight address that cannot be published stops the holder before it is ready", async () => {
-  const run = mkdtempSync(join(tmpdir(), "android-app-holder-test-"));
-  try {
-    await expect(startHolder(run, project, executable!, "192.0.2.7:47989\n")).rejects.toThrow("holder startup failed");
-    expect(readFileSync(join(run, "holder.log"), "utf8")).toContain("the Moonlight address cannot be published");
   } finally { rmSync(run, { recursive: true, force: true }); }
 }, 30_000);
 
