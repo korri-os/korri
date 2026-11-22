@@ -18,24 +18,24 @@ pub(super) async fn object_route(
         Ok(event) => event,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
-    let authenticated = match state.authenticate(event, (state.clock)(), true).await {
+    let proof = binding.as_ref().map(|binding| {
+        (
+            &binding.0,
+            headers
+                .get(crate::federation::reach::http::ENDPOINT_HEADER)
+                .and_then(|value| value.to_str().ok()),
+        )
+    });
+    let authenticated = match state
+        .authenticate(event, (state.clock)(), true, proof)
+        .await
+    {
         Ok(authenticated) => authenticated,
         Err(PeerRpcError::Replay) => return StatusCode::CONFLICT.into_response(),
         Err(PeerRpcError::Unauthorized) => return StatusCode::FORBIDDEN.into_response(),
         Err(PeerRpcError::Time) => return StatusCode::UNAUTHORIZED.into_response(),
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
-    if let Some(binding) = binding {
-        if binding
-            .prove(
-                &authenticated.context,
-                authenticated.envelope.owner_statement.as_deref(),
-            )
-            .is_err()
-        {
-            return StatusCode::FORBIDDEN.into_response();
-        }
-    }
     let release = matches!(
         &authenticated.envelope.request,
         RpcRequest::ReleaseObject(_)

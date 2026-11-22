@@ -20,6 +20,7 @@ pub(super) const ALPN: &[u8] = b"korri/peer/1";
 #[derive(Clone, Default)]
 pub(crate) struct Routes {
     live: Arc<RwLock<BTreeMap<String, PeerConnection>>>,
+    admission: Arc<endpoint::Admission>,
     endpoint: Arc<tokio::sync::OnceCell<Endpoint>>,
     starting: Arc<std::sync::atomic::AtomicBool>,
     ready: Arc<tokio::sync::Notify>,
@@ -168,6 +169,28 @@ impl FederationDirectory {
     }
     pub(crate) async fn netplay_forward(&self, device: &str) -> io::Result<NetplayForward> {
         NetplayForward::open(self.reach_connection(device).await?).await
+    }
+    #[cfg(target_os = "android")]
+    pub(crate) async fn network_change(&self) {
+        if let Some(endpoint) = self.reach.endpoint.get() {
+            endpoint.network_change().await;
+        }
+    }
+    pub(crate) fn own_endpoint_event(&self, peer: &str) -> io::Result<String> {
+        let endpoint = self
+            .reach
+            .endpoint
+            .get()
+            .ok_or_else(|| io::Error::other("peer transport is not active"))?;
+        let record = self
+            .own_endpoint_record(endpoint.id())
+            .map_err(io::Error::other)?;
+        let identity = self
+            .credentials
+            .identity_snapshot()
+            .map_err(io::Error::other)?;
+        crate::relay::encode_endpoint(&identity, peer, &record, record.issued_at)
+            .map_err(io::Error::other)
     }
     pub(crate) async fn reach_connection(&self, device: &str) -> io::Result<Connection> {
         let peer = self

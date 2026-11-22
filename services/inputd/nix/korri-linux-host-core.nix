@@ -595,10 +595,6 @@ in
       "d ${runtimeHome}/.config :0700 ${cfg.runtimeUser} ${cfg.runtimeGroup} -"
     ];
 
-    networking.firewall.interfaces = lib.genAttrs cfg.firewallInterfaces (_: {
-      allowedTCPPorts = [ cfg.apiPort ];
-    });
-
     # Existing published socket, not a second compositor configuration.
     systemd.services.korrid.environment.KORRID_DISPLAYS = builtins.toJSON (
       map (

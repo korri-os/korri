@@ -146,8 +146,10 @@ let
     ((touchDisplay "DSI-2" 0 null) // { transform = "90"; })
     (touchDisplay "DSI-1" 480 null)
   ];
-  swayText = system: system.config.systemd.services.korri-compositor.environment.KORRI_SWAY_CONFIG.text;
-  displayFacts = system: builtins.fromJSON system.config.systemd.services.korrid.environment.KORRID_DISPLAYS;
+  swayText =
+    system: system.config.systemd.services.korri-compositor.environment.KORRI_SWAY_CONFIG.text;
+  displayFacts =
+    system: builtins.fromJSON system.config.systemd.services.korrid.environment.KORRID_DISPLAYS;
   missingDrmDevice = evaluate { services.korriLinuxHost.compositor.backend = "drm"; };
   wrongRuntimeUid = evaluate { users.users.korri.uid = lib.mkForce 1002; };
   cfg = valid.config;
@@ -173,13 +175,16 @@ assert allAssertionsPass touchUnmapped;
 assert touchRules touchUnmapped == [ ];
 assert hasFailedAssertion "touch must be an I2C touch controller's devicetree path" touchInvalid;
 assert allAssertionsPass turned;
-assert lib.hasInfix "workspace \"korri:game:active\"\noutput DSI-2 transform 90\n" (swayText turned);
+assert lib.hasInfix "workspace \"korri:game:active\"\noutput DSI-2 transform 90\n" (
+  swayText turned
+);
 assert !(lib.hasInfix "output DSI-1 transform" (swayText turned));
 assert !(lib.hasInfix "transform" (swayText touchUnmapped));
-assert map (display: display.transform) (displayFacts turned) == [
-  "90"
-  "normal"
-];
+assert
+  map (display: display.transform) (displayFacts turned) == [
+    "90"
+    "normal"
+  ];
 # The server part alone: no local capture, but streamed controllers still
 # get their seats and the uinput access the stream plugin needs.
 assert allAssertionsPass serverOnly;
@@ -190,15 +195,20 @@ assert serverCfg.users.groups ? uinput;
 # The bundle still carries this device's InputPlumber data, whose Korri
 # profile the bundle format requires, although the provider does not run.
 assert serverCfg.services.korriBundle.carriesDeviceInputPlumber;
-assert toString serverCfg.services.inputplumber.package == toString cfg.services.inputplumber.package;
+assert
+  toString serverCfg.services.inputplumber.package == toString cfg.services.inputplumber.package;
 # Plugin units such as Sunshine's require the source guard on every host.
 assert serverCfg.systemd.services ? korri-input-source-guard;
-assert builtins.elem "multi-user.target" serverCfg.systemd.services.korri-input-source-guard.wantedBy;
+assert builtins.elem "multi-user.target"
+  serverCfg.systemd.services.korri-input-source-guard.wantedBy;
 assert builtins.elem "uhid" serverCfg.boot.kernelModules;
-assert lib.hasInfix ''OWNER="root", GROUP="uinput", MODE="0660"'' serverCfg.services.udev.extraRules;
-assert !(lib.hasInfix ''GROUP="uinput", MODE="0660"'' (
-  lib.replaceStrings [ ''OWNER="korri-inputd", GROUP="uinput", MODE="0660"'' ] [ "" ] cfg.services.udev.extraRules
-));
+assert lib.hasInfix ''OWNER="root", GROUP="uinput", MODE="0660"''
+  serverCfg.services.udev.extraRules;
+assert
+  !(lib.hasInfix ''GROUP="uinput", MODE="0660"'' (
+    lib.replaceStrings [ ''OWNER="korri-inputd", GROUP="uinput", MODE="0660"'' ] [ "" ]
+      cfg.services.udev.extraRules
+  ));
 assert cfg.services.korriBundle.enable;
 assert cfg.services.korriLinuxInput.provider.enable;
 assert cfg.services.korriLinuxInput.inputd.enable;
@@ -267,21 +277,23 @@ assert builtins.elem "korri-compositor.service" korrid.bindsTo;
 assert builtins.elem "korri-compositor.service" korrid.requires;
 assert builtins.elem "korri-compositor.service" korrid.after;
 assert (builtins.head (builtins.fromJSON korrid.environment.KORRID_DISPLAYS)).unwatched == false;
-assert (builtins.head (builtins.fromJSON korrid.environment.KORRID_DISPLAYS)).mode == "1920x1080@60Hz";
-assert (builtins.fromJSON unwatched.config.systemd.services.korrid.environment.KORRID_DISPLAYS) == [
-  {
-    name = "HEADLESS-1";
-    main = true;
-    unwatched = true;
-    mode = "1920x1080@120Hz";
-    x = 0;
-    y = 0;
-    width = 1920;
-    height = 1080;
-    touch = null;
-    transform = "normal";
-  }
-];
+assert
+  (builtins.head (builtins.fromJSON korrid.environment.KORRID_DISPLAYS)).mode == "1920x1080@60Hz";
+assert
+  (builtins.fromJSON unwatched.config.systemd.services.korrid.environment.KORRID_DISPLAYS) == [
+    {
+      name = "HEADLESS-1";
+      main = true;
+      unwatched = true;
+      mode = "1920x1080@120Hz";
+      x = 0;
+      y = 0;
+      width = 1920;
+      height = 1080;
+      touch = null;
+      transform = "normal";
+    }
+  ];
 assert cfg.services.korridLinuxDevice.compositorControlDirectory == "/run/korri-compositor";
 assert korrid.environment.KORRID_COMPOSITOR_CONTROL_DIRECTORY == "/run/korri-compositor";
 assert korrid.environment.KORRID_COMPOSITOR_WAYLAND_SOCKET == "/run/user/1000/korri-wayland";
@@ -290,6 +302,10 @@ assert korrid.environment.HOSTNAME == "consumer";
 assert builtins.elem "/var/lib/korrid" korrid.serviceConfig.ReadWritePaths;
 assert inputd.serviceConfig.User == "korri-inputd";
 assert !(builtins.elem 39217 cfg.networking.firewall.allowedTCPPorts);
+assert
+  !(builtins.elem cfg.services.korriLinuxHost.apiPort (
+    cfg.networking.firewall.interfaces.tailscale0.allowedTCPPorts or [ ]
+  ));
 assert builtins.elem 39217 cfg.networking.firewall.allowedUDPPorts;
 assert cfg.services.korridLinuxDevice.address == "127.0.0.1:39217";
 assert builtins.hasAttr "workspace-next" cfg.services.korriLinuxInput.inputd.actions;

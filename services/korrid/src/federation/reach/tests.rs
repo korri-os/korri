@@ -197,6 +197,7 @@ async fn key_only_connection_carries_signed_peer_rpc_and_rejects_local_authority
             responses: tokio::sync::broadcast::channel(64).0,
         },
     );
+    devices.da.reach.endpoint.set(a.clone()).unwrap();
     let client = crate::upstream_native::NativeClient::new_secure_candidates(
         Vec::new(),
         devices.cb.public_key().unwrap(),
@@ -212,6 +213,7 @@ async fn key_only_connection_carries_signed_peer_rpc_and_rejects_local_authority
         &outgoing,
         "/rpc",
         "{\"_tag\":\"system.health\"}".into(),
+        None,
         None,
     )
     .await
@@ -323,7 +325,7 @@ async fn first_signed_http_contact_binds_an_unknown_caller_before_stream_channel
         .unwrap();
     let mut tampered: serde_json::Value = serde_json::from_str(&signed.event_json).unwrap();
     tampered["sig"] = "00".repeat(64).into();
-    let response = http::post(&outgoing, "/peer-rpc", tampered.to_string(), None)
+    let response = http::post(&outgoing, "/peer-rpc", tampered.to_string(), None, None)
         .await
         .unwrap();
     assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
@@ -525,6 +527,15 @@ async fn later_peer_rpc_reconnects_after_a_closed_connection_is_evicted() {
             .is_err(),
         "closure alone must not cause a background dial"
     );
+    assert!(peer.client.session_status_on(&old).await.is_err());
+    assert!(
+        peer.devices.da.reach.live.read().unwrap().is_empty(),
+        "a session poll must not dial after closure"
+    );
+    assert!(matches!(
+        peer.accepted.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+    ));
     peer.client.session_status().await.unwrap();
     peer.accepted().await;
     let new = peer
@@ -650,4 +661,188 @@ async fn old_close_observer_does_not_evict_or_fail_a_new_connection() {
     b.close().await;
     c.close().await;
     d.close().await;
+}
+
+#[tokio::test]
+async fn a_replayed_signed_rpc_from_another_endpoint_does_not_bind() {
+    let devices = Devices::new();
+    let (attacker, receiver, outgoing, incoming) = pair().await;
+    let rightful = endpoint().await;
+    devices.da.reach.endpoint.set(rightful.clone()).unwrap();
+    devices._db.reach.router.set(devices.router()).unwrap();
+    devices._db.reach.endpoint.set(receiver.clone()).unwrap();
+    endpoint::admit(devices._db.clone(), None, incoming);
+    let stolen = devices
+        .ca
+        .encode_request(
+            &devices.cb.public_key().unwrap(),
+            crate::RpcRequest::SessionStatus(crate::SessionStatusRequest {}),
+            unix_time(),
+        )
+        .unwrap();
+    let proof = devices
+        .da
+        .own_endpoint_event(&devices.cb.public_key().unwrap())
+        .unwrap();
+    // Neither a captured RPC by itself nor its device's captured endpoint record
+    // proves ownership of the attacker's different transport key.
+    for event in [None, Some(proof.as_str())] {
+        let response = http::post(
+            &outgoing,
+            "/peer-rpc",
+            stolen.event_json.clone(),
+            None,
+            event,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !response.status().is_success(),
+            "proof must name the authenticated QUIC EndpointId"
+        );
+        assert!(!devices
+            ._db
+            .has_peer_connection(&devices.ca.public_key().unwrap()));
+        let (mut send, mut recv) = outgoing.open_bi().await.unwrap();
+        send.write_all(&[2]).await.unwrap();
+        use tokio::io::AsyncReadExt;
+        assert!(
+            recv.read_u8().await.is_err(),
+            "replayed RPC must not open netplay"
+        );
+    }
+    rightful
+        .address_lookup()
+        .unwrap()
+        .add(iroh::address_lookup::memory::MemoryLookup::from_endpoint_info([receiver.addr()]));
+    let (legitimate, accepted) = tokio::join!(rightful.connect(receiver.id(), ALPN), async {
+        receiver.accept().await.unwrap().await.unwrap()
+    });
+    let legitimate = legitimate.unwrap();
+    endpoint::admit(devices._db.clone(), None, accepted);
+    // Failed channel proof must not consume the legitimate request's nonce.
+    let response = http::post(
+        &legitimate,
+        "/peer-rpc",
+        stolen.event_json,
+        None,
+        Some(&proof),
+    )
+    .await
+    .unwrap();
+    assert!(response.status().is_success());
+    assert_eq!(
+        devices
+            ._db
+            .reach_connection(&devices.ca.public_key().unwrap())
+            .await
+            .unwrap()
+            .remote_id(),
+        rightful.id()
+    );
+    let (mut send, mut recv) = legitimate.open_bi().await.unwrap();
+    send.write_all(&[2]).await.unwrap();
+    use tokio::io::AsyncReadExt;
+    assert!(
+        recv.read_u8().await.is_ok(),
+        "matching proof must enable netplay"
+    );
+    attacker.close().await;
+    rightful.close().await;
+    receiver.close().await;
+}
+
+#[tokio::test]
+async fn an_idle_unbound_connection_closes_after_its_proof_deadline() {
+    let devices = Devices::new();
+    let (receiver, task) = listen(devices._db.clone(), devices.router()).await;
+    let caller = endpoint().await;
+    caller
+        .address_lookup()
+        .unwrap()
+        .add(iroh::address_lookup::memory::MemoryLookup::from_endpoint_info([receiver.addr()]));
+    let connection = caller.connect(receiver.id(), ALPN).await.unwrap();
+    timeout(Duration::from_secs(11), connection.closed())
+        .await
+        .expect("unbound connection must have a proof deadline");
+    task.abort();
+    caller.close().await;
+    receiver.close().await;
+}
+
+/// Compose real signed discovery with an isolated iroh address lookup.
+pub(crate) async fn remember_peer(directory: &FederationDirectory, peer: &FederationDirectory) {
+    async fn ready(directory: &FederationDirectory) -> Endpoint {
+        timeout(Duration::from_secs(5), async {
+            loop {
+                if let Some(endpoint) = directory.reach.endpoint.get() {
+                    break endpoint.clone();
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap()
+    }
+    ready(directory).await;
+    let endpoint = ready(peer).await;
+    learn(directory, &endpoint);
+    let identity = peer.credentials.identity_snapshot().unwrap();
+    directory
+        .apply_membership(
+            &directory.begin_work().unwrap(),
+            &[identity.owner_statement_json().unwrap()],
+        )
+        .unwrap();
+    let event = peer
+        .own_endpoint_event(&directory.credentials.public_key().unwrap())
+        .unwrap();
+    directory
+        .apply_endpoint_event(&directory.begin_work().unwrap(), &event)
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sixty_five_idle_unbound_connections_do_not_block_a_member() {
+    let devices = Devices::new();
+    let (member, member_task) = listen(
+        devices.da.clone(),
+        Devices::router_on(devices._a.path(), devices.ca.clone()),
+    )
+    .await;
+    // Exercise the production accept loop, not only the admission helper.
+    let server = endpoint::start(devices.b.path(), devices._db.clone(), devices.router()).unwrap();
+    remember_peer(&devices.da, &devices._db).await;
+    remember_peer(&devices._db, &devices.da).await;
+    let receiver = devices._db.reach.endpoint.get().unwrap().clone();
+    let mut idle = Vec::new();
+    for _ in 0..65 {
+        let caller = endpoint().await;
+        caller
+            .address_lookup()
+            .unwrap()
+            .add(iroh::address_lookup::memory::MemoryLookup::from_endpoint_info([receiver.addr()]));
+        let connection = caller.connect(receiver.id(), ALPN).await;
+        idle.push((caller, connection));
+    }
+    assert_eq!(devices._db.reach.admission.unbound.available_permits(), 0);
+    let client = crate::upstream_native::NativeClient::new_secure_candidates(
+        Vec::new(),
+        devices.cb.public_key().unwrap(),
+        devices.ca.clone(),
+    )
+    .with_directory(devices.da.clone());
+    timeout(Duration::from_secs(5), client.session_status())
+        .await
+        .expect("idle strangers must not occupy member slots")
+        .unwrap();
+    assert!(devices
+        ._db
+        .has_peer_connection(&devices.ca.public_key().unwrap()));
+    for (caller, _) in idle {
+        caller.close().await;
+    }
+    member_task.abort();
+    member.close().await;
+    drop(server);
 }

@@ -2,6 +2,9 @@
 
 #[cfg(target_os = "android")]
 mod android;
+#[cfg(any(target_os = "android", test))]
+#[path = "android/network_change.rs"]
+mod android_network_change;
 /// The Android app with no Korri Java starts korrid here (`clients/android-app`).
 #[cfg(target_os = "android")]
 pub use android::app as android_app;
@@ -6730,6 +6733,8 @@ pub struct EmbeddedPlatform {
     pub native_input: Option<EmbeddedNativeInput>,
     pub owner_binding: Option<owner_binding::OwnerBindingCoordinator>,
     pub(crate) viewer: Option<Arc<dyn linux_viewer::LinuxStreamViewer>>,
+    #[cfg(target_os = "android")]
+    pub(crate) network_changes: Option<android_network_change::Reader>,
 }
 
 /// Start an embedded brain for the native local shell. Derive its canonical
@@ -6820,6 +6825,8 @@ fn start_local_server_for_platform(
     let relay_config = moonlight_config_snapshot.clone();
     let product_relays = platform.relays;
     let native_input = platform.native_input;
+    #[cfg(target_os = "android")]
+    let network_changes = platform.network_changes;
     let owner_binding = platform.owner_binding;
     let server_owner_binding = owner_binding.clone();
     let (federation_wake, discovery) = Discovery::new(
@@ -6890,9 +6897,12 @@ fn start_local_server_for_platform(
                 .expect("load embedded peer authority");
                 let reach = federation::reach::start(
                     Path::new(&private_state_root),
-                    peer_resources.directory,
+                    peer_resources.directory.clone(),
                     peer.iroh_router(),
                 );
+                #[cfg(target_os = "android")]
+                let network_changes = network_changes
+                    .map(|reader| tokio::spawn(reader.run(peer_resources.directory)));
                 let watch_surfaces = Arc::clone(&surfaces);
                 let server = axum::serve(
                     surface_host_input::low_latency_listener(listener),
@@ -6916,6 +6926,11 @@ fn start_local_server_for_platform(
                     })
                 });
                 let result = server.await;
+                #[cfg(target_os = "android")]
+                if let Some(task) = network_changes {
+                    task.abort();
+                    let _ = task.await;
+                }
                 if let Some(task) = input_task {
                     task.abort();
                     let _ = task.await;

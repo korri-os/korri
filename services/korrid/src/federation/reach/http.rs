@@ -9,6 +9,8 @@ use hyper_util::rt::TokioIo;
 use iroh::endpoint::Connection;
 use std::io;
 
+pub(crate) const ENDPOINT_HEADER: &str = "x-korri-endpoint";
+
 pub(crate) enum Response {
     Tcp(reqwest::Response),
     Quic(hyper::Response<hyper::body::Incoming>),
@@ -57,6 +59,7 @@ pub(crate) async fn post(
     path: &str,
     body: String,
     range: Option<String>,
+    endpoint_event: Option<&str>,
 ) -> io::Result<Response> {
     let (mut send, recv) = connection.open_bi().await.map_err(io::Error::other)?;
     send.write_all(&[0]).await.map_err(io::Error::other)?;
@@ -72,6 +75,9 @@ pub(crate) async fn post(
     let mut request = hyper::Request::post(path)
         .header(hyper::header::HOST, "peer")
         .header(hyper::header::CONTENT_TYPE, "application/json");
+    if let Some(event) = endpoint_event {
+        request = request.header(ENDPOINT_HEADER, event);
+    }
     if let Some(range) = range {
         request = request.header(hyper::header::RANGE, range);
     }

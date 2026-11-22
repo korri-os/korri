@@ -12,16 +12,17 @@ fn binding_refreshes_existing_clients_without_rotating_port_and_stop_joins_block
     let private = tempfile::tempdir().unwrap();
     fs::set_permissions(private.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let peer_root = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(peer_root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let owner = Keys::generate();
     let peer = peer_rpc::test_owned_identity(peer_root.path(), &"61".repeat(32), &owner.secret_key().to_secret_hex());
     let config = readable.path().join("host.toml");
     fs::write(&config, "label = \"Peer\"\n[[games]]\nid = \"game\"\ntitle = \"Game\"\ncommand = [\"game\"]\n").unwrap();
-    let host_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let host_address = host_listener.local_addr().unwrap();
+    let resources = FederationResources::open(peer_root.path()).unwrap();
     let runtime = host::HostRuntime::from_paths_with_backend(&config, None, peer_root.path().to_owned(), Arc::new(host::control::InMemoryLaunchUnitBackend::default()));
-    let router = secure_host_routers(runtime, peer_root.path(), None).0;
-    let host = tokio::spawn(async move { axum::serve(host_listener, router).await.unwrap(); });
-    fs::write(readable.path().join("upstreams.json"), serde_json::json!([{"kind":"native", "label":"Peer", "baseUrl":format!("http://{host_address}"), "devicePublicKey":peer.device_public_key(), "moonlightAddress":"peer:47989"}]).to_string()).unwrap();
+    let (app, _) = app_states(runtime);
+    let router = peer_rpc::PeerRpcServer::with_shared_authority(app, peer_root.path(), resources.credentials.clone(), resources.authorization.clone()).unwrap().iroh_router();
+    let (endpoint, host) = federation::reach::tests::listen(resources.directory.clone(), router).await;
+    fs::write(readable.path().join("upstreams.json"), serde_json::json!([{"kind":"native", "label":"Peer", "baseUrl":"http://127.0.0.1:9", "devicePublicKey":peer.device_public_key(), "moonlightAddress":"peer:47989"}]).to_string()).unwrap();
     let relay_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     fs::write(readable.path().join("device.yaml"), format!("host:\n  relays:\n    - ws://{}\n", relay_listener.local_addr().unwrap())).unwrap();
     let port = start_local_server_for_platform(readable.path().to_str().unwrap(), private.path().to_str().unwrap(), plugin_policy::RegistrySource::Installed, EmbeddedPlatform::default()).unwrap();
@@ -43,6 +44,8 @@ fn binding_refreshes_existing_clients_without_rotating_port_and_stop_joins_block
     assert!(matches!(credentials.identity_snapshot().unwrap().state(), identity::IdentityState::Owned { .. }));
     assert_eq!(local_server_port(), Some(port));
     assert_eq!(local_server_capability(), Some(capability.clone()));
+    let local = server_slot().lock().unwrap().as_ref().unwrap().federation.directory.clone();
+    federation::reach::tests::remember_peer(&local, &resources.directory).await;
     let response = reqwest::Client::new().post(format!("http://127.0.0.1:{port}/rpc")).bearer_auth(&capability).json(&serde_json::json!({"_tag":"app.catalog.snapshot", "payload":{}})).send().await.unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     // The peer's one game, through the brain's upstream registry.
@@ -54,6 +57,7 @@ fn binding_refreshes_existing_clients_without_rotating_port_and_stop_joins_block
     assert_eq!(local_server_port(), None);
     host.abort();
     let _ = host.await;
+    endpoint.close().await;
     });
 }
 

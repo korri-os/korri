@@ -603,6 +603,7 @@ impl PeerRpcServer {
         event_json: &str,
         now: u64,
         object_route: bool,
+        proof: Option<(&crate::federation::reach::Binding, Option<&str>)>,
     ) -> Result<AuthenticatedPeerRequest, PeerRpcError> {
         let verified = DeviceIdentity::verify_encrypted_event(event_json)
             .map_err(|_| PeerRpcError::Invalid)?;
@@ -653,6 +654,13 @@ impl PeerRpcServer {
         }
         authorization::authorize(attempt.context(), &envelope.request)
             .map_err(|_| PeerRpcError::Unauthorized)?;
+        if let Some((binding, endpoint_event)) = proof {
+            binding.prove(
+                attempt.context(),
+                envelope.owner_statement.as_deref(),
+                endpoint_event,
+            )?;
+        }
         self.replay.consume(
             &verified.author,
             &envelope.nonce,
@@ -679,13 +687,13 @@ impl PeerRpcServer {
         now: u64,
         admission: Option<&AdmissionPermit>,
     ) -> Result<String, PeerRpcError> {
-        let authenticated = self.authenticate(event_json, now, false).await?;
-        if let Some(binding) = admission.and_then(|admission| admission.binding.as_ref()) {
-            binding.prove(
-                &authenticated.context,
-                authenticated.envelope.owner_statement.as_deref(),
-            )?;
-        }
+        let proof = admission.and_then(|admission| {
+            admission
+                .binding
+                .as_ref()
+                .map(|binding| (binding, admission.endpoint_event.as_deref()))
+        });
+        let authenticated = self.authenticate(event_json, now, false, proof).await?;
         // Admission bounds buffered unauthenticated bodies and verification.
         // An authenticated request's own work must not hold a permit.
         if let Some(admission) = admission {
@@ -837,6 +845,11 @@ async fn limit_peer_request(
     // Held until the handler releases it or the request completes.
     let admission = AdmissionPermit {
         permit: Arc::new(Mutex::new(Some(permit))),
+        endpoint_event: request
+            .headers()
+            .get(crate::federation::reach::http::ENDPOINT_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned),
         binding: request
             .extensions()
             .get::<crate::federation::reach::Binding>()
@@ -866,6 +879,7 @@ async fn limit_peer_request(
 struct AdmissionPermit {
     permit: Arc<Mutex<Option<tokio::sync::OwnedSemaphorePermit>>>,
     binding: Option<crate::federation::reach::Binding>,
+    endpoint_event: Option<String>,
 }
 
 impl AdmissionPermit {

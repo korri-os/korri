@@ -449,6 +449,29 @@ impl NativeClient {
         )
     }
 
+    /// A session observes only its captured connection. This path cannot dial.
+    pub(crate) async fn session_status_on(
+        &self,
+        connection: &iroh::endpoint::Connection,
+    ) -> Result<UpstreamSessionStatus, UpstreamError> {
+        self.ensure_not_revoked()?;
+        if connection.close_reason().is_some() {
+            return Err(UpstreamError::Tagged {
+                code: "PeerConnectionGone".into(),
+                message: "Peer connection is gone. Leave or end this session.".into(),
+            });
+        }
+        let result = self
+            .send_request(
+                &RpcRequest::SessionStatus(SessionStatusRequest {}),
+                &AtomicBool::new(false),
+                Some(connection),
+            )
+            .await;
+        self.ensure_not_revoked()?;
+        Self::session_status_response(result?)
+    }
+
     /// Idle invite discovery is not a federation health probe. Keep peer
     /// authentication and revocation checks, without starting or completing a
     /// directory observation (which would also supersede genuine peer work).
@@ -460,6 +483,7 @@ impl NativeClient {
             .send_request(
                 &RpcRequest::SessionStatus(SessionStatusRequest {}),
                 &AtomicBool::new(false),
+                None,
             )
             .await;
         self.ensure_not_revoked()?;
@@ -637,7 +661,9 @@ impl NativeClient {
     pub(crate) async fn call(&self, request: RpcRequest) -> Result<RpcResponse, UpstreamError> {
         #[cfg(test)]
         if self.credentials.is_none() {
-            return self.send_request(&request, &AtomicBool::new(false)).await;
+            return self
+                .send_request(&request, &AtomicBool::new(false), None)
+                .await;
         }
         let key = self
             .expected_peer_public_key
@@ -670,7 +696,7 @@ impl NativeClient {
             None
         };
         let answered = AtomicBool::new(false);
-        let result = self.send_request(&request, &answered).await;
+        let result = self.send_request(&request, &answered, None).await;
         let result = match result {
             // Preserve the reply evidence for callers such as the background
             // liveness probe, not only for this directory update.
@@ -711,6 +737,7 @@ impl NativeClient {
         &self,
         request: &RpcRequest,
         answered: &AtomicBool,
+        captured: Option<&iroh::endpoint::Connection>,
     ) -> Result<RpcResponse, UpstreamError> {
         #[cfg(test)]
         if self.credentials.is_none() {
@@ -723,16 +750,19 @@ impl NativeClient {
                 .map_err(|error| UpstreamError::Unreachable(error.to_string()))?;
             return read_plain_test_response(response).await;
         }
-        self.call_candidates(request, answered).await
+        self.call_candidates(request, answered, captured).await
     }
 
     async fn call_candidates(
         &self,
         request: &RpcRequest,
         answered: &AtomicBool,
+        captured: Option<&iroh::endpoint::Connection>,
     ) -> Result<RpcResponse, UpstreamError> {
         self.ensure_not_revoked()?;
-        let connection = if let (Some(directory), Some(key)) =
+        let connection = if let Some(connection) = captured {
+            Some(connection.clone())
+        } else if let (Some(directory), Some(key)) =
             (&self.directory, &self.expected_peer_public_key)
         {
             Some(directory.reach_connection(key).await.map_err(|error| {
@@ -834,11 +864,18 @@ impl NativeClient {
         let encoded = credentials.encode_request(expected_peer_public_key, request, unix_time());
         let encoded = encoded.map_err(|error| UpstreamError::Wire(error.to_string()))?;
         let response = if let Some(connection) = connection {
+            let proof = self
+                .directory
+                .as_ref()
+                .ok_or_else(|| UpstreamError::Wire("peer directory unavailable".into()))?
+                .own_endpoint_event(expected_peer_public_key)
+                .map_err(|_| UpstreamError::Wire("endpoint proof unavailable".into()))?;
             crate::federation::reach::http::post(
                 connection,
                 rpc_url,
                 encoded.event_json.clone(),
                 None,
+                Some(&proof),
             )
             .await
             .map_err(|_| AttemptFailure {
@@ -1085,11 +1122,15 @@ impl NativeClient {
             .reach_connection(peer)
             .await
             .map_err(|_| UpstreamError::Wire("netplay route unavailable".into()))?;
+        let proof = directory
+            .own_endpoint_event(peer)
+            .map_err(|_| UpstreamError::Wire("endpoint proof unavailable".into()))?;
         let response = crate::federation::reach::http::post(
             &connection,
             "/peer-releases-object",
             request.event_json,
             None,
+            Some(&proof),
         )
         .await
         .map_err(|_| UpstreamError::Wire("release copy failed".into()))?;

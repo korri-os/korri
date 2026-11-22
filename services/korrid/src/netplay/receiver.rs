@@ -524,10 +524,11 @@ async fn monitor(
     let mut native_exit_deadline = None;
     // Keep the in-flight poll across transport ticks. A loaded holder must not
     // delay connection-loss detection.
+    let connection = copy.forward.connection();
     let observations = futures::stream::unfold(&peer, |peer| async move {
         tokio::time::sleep(MONITOR_INTERVAL).await;
         Some((
-            tokio::time::timeout(STATUS_TIMEOUT, peer.session_status()).await,
+            tokio::time::timeout(STATUS_TIMEOUT, peer.session_status_on(connection)).await,
             peer,
         ))
     });

@@ -201,7 +201,7 @@ fn path_child() {
                 let connection = endpoint.connect(id, ALPN).await.unwrap();
                 let stable = connection.stable_id();
                 async fn call(connection: &iroh::endpoint::Connection) {
-                    let mut response = http::post(connection, "/peer-rpc", "{}".into(), None)
+                    let mut response = http::post(connection, "/peer-rpc", "{}".into(), None, None)
                         .await
                         .unwrap();
                     let mut bytes = Vec::new();

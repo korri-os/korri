@@ -864,38 +864,9 @@ where
         now: u64,
     ) -> BoxFuture<'a, Result<PublishState, RelayError>> {
         Box::pin(async move {
-            endpoint.validate(now)?;
-            validate_public_key(recipient_device_public_key)?;
-            if endpoint.device_public_key
-                != self
-                    .identity
-                    .device_public_key()
-                    .ok_or(RelayError::Identity)?
-                || endpoint.owner_public_key != self.owner_public_key()?
-            {
-                return Err(RelayError::InvalidEvent(
-                    "endpoint record does not bind the publishing identity".into(),
-                ));
-            }
-            let plaintext = serde_json::to_string(&endpoint)
-                .map_err(|_| RelayError::InvalidEvent("endpoint cannot be encoded".into()))?;
-            let event = self
-                .identity
-                .encrypt_tagged_event(
-                    recipient_device_public_key,
-                    ENDPOINT_EVENT_KIND,
-                    vec![
-                        vec![
-                            "d".into(),
-                            format!("{ENDPOINT_EVENT_PREFIX}{recipient_device_public_key}"),
-                        ],
-                        vec!["p".into(), recipient_device_public_key.into()],
-                    ],
-                    &plaintext,
-                    now,
-                )
-                .map_err(|_| RelayError::Identity)?;
-            Ok(self.publish_json(&event.json).await)
+            let event =
+                encode_endpoint(&self.identity, recipient_device_public_key, &endpoint, now)?;
+            Ok(self.publish_json(&event).await)
         })
     }
 
@@ -1048,6 +1019,44 @@ fn owner_chain(
         current = DeviceIdentity::verify_event(json).ok()?;
     }
     None
+}
+
+pub(crate) fn encode_endpoint(
+    identity: &DeviceIdentity,
+    recipient: &str,
+    endpoint: &EndpointRecord,
+    now: u64,
+) -> Result<String, RelayError> {
+    endpoint.validate(now)?;
+    validate_public_key(recipient)?;
+    let owner = match identity.state() {
+        IdentityState::Owned {
+            owner_public_key, ..
+        } => owner_public_key,
+        _ => return Err(RelayError::Identity),
+    };
+    if Some(endpoint.device_public_key.as_str()) != identity.device_public_key()
+        || endpoint.owner_public_key != *owner
+    {
+        return Err(RelayError::InvalidEvent(
+            "endpoint record does not bind the publishing identity".into(),
+        ));
+    }
+    let plaintext = serde_json::to_string(endpoint)
+        .map_err(|_| RelayError::InvalidEvent("endpoint cannot be encoded".into()))?;
+    identity
+        .encrypt_tagged_event(
+            recipient,
+            ENDPOINT_EVENT_KIND,
+            vec![
+                vec!["d".into(), format!("{ENDPOINT_EVENT_PREFIX}{recipient}")],
+                vec!["p".into(), recipient.into()],
+            ],
+            &plaintext,
+            now,
+        )
+        .map(|event| event.json)
+        .map_err(|_| RelayError::Identity)
 }
 
 pub(crate) fn decode_endpoint(
@@ -3848,7 +3857,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_stale_wrong_recipient_and_malformed_events() {
+    async fn old_bindings_remain_valid_but_wrong_recipient_and_malformed_events_do_not() {
         let (relays, network, first, second, owner) = setup();
         let publisher =
             CoordinatedRelays::new(relays.clone(), first.clone(), network.clone()).unwrap();
@@ -3870,8 +3879,28 @@ mod tests {
             .await
             .unwrap();
         assert!(network.inject(&relays.as_slice()[0], "{bad").is_err());
+        let recipient = second.device_public_key().unwrap();
+        let malformed = first
+            .encrypt_tagged_event(
+                recipient,
+                ENDPOINT_EVENT_KIND,
+                vec![
+                    vec!["d".into(), format!("{ENDPOINT_EVENT_PREFIX}{recipient}")],
+                    vec!["p".into(), recipient.into()],
+                ],
+                "{bad",
+                101,
+            )
+            .unwrap();
+        network
+            .inject(&relays.as_slice()[0], &malformed.json)
+            .unwrap();
         let snapshot = reader.receive(701).await.unwrap();
         assert_eq!(snapshot.endpoints.len(), 1);
+        assert_eq!(
+            snapshot.endpoints[0].record.issued_at, 100,
+            "key bindings do not expire"
+        );
         assert!(snapshot.rejected_events >= 1);
     }
 

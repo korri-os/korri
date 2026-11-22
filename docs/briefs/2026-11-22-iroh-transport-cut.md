@@ -16,11 +16,18 @@ The parent clarified the first-contact boundary during implementation:
 
 - An incoming connection can carry signed peer HTTP before its caller appears
   in the receiving device's records.
-- The existing peer signature, owner/vouch authorization and replay checks
-  must pass before the connection gains stream authority.
-- That proof adds the existing signed membership statement to the roster and
-  binds the verified device key to iroh's authenticated remote EndpointId on
-  that same connection. The connection cache stores this in-band binding.
+- The caller presents its own encrypted, device-signed endpoint event in the
+  `x-korri-endpoint` HTTP header. Relay publication and this proof share one
+  record producer and the existing generation/timestamp reservation.
+- The existing peer signature and owner/vouch authorization must pass. The
+  endpoint event must name that device and owner, and its `endpointId` must
+  equal the connection's authenticated `remote_id`. An RPC signature alone
+  proves no transport binding. A replay from another EndpointId is rejected
+  before consuming the RPC nonce.
+- Valid proof adds the signed membership statement and endpoint event to the
+  directory, then binds the connection. A superseded endpoint binding cannot
+  replace the directory's newer key. Both Sunshine and netplay remain closed
+  until this proof succeeds.
 - A signed endpoint record can establish the binding before the first request.
 - Sunshine, UDP and netplay channels reject an unbound connection. Membership
   revocation closes a bound connection; it does not start another connection.
@@ -47,12 +54,24 @@ The product opens UDP 39217 and multicast UDP 5353. It no longer exposes TCP
 39217. The HTTP listener binds loopback for the local shell; peer HTTP travels
 inside iroh. Android uses an ephemeral UDP port and has no Nix firewall.
 
+Handshakes have 64 slots and a 10 s deadline; a completed handshake releases
+its slot. Unbound connections have a separate 8-slot budget and must prove
+their endpoint within 10 s or close. Established members have 64 separate
+slots, so idle strangers cannot fill them. Valid proof releases the unbound
+slot immediately.
+
+Android's netwatch 0.19.3 monitor does not emit network changes. A small Rust
+JNI bridge reads the active network handle and link addresses every 2 s.
+Only a change calls `Endpoint::network_change()`. It has no candidate list,
+metering rule or path choice. Its task is joined at embedded-server shutdown.
+
 A connection loss is terminal for the stream session that used it, not for the
 peer. The closed connection is evicted. A later RPC, save request or new stream
 dials the peer by key on demand. Concurrent callers share the per-peer dial
 lock and one new connection; there is no background retry loop. The old session
 keeps its old lease and reports failure once. Its status watcher does not dial
-again. Netplay does not replace its forward or relaunch RetroArch after loss.
+again. Netplay polls only its captured connection, with no dial operation,
+and does not replace its forward or relaunch RetroArch after loss.
 
 ## One-off deployment migration
 

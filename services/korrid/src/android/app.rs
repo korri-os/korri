@@ -7,7 +7,7 @@
 //! | The Artemis app's Java | Here |
 //! | --- | --- |
 //! | `KorriBrainService.ensureRunning`, `privateStateRoot` | [`start`], once per process; `android_storage` |
-//! | `KorridNetwork.snapshot` | removed; iroh observes network changes itself (ADR 0095) |
+//! | `KorridNetwork.snapshot` | `network_change.rs` forwards active-network changes to iroh (ADR 0095) |
 //! | `KorriStreamViewer` (`viewer*` callbacks) | the app's own Rust viewer, which [`start`] takes (slice D10); it provisions its client certificate with [`provision_moonlight_certificate`] |
 //! | `KorriStreamViewer.leave` (`KorridServer.leaveViewer`) | [`leave_viewer`], when the person opens the gameplay overlay (slice D5b) |
 //! | `KorriAppLauncher` (local Android games, ADR 0054) | none until slice D13 |
@@ -88,6 +88,9 @@ pub fn start(
         relays: Some(relays),
         owner_binding: Some(crate::owner_binding::OwnerBindingCoordinator::default()),
         viewer: Some(viewer),
+        network_changes: Some(
+            crate::android_network_change::Reader::new(env, &context).map_err(jni)?,
+        ),
     };
     // ADR 0054: plugins live in app storage; korrid installs them itself.
     crate::nixfree_install::use_android_store(Path::new(&private_state_root));

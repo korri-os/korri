@@ -26,6 +26,7 @@ fn embedded_watch_authenticates_and_pushes_federated_loading_ready_and_acked_upd
         let owner = nostr::key::Keys::generate();
         let owner_secret = owner.secret_key().to_secret_hex();
         let peer_root = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(peer_root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
         let peer_identity =
             peer_rpc::test_owned_identity(peer_root.path(), &"11".repeat(32), &owner_secret);
         let peer_key = peer_identity.device_public_key().unwrap().to_owned();
@@ -61,21 +62,20 @@ command = ["never-run"]
                 }
             },
         ));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let peer_url = format!("http://{}", listener.local_addr().unwrap());
-        let _peer = Serving(tokio::spawn(async move {
-            axum::serve(listener, router).await.unwrap();
-        }));
+        let resources = FederationResources::open(peer_root.path()).unwrap();
+        let (endpoint, serving) =
+            federation::reach::tests::listen(resources.directory.clone(), router).await;
+        let _peer = Serving(serving);
         let readable = tempfile::tempdir().unwrap();
         // Existing UpstreamHostConfig serde shape, with the real peer's key.
         std::fs::write(
             readable.path().join("upstreams.json"),
             serde_json::to_vec(&serde_json::json!([{
-                "label": "Other device", "kind": "native", "baseUrl": peer_url,
+                "label": "Other device", "kind": "native", "baseUrl": "http://127.0.0.1:9",
                 "devicePublicKey": peer_key,
                 // Secure static records require this metadata (upstreams::build).
                 // Only catalog RPC is exercised; no Moonlight connection is made.
-                "moonlightAddress": peer_url.strip_prefix("http://").unwrap()
+                "moonlightAddress": "peer:47989"
             }]))
             .unwrap(),
         )
@@ -91,6 +91,15 @@ command = ["never-run"]
         .unwrap();
         let origin = format!("http://127.0.0.1:{port}");
         let _stop = Stop;
+        let local = server_slot()
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .federation
+            .directory
+            .clone();
+        federation::reach::tests::remember_peer(&local, &resources.directory).await;
         let capability = zeroize::Zeroizing::new(local_server_capability().unwrap());
         let request = || {
             let mut request = format!("ws://127.0.0.1:{port}/")
@@ -230,6 +239,7 @@ command = ["never-run"]
         assert_ne!(updated["revision"], ready["revision"]);
         ack(&mut socket, &updated).await;
         socket.close(None).await.unwrap();
+        endpoint.close().await;
     });
 }
 

@@ -7,6 +7,21 @@ use iroh::Endpoint;
 use std::{path::Path, sync::Arc};
 use tokio::task::JoinHandle;
 
+pub(super) struct Admission {
+    pub(super) unbound: Arc<tokio::sync::Semaphore>,
+    pub(super) members: Arc<tokio::sync::Semaphore>,
+    proof_timeout: std::time::Duration,
+}
+impl Default for Admission {
+    fn default() -> Self {
+        Self {
+            unbound: Arc::new(tokio::sync::Semaphore::new(8)),
+            members: Arc::new(tokio::sync::Semaphore::new(64)),
+            proof_timeout: std::time::Duration::from_secs(10),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct ReachLifetime(Arc<Lifetime>);
 struct Lifetime {
@@ -92,12 +107,8 @@ pub(crate) fn start(
                     let directory = directory.clone();
                     tasks.spawn(async move {
                         let Ok(Ok(connection)) = tokio::time::timeout(std::time::Duration::from_secs(10), incoming).await else { return; };
-                        let member = directory.snapshot().ok().and_then(|peers| peers.into_iter().find(|peer| {
-                            peer.remembered_endpoint.as_ref().is_some_and(|record| record.endpoint_id == connection.remote_id().to_string())
-                        }));
-                        let alive = connection.clone();
-                        admit(directory, member.map(|peer| peer.device_public_key), connection);
-                        alive.closed().await;
+                        // These slots bound handshakes only, not connection lifetimes.
+                        admit(directory, None, connection);
                     });
                 }
                 _ = tasks.join_next(), if !tasks.is_empty() => {}
@@ -112,16 +123,48 @@ pub(super) fn admit(
     device: Option<String>,
     connection: iroh::endpoint::Connection,
 ) -> Option<JoinHandle<()>> {
+    let device = device.or_else(|| {
+        directory
+            .snapshot()
+            .ok()?
+            .into_iter()
+            .find(|peer| {
+                peer.remembered_endpoint
+                    .as_ref()
+                    .is_some_and(|record| record.endpoint_id == connection.remote_id().to_string())
+            })
+            .map(|peer| peer.device_public_key)
+    });
+    let unbound = if device.is_none() {
+        match directory
+            .reach
+            .admission
+            .unbound
+            .clone()
+            .try_acquire_owned()
+        {
+            Ok(permit) => Some(permit),
+            Err(_) => {
+                connection.close(1u32.into(), b"unbound connection budget exhausted");
+                return None;
+            }
+        }
+    } else {
+        None
+    };
+    let proof_deadline = tokio::time::Instant::now() + directory.reach.admission.proof_timeout;
     let responses = tokio::sync::broadcast::channel(64).0;
     let binding = Binding {
         directory: directory.clone(),
         connection: connection.clone(),
         responses: responses.clone(),
         device: Arc::default(),
-        proof: Arc::default(),
+        proof: Arc::new(std::sync::Mutex::new(unbound)),
+        member: Arc::default(),
     };
     if let Some(device) = device {
         if binding.register(device).is_err() {
+            connection.close(1u32.into(), b"member connection not admitted");
             return None;
         }
     }
@@ -143,10 +186,19 @@ pub(super) fn admit(
                 }
             }
         };
+        let proof = async {
+            tokio::time::sleep_until(proof_deadline).await;
+            if binding.device.get().is_none() {
+                connection.close(1u32.into(), b"endpoint proof deadline exceeded");
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
         tokio::select! {
             _ = tunnel::serve(connection.clone(), router, responses, Some(binding.clone())) => {},
             _ = connection.closed() => {},
             _ = membership => {},
+            _ = proof => {},
         }
         // Evict only this connection. A later caller may already have replaced
         // it; an old observer must never remove or fail that new connection.

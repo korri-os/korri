@@ -92,6 +92,10 @@ impl SavePeerService {
             .reach_connection(peer)
             .await
             .map_err(|_| PeerSaveError::Network)?;
+        let proof = self
+            .directory
+            .own_endpoint_event(peer)
+            .map_err(|_| PeerSaveError::Network)?;
         let encoded = self
             .credentials
             .encode_request(peer, request.clone(), unix_time())
@@ -102,6 +106,7 @@ impl SavePeerService {
                 "/peer-rpc",
                 encoded.event_json.clone(),
                 None,
+                Some(&proof),
             )
             .await
             .map_err(|_| PeerSaveError::Network)?;
@@ -280,6 +285,10 @@ impl SavePeerService {
             .reach_connection(peer)
             .await
             .map_err(|_| PeerSaveError::Network)?;
+        let proof = self
+            .directory
+            .own_endpoint_event(peer)
+            .map_err(|_| PeerSaveError::Network)?;
         loop {
             self.require_peer(person, peer)?;
             if connection.close_reason().is_some() {
@@ -305,6 +314,7 @@ impl SavePeerService {
                 "/peer-saves-object",
                 encoded.event_json,
                 range,
+                Some(&proof),
             );
             let mut response = match tokio::time::timeout(STALL_TIMEOUT, transfer).await {
                 Ok(Ok(response)) => response,

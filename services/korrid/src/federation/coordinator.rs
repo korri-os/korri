@@ -6,10 +6,7 @@ use crate::{
     config::snapshot::{ConfigSnapshotCoordinator, SnapshotAuthorization},
     identity::IdentityState,
     peer_rpc::{unix_time, PeerCredentials},
-    relay::{
-        CoordinatedRelays, EndpointRecord, PublishState, RelayCoordinator, RelayList,
-        RelayTransport,
-    },
+    relay::{CoordinatedRelays, PublishState, RelayCoordinator, RelayList, RelayTransport},
 };
 use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
 use tokio::{sync::watch, task::JoinHandle};
@@ -146,7 +143,6 @@ pub struct Discovery<T> {
     timing: DiscoveryTiming,
     clock: Arc<dyn Fn() -> u64 + Send + Sync>,
     previous_inputs: Option<DiscoveryInputs>,
-    publication: Option<EndpointRecord>,
     delivered: BTreeMap<String, u64>,
 }
 impl<T: RelayTransport + 'static> Discovery<T> {
@@ -166,7 +162,6 @@ impl<T: RelayTransport + 'static> Discovery<T> {
             timing,
             clock,
             previous_inputs: None,
-            publication: None,
             delivered: BTreeMap::new(),
         }
     }
@@ -232,14 +227,9 @@ impl<T: RelayTransport + 'static> Discovery<T> {
             .credentials
             .identity_snapshot()
             .map_err(|_| FederationError::Identity)?;
-        let (device, owner) = match identity.state() {
-            IdentityState::Owned {
-                device_public_key,
-                owner_public_key,
-                ..
-            } => (device_public_key.clone(), owner_public_key.clone()),
-            _ => return Ok(()),
-        };
+        if !matches!(identity.state(), IdentityState::Owned { .. }) {
+            return Ok(());
+        }
         let relay = CoordinatedRelays::new(relays, identity, self.transport.clone())
             .map_err(|_| FederationError::Identity)?;
         let token = self.directory.begin_work()?;
@@ -280,27 +270,8 @@ impl<T: RelayTransport + 'static> Discovery<T> {
         {
             let endpoint_id = crate::identity::iroh::load_or_create(&self.directory.root)
                 .map_err(|_| FederationError::Identity)?
-                .public()
-                .to_string();
-            if self
-                .publication
-                .as_ref()
-                .is_none_or(|record| record.endpoint_id != endpoint_id)
-            {
-                let reservation = self.directory.reserve_publication(&token)?;
-                self.publication = Some(EndpointRecord {
-                    device_public_key: device,
-                    owner_public_key: owner,
-                    generation: reservation.generation,
-                    endpoint_id,
-                    issued_at: reservation.created_at,
-                });
-                self.delivered.clear();
-            }
-            let record = self
-                .publication
-                .as_ref()
-                .expect("reserved nonempty endpoints");
+                .public();
+            let record = self.directory.own_endpoint_record(endpoint_id)?;
             // Retried record delivery keeps the reserved NIP timestamp.
             // Binding publication is never renewed by a timer.
             record

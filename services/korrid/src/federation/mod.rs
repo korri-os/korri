@@ -129,6 +129,7 @@ struct DerivedPeer {
 #[derive(Clone)]
 pub struct FederationDirectory {
     reach: reach::Routes,
+    publication: Arc<Mutex<Option<EndpointRecord>>>,
     contacts: tokio::sync::broadcast::Sender<String>,
     state: Arc<Mutex<DirectoryState>>,
     credentials: PeerCredentials,
@@ -254,6 +255,7 @@ impl FederationDirectory {
             .map_err(|_| FederationError::Identity)??;
         Ok(Self {
             reach: reach::Routes::default(),
+            publication: Arc::default(),
             contacts: tokio::sync::broadcast::channel(64).0,
             state: Arc::new(Mutex::new(state)),
             credentials,
@@ -595,6 +597,44 @@ impl FederationDirectory {
             let _ = self.contacts.send(endpoint.device_public_key);
             Ok(true)
         })
+    }
+
+    /// One record for relay publication and in-band proof. Reserve once per
+    /// identity/transport key, not once per RPC or recipient.
+    pub(crate) fn own_endpoint_record(
+        &self,
+        endpoint_id: iroh::EndpointId,
+    ) -> Result<EndpointRecord, FederationError> {
+        let token = self.begin_work()?;
+        let IdentityState::Owned {
+            device_public_key,
+            owner_public_key,
+            ..
+        } = &token.identity
+        else {
+            return Err(FederationError::Identity);
+        };
+        let mut publication = self
+            .publication
+            .lock()
+            .map_err(|_| FederationError::Storage)?;
+        if let Some(record) = publication.as_ref().filter(|record| {
+            record.device_public_key == *device_public_key
+                && record.owner_public_key == *owner_public_key
+                && record.endpoint_id == endpoint_id.to_string()
+        }) {
+            return Ok(record.clone());
+        }
+        let reserved = self.reserve_publication(&token)?;
+        let record = EndpointRecord {
+            device_public_key: device_public_key.clone(),
+            owner_public_key: owner_public_key.clone(),
+            endpoint_id: endpoint_id.to_string(),
+            generation: reserved.generation,
+            issued_at: reserved.created_at,
+        };
+        *publication = Some(record.clone());
+        Ok(record)
     }
 
     /// Reserve before constructing or publishing any event. B4 must use created_at

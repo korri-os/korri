@@ -396,6 +396,9 @@ pub(crate) struct NetplayForward {
     tasks: JoinSet<()>,
 }
 impl NetplayForward {
+    pub(crate) fn connection(&self) -> &Connection {
+        &self.connection
+    }
     pub(crate) fn ready(&self) -> bool {
         self.has_connected() && !self.lost()
     }
