@@ -16,11 +16,11 @@
 #    system activation never changes the persistent bundle selection, so a
 #    new system would otherwise keep running the old korrid, and a korrid
 #    from another commit can crash-loop under the new units (as on rgds).
-#    With --switch it selects at once. With --reboot it selects as soon as
-#    the new system is up, because the trial is blessed only once korrid
-#    runs, then waits for the bless. A boot that falls back to LAST KNOWN
-#    GOOD gets its previous bundle back and the deploy fails. Without either
-#    flag it prints the command to run after the reboot.
+#    Without --reboot, a product deploy switches both the system and its
+#    bundle at once. With --reboot it selects as soon as the new system is
+#    up, because the trial is blessed only once korrid runs, then waits for
+#    the bless. A boot that falls back to LAST KNOWN GOOD gets its previous
+#    bundle back and the deploy fails. Console deploys still default to boot.
 #
 # It writes only the root filesystem and, through tabs6-esp, the cache ESP.
 # It never opens any other partition and never flashes anything.
@@ -48,6 +48,8 @@ while [ $# -gt 0 ]; do
 	-h | --help)
 		echo "usage: deploy-over-ssh [--switch] [--reboot] [--port N] [user@host]"
 		echo "default: $default_target, port $default_port"
+		echo "product: switch system and bundle now, or stage boot with --reboot"
+		echo "console: stage boot unless --switch is supplied"
 		exit 0
 		;;
 	-*)
@@ -58,6 +60,13 @@ while [ $# -gt 0 ]; do
 	esac
 	shift
 done
+
+# A boot-only product deploy used to print a manual selector command and
+# exit successfully. A later manual reboot then kept the old persistent
+# bundle under new system units. Never leave that split state behind.
+if [ -n "$bundle" ] && [ "$reboot" = no ]; then
+	mode=switch
+fi
 
 if [ "$placeholder" = true ]; then
 	echo "deploy-over-ssh: this build uses the placeholder nixpkgs kernel, which cannot boot the tablet. Refusing." >&2
@@ -106,7 +115,11 @@ if [ "$seed" = yes ]; then
 	on_tablet "test ! -e /var/lib/korri-plugin-host && tar -C / -xpf $plugin_seed/seed.tar --keep-old-files"
 fi
 
-select_cmd="/run/current-system/sw/bin/korri-bundle-select switch $bundle /run/current-system/sw/bin/systemctl"
+bundle_is_running() {
+	local b=$1
+	on_tablet "test \"\$(readlink -f /nix/var/nix/gcroots/korri-bundle/active)\" = $b && test \"\$(readlink -f /proc/\$(systemctl show korrid -p MainPID --value)/exe)\" = \"\$(readlink -f $b/bin/korrid)\" && systemctl is-active --quiet korrid"
+}
+
 # select_bundle <bundle>
 select_bundle() {
 	local b=$1
@@ -114,7 +127,7 @@ select_bundle() {
 	# A korrid from another bundle may already have hit its start limit.
 	on_tablet "systemctl reset-failed korrid.service korrid-identity.service korri-shell.service 2>/dev/null; /run/current-system/sw/bin/korri-bundle-select switch $b /run/current-system/sw/bin/systemctl"
 	# The selector checks health; this checks it runs the bundle's korrid.
-	on_tablet "test \"\$(readlink -f /nix/var/nix/gcroots/korri-bundle/active)\" = $b && test \"\$(readlink -f /proc/\$(systemctl show korrid -p MainPID --value)/exe)\" = \"\$(readlink -f $b/bin/korrid)\"" || {
+	bundle_is_running "$b" || {
 		echo "deploy-over-ssh: korrid does not run $b/bin/korrid" >&2
 		return 1
 	}
@@ -122,6 +135,11 @@ select_bundle() {
 }
 
 old_boot=$(on_tablet "cat /proc/sys/kernel/random/boot_id")
+# Save before a possible --switch, so fallback restores the original bundle.
+old_bundle=""
+if [ "$reboot" = yes ] && [ -n "$bundle" ]; then
+	old_bundle=$(on_tablet "readlink -f /nix/var/nix/gcroots/korri-bundle/active")
+fi
 
 echo "== installing ($mode)"
 on_tablet "nix-env -p /nix/var/nix/profiles/system --set $toplevel && $toplevel/bin/switch-to-configuration $mode && $toplevel/sw/bin/tabs6-esp status"
@@ -131,9 +149,6 @@ if [ "$mode" = switch ] && [ -n "$bundle" ]; then
 fi
 
 if [ "$reboot" = yes ]; then
-	# Read before the reboot: the tablet is unreachable right after it.
-	old_bundle=""
-	[ -z "$bundle" ] || old_bundle=$(on_tablet "readlink -f /nix/var/nix/gcroots/korri-bundle/active")
 	echo "== rebooting"
 	on_tablet "systemctl reboot" || true
 	[ -n "$bundle" ] || exit 0
@@ -154,7 +169,7 @@ if [ "$reboot" = yes ]; then
 			exit 1
 		fi
 		if [ "$selected" = no ]; then
-			if [ "$(on_tablet "readlink -f /nix/var/nix/gcroots/korri-bundle/active")" = "$bundle" ] && on_tablet "systemctl is-active --quiet korrid"; then
+			if bundle_is_running "$bundle"; then
 				echo "== the system's bundle is already selected"
 			else
 				select_bundle "$bundle" || exit 1
@@ -181,7 +196,4 @@ if [ "$reboot" = yes ]; then
 	done
 	echo "deploy-over-ssh: the new system did not come back blessed within 600 s" >&2
 	exit 1
-elif [ "$mode" = boot ] && [ -n "$bundle" ]; then
-	echo "After the reboot, select the system's service bundle:"
-	echo "  ssh -p $port $target '$select_cmd'"
 fi

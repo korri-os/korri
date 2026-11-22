@@ -137,20 +137,28 @@ nix run .#tabs6-stage-firmware -- /home/simonwjackson/code/sandbox/tabs6/firmwar
 
 ## Deploy
 
-`deploy-over-ssh` copies the closure, syncs `/lib/firmware`, runs
-`switch-to-configuration boot` and writes the ESP through `tabs6-esp`. It
-never reboots unless asked and never flashes.
+`deploy-over-ssh` copies the closure, syncs `/lib/firmware`, activates the
+system and writes the ESP through `tabs6-esp`. It never reboots unless asked
+and never flashes. Without flags, the product switches the running system
+and its bundle together; the console still stages a boot. With `--reboot`,
+the product stages a boot, reboots, then selects the new system's bundle.
 
 System activation never changes the selected Korri service bundle, so the
 product deploy selects the system's own bundle
 (`services.korriBundle.initialPackage`) with `korri-bundle-select switch`, as
-`nix/devices/rgds/UPDATE.md` does by hand. With `--switch` it selects at once.
+`nix/devices/rgds/UPDATE.md` does by hand. Without `--reboot` (including `--switch`) it selects at once.
 With `--reboot` it selects as soon as the new system is up (the trial is
 blessed only once korrid runs, and an old korrid can crash-loop under new
 units), checks that korrid runs the bundle's binary, then waits for
 `tabs6-boot-good` to log `blessed:`. A boot that fell back to LAST KNOWN GOOD
-gets its previous bundle back, and the deploy exits non-zero. Without either flag it prints the
-command to run after the reboot.
+gets its previous bundle back, and the deploy exits non-zero. It verifies
+both the active bundle symlink and the running korrid executable, including
+when the symlink already matches.
+
+Before 2026-11-22, a product deploy without flags only staged a boot and
+printed a manual bundle-selection command. The Kishi deploy took that path;
+a later reboot could therefore run new units with the old bundle. A product
+deploy no longer leaves bundle selection as a manual follow-up.
 
 | Tool | Default target | Signing |
 | --- | --- | --- |
