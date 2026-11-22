@@ -224,6 +224,15 @@ mod tests {
     }
 
     #[test]
+    fn real_charger_baseline_has_dfp_set_without_source_permission() {
+        // Actual Phase A capture on the tablet with its direct charger.
+        assert_eq!(
+            pd_fields(&[0x15, 0x21, 0xff, 0x9d]).unwrap(),
+            "state=21 cc1=1 cc2=2 next=255 attached=1 source=0 dfp=1 short=0 reset=1"
+        );
+    }
+
+    #[test]
     fn sampling_only_issues_the_documented_address_only_reads() {
         use std::os::unix::fs::PermissionsExt;
         let root = std::env::temp_dir().join(format!("tabs6-typec-reads-{}", std::process::id()));
@@ -234,6 +243,8 @@ mod tests {
             r#"#!/usr/bin/env bash
 set -eu
 printf '%s\n' "$*" >> "$TABS6_READ_LOG"
+if [ "${TABS6_READ_ERROR:-}" = 1 ]; then echo 'Read failed' >&2; exit 1; fi
+if [ "${TABS6_SHORT_READ:-}" = 1 ] && [ "$*" = '-y 7 w2@0x33 0x00 0x20 r4' ]; then echo 0x03; exit 0; fi
 case "$*" in
 '-y 7 w2@0x33 0x00 0x08 r1') echo 0x01 ;;
 '-y 7 w2@0x33 0x00 0x20 r4') echo '0x03 0x42 0x03 0x07' ;;
@@ -274,7 +285,24 @@ esac
         );
         std::env::set_var("TABS6_READ_LOG", root.join("reads"));
         let result = sample(&root, "7", "8").unwrap();
+        // Prepare the fake-charger input for Phase B: a negative battery
+        // current must not hide incoming VBUS even if the MCU says source.
+        fs::write(gauge.join("status"), "Discharging\n").unwrap();
+        fs::write(gauge.join("current_now"), "-500000\n").unwrap();
+        let conflict = sample(&root, "7", "8").unwrap();
+        std::env::set_var("TABS6_READ_ERROR", "1");
+        assert!(sample(&root, "7", "8").unwrap_err().contains("Read failed"));
+        std::env::remove_var("TABS6_READ_ERROR");
+        std::env::set_var("TABS6_SHORT_READ", "1");
+        assert!(sample(&root, "7", "8")
+            .unwrap_err()
+            .contains("short/long read"));
+        std::env::remove_var("TABS6_SHORT_READ");
         std::env::set_var("PATH", path);
+        assert!(conflict.contains("gauge=\"Discharging\""));
+        assert!(conflict.contains("attached=1 source=1"));
+        assert!(conflict.contains("muic_vbus=01"));
+        assert!(conflict.contains("chg_status=21"));
         assert!(result.contains("gauge=\"Charging\""));
         assert!(result.contains("attached=1 source=1"));
         assert!(result.contains("muic_vbus=01"));
@@ -283,7 +311,7 @@ esac
                 .unwrap()
                 .lines()
                 .count(),
-            11
+            25
         );
         fs::remove_dir_all(root).unwrap();
     }
