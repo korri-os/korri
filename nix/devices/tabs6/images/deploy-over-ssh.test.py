@@ -27,9 +27,14 @@ cmd = args[-1]
 state = json.loads((root / "state").read_text())
 if "korri-bundle-select switch " in cmd:
     words = shlex.split(cmd)
-    state["active"] = words[words.index("switch") + 1]
-    state["running"] = state["active"] if not state["bad_selection"] else "stale"
-    (root / "state").write_text(json.dumps(state))
+    requested = words[words.index("switch") + 1]
+    # The real selector is a no-op when the requested bundle is active.
+    if state["active"] != requested:
+        state["active"] = requested
+        state["running"] = requested if not state["bad_selection"] else "stale"
+        (root / "state").write_text(json.dumps(state))
+elif "switch-to-configuration" in cmd:
+    sys.exit(state["activation_status"])
 elif cmd == "systemctl reboot":
     state["boot"] = "new"
     (root / "state").write_text(json.dumps(state))
@@ -40,7 +45,8 @@ elif cmd == "readlink -f /run/booted-system":
 elif cmd == "readlink -f /nix/var/nix/gcroots/korri-bundle/active":
     print(state["active"])
 elif cmd.startswith('test "$(readlink -f /nix/var/nix/gcroots/korri-bundle/active)'):
-    sys.exit(0 if state["active"] == state["running"] == "/candidate-bundle" else 1)
+    requested = shlex.split(cmd)[3]
+    sys.exit(0 if state["active"] == state["running"] == requested else 1)
 elif cmd.startswith("systemctl show tabs6-boot-good"):
     print("inactive success 123 ")
 elif "journalctl" in cmd:
@@ -52,7 +58,7 @@ elif cmd.startswith("readlink -f "):
 
 class DeployTest(unittest.TestCase):
     def deploy(self, *args, product=True, active="/old-bundle", running="/old-bundle",
-               bad_selection=False, booted_system="/candidate-system"):
+               bad_selection=False, booted_system="/candidate-system", activation_status=0):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "bin").mkdir()
@@ -61,7 +67,7 @@ class DeployTest(unittest.TestCase):
             (root / "state").write_text(json.dumps({
                 "boot": "old", "booted_system": booted_system,
                 "active": active, "running": running,
-                "bad_selection": bad_selection,
+                "bad_selection": bad_selection, "activation_status": activation_status,
             }))
             command = root / "command"
             command.write_text(f"#!{sys.executable}\n" + COMMAND)
@@ -108,9 +114,10 @@ class DeployTest(unittest.TestCase):
         self.assertLess(install, reboot)
         self.assertLess(reboot, select)
 
-    def test_reboot_repairs_a_stale_process_even_when_selector_matches(self):
+    def test_reboot_rejects_a_stale_process_even_when_selector_matches(self):
         result, commands = self.deploy("--reboot", active="/candidate-bundle", running="stale")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("korrid does not run", result.stderr)
         self.assertTrue(any("korri-bundle-select switch /candidate-bundle" in cmd for cmd in commands))
 
     def test_switch_then_fallback_restores_the_original_bundle(self):
@@ -119,6 +126,11 @@ class DeployTest(unittest.TestCase):
         selections = [cmd for cmd in commands if "korri-bundle-select switch" in cmd]
         self.assertIn("switch /candidate-bundle", selections[0])
         self.assertIn("switch /old-bundle", selections[-1])
+
+    def test_activation_failure_is_not_reported_as_a_successful_deploy(self):
+        result, commands = self.deploy(activation_status=4)
+        self.assertEqual(result.returncode, 4)
+        self.assertFalse(any("korri-bundle-select" in cmd for cmd in commands))
 
     def test_wrong_executable_after_selection_fails_the_deploy(self):
         result, _ = self.deploy("--switch", bad_selection=True)
