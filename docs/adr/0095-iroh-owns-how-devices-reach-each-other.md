@@ -27,6 +27,12 @@ over keeping Korri free of third-party servers.
 - Nostr stays for what ADR 0074 lists apart from reach: records for devices that
   were off, and vouches and removals.
 
+With the owner's approved addition, korrid caches iroh's last-seen
+`EndpointAddr` values for roster peers and restores them through iroh's
+`MemoryLookup` alongside n0 and mDNS. A new connection can then use a still
+reachable cached address when n0 discovery is down. This disposable cache
+holds at most 16 opaque addresses per peer; iroh still chooses every path.
+
 ## Considered options
 
 - **iroh with no relay and no discovery service.** No third-party servers, but

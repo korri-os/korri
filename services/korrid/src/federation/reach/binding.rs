@@ -13,6 +13,7 @@ pub(crate) struct Binding {
     pub(super) connection: Connection,
     pub(super) responses: tunnel::Responses,
     pub(super) device: Arc<OnceLock<String>>,
+    pub(super) bound: Arc<tokio::sync::Notify>,
     // Serializes proof and holds the unbound budget until it succeeds.
     pub(super) proof: Arc<Mutex<Option<tokio::sync::OwnedSemaphorePermit>>>,
     pub(super) member: Arc<Mutex<Option<tokio::sync::OwnedSemaphorePermit>>>,
@@ -160,6 +161,7 @@ impl Binding {
                 responses: self.responses.clone(),
             },
         );
+        self.bound.notify_one();
         Ok(())
     }
     pub(super) fn membership_is_current(&self) -> bool {

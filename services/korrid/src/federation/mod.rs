@@ -411,6 +411,7 @@ impl FederationDirectory {
         state.memory = memory;
         state.live.clear();
         state.epoch = epoch;
+        self.clear_address_cache();
         Ok(())
     }
 
@@ -551,6 +552,7 @@ impl FederationDirectory {
             }
             state.memory = memory;
             state.epoch = epoch;
+            self.prune_address_cache(state, identity, authorization);
             Ok(())
         })
     }
@@ -594,6 +596,7 @@ impl FederationDirectory {
             peer.last_seen = peer.last_seen.max(now);
             state.store.save(encode(&memory)?)?;
             state.memory = memory;
+            self.prune_address_cache(state, identity, authorization);
             let _ = self.contacts.send(endpoint.device_public_key);
             Ok(true)
         })
@@ -802,6 +805,7 @@ impl FederationDirectory {
                         updated_at: live.updated_at,
                     });
                 }
+                self.retain_address_cache(&peers);
                 Ok(peers)
             })
             .map_err(|_| FederationError::Identity)?

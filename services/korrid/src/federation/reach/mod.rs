@@ -1,4 +1,5 @@
 //! One authenticated iroh connection per peer. iroh owns discovery and paths.
+mod address_cache;
 mod binding;
 mod datagrams;
 pub(crate) use binding::Binding;
@@ -21,6 +22,7 @@ pub(super) const ALPN: &[u8] = b"korri/peer/1";
 pub(crate) struct Routes {
     live: Arc<RwLock<BTreeMap<String, PeerConnection>>>,
     admission: Arc<endpoint::Admission>,
+    address_cache: Arc<std::sync::OnceLock<Arc<address_cache::Cache>>>,
     endpoint: Arc<tokio::sync::OnceCell<Endpoint>>,
     starting: Arc<std::sync::atomic::AtomicBool>,
     ready: Arc<tokio::sync::Notify>,

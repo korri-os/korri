@@ -18,12 +18,12 @@ use std::{sync::Arc, time::Duration};
 use tokio::time::timeout;
 
 pub(super) struct Devices {
-    _a: tempfile::TempDir,
+    pub(super) _a: tempfile::TempDir,
     pub(super) b: tempfile::TempDir,
     pub(super) ca: PeerCredentials,
     pub(super) cb: PeerCredentials,
     pub(super) da: FederationDirectory,
-    _db: FederationDirectory,
+    pub(super) _db: FederationDirectory,
 }
 fn owned(root: &std::path::Path, owner: &Keys) -> DeviceIdentity {
     let mut identity = DeviceIdentity::load_or_create(root).unwrap();
@@ -95,7 +95,7 @@ impl Devices {
     pub(super) fn router(&self) -> axum::Router {
         Self::router_on(self.b.path(), self.cb.clone())
     }
-    fn router_on(root: &std::path::Path, credentials: PeerCredentials) -> axum::Router {
+    pub(super) fn router_on(root: &std::path::Path, credentials: PeerCredentials) -> axum::Router {
         let config = root.join("host.toml");
         std::fs::write(&config, "label = \"Home PC\"\n[[games]]\nid = \"game\"\ntitle = \"Game\"\ncommand = [\"game\"]\n").unwrap();
         let runtime = crate::host::HostRuntime::from_paths_with_backend(

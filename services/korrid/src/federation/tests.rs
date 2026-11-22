@@ -781,3 +781,30 @@ fn endpoint_binding_rejects_invalid_ed25519_keys() {
         assert!(endpoint.validate(1000).is_err());
     }
 }
+
+#[test]
+fn roster_revocation_drops_cached_addresses_from_disk_and_iroh_lookup() {
+    let f = Fixture::new();
+    let directory = f.directory().unwrap();
+    f.roster(&directory);
+    let record = f.endpoint(1, 1000);
+    directory
+        .apply_endpoint_event(&directory.begin_work().unwrap(), &f.event(&record))
+        .unwrap();
+    let id: iroh::EndpointId = record.endpoint_id.parse().unwrap();
+    let addr = iroh::EndpointAddr::new(id).with_ip_addr("127.0.0.1:1234".parse().unwrap());
+    let path = f.root.path().join("federation/iroh-addresses.json");
+    fs::write(&path, serde_json::to_vec(&vec![addr]).unwrap()).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    let lookup = directory.start_address_cache();
+    assert!(lookup.get_endpoint_info(id).is_some());
+    directory
+        .apply_membership(
+            &directory.begin_work().unwrap(),
+            &[binding(&f.owner, &f.key(), "revoked", 1001)],
+        )
+        .unwrap();
+    assert!(lookup.get_endpoint_info(id).is_none());
+    let cached: Vec<iroh::EndpointAddr> = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    assert!(cached.is_empty());
+}

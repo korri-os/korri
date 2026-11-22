@@ -55,16 +55,12 @@ pub(crate) fn start(
     directory: FederationDirectory,
     peer_router: axum::Router,
 ) -> Option<ReachLifetime> {
-    let runtime = tokio::runtime::Handle::try_current().ok()?;
-    let key = crate::identity::iroh::load_or_create(root).ok()?;
-    let routes = directory.reach.clone();
-    if routes.endpoint.get().is_some()
-        || routes
-            .starting
-            .swap(true, std::sync::atomic::Ordering::AcqRel)
-    {
-        return None;
-    }
+    tokio::runtime::Handle::try_current().ok()?;
+    #[cfg(not(test))]
+    let builder = Endpoint::builder(N0);
+    #[cfg(test)]
+    let builder =
+        Endpoint::builder(iroh::endpoint::presets::Minimal).relay_mode(iroh::RelayMode::Disabled);
     // Reuse the daemon's configured port for UDP so the firewall can admit
     // offline LAN dials too. Android has no Nix firewall and uses an ephemeral port.
     let port = if cfg!(test) {
@@ -75,17 +71,37 @@ pub(crate) fn start(
             .and_then(|address| address.parse::<std::net::SocketAddr>().ok())
             .map_or(0, |address| address.port())
     };
+    let builder = builder
+        .bind_addr(std::net::SocketAddr::from(([0, 0, 0, 0], port)))
+        .expect("IPv4 wildcard")
+        .bind_addr(std::net::SocketAddr::from(([0u16; 8], port)))
+        .expect("IPv6 wildcard")
+        .address_lookup(iroh_mdns_address_lookup::MdnsAddressLookup::builder());
+    start_with_builder(root, directory, peer_router, builder)
+}
+
+pub(super) fn start_with_builder(
+    root: &Path,
+    directory: FederationDirectory,
+    peer_router: axum::Router,
+    builder: iroh::endpoint::Builder,
+) -> Option<ReachLifetime> {
+    let runtime = tokio::runtime::Handle::try_current().ok()?;
+    let key = crate::identity::iroh::load_or_create(root).ok()?;
+    let routes = directory.reach.clone();
+    if routes.endpoint.get().is_some()
+        || routes
+            .starting
+            .swap(true, std::sync::atomic::Ordering::AcqRel)
+    {
+        return None;
+    }
     let task = runtime.spawn(async move {
-        #[cfg(not(test))]
-        let builder = Endpoint::builder(N0);
-        #[cfg(test)]
-        let builder = Endpoint::builder(iroh::endpoint::presets::Minimal).relay_mode(iroh::RelayMode::Disabled);
+        let cache = directory.start_address_cache();
         let endpoint = match builder
             .secret_key(key)
             .alpns(vec![ALPN.to_vec()])
-            .bind_addr(std::net::SocketAddr::from(([0, 0, 0, 0], port))).expect("IPv4 wildcard")
-            .bind_addr(std::net::SocketAddr::from(([0u16; 8], port))).expect("IPv6 wildcard")
-            .address_lookup(iroh_mdns_address_lookup::MdnsAddressLookup::builder())
+            .address_lookup(cache)
             .bind().await {
                 Ok(endpoint) => endpoint,
                 Err(_) => {
@@ -159,6 +175,7 @@ pub(super) fn admit(
         connection: connection.clone(),
         responses: responses.clone(),
         device: Arc::default(),
+        bound: Arc::default(),
         proof: Arc::new(std::sync::Mutex::new(unbound)),
         member: Arc::default(),
     };
@@ -184,6 +201,11 @@ pub(super) fn admit(
                     connection.close(1u32.into(), b"federation membership changed");
                     break;
                 }
+                if binding.device.get().is_some() {
+                    // RemoteInfo is a snapshot, not a watcher. Reuse this tick
+                    // to retain new iroh hints even when open paths stay unchanged.
+                    directory.capture_addresses(&connection).await;
+                }
             }
         };
         let proof = async {
@@ -199,6 +221,7 @@ pub(super) fn admit(
             _ = connection.closed() => {},
             _ = membership => {},
             _ = proof => {},
+            _ = super::address_cache::observe(&binding) => {},
         }
         // Evict only this connection. A later caller may already have replaced
         // it; an old observer must never remove or fail that new connection.

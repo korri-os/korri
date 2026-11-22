@@ -73,6 +73,37 @@ keeps its old lease and reports failure once. Its status watcher does not dial
 again. Netplay polls only its captured connection, with no dial operation,
 and does not replace its forward or relaunch RetroArch after loss.
 
+## Last-seen iroh addresses
+
+iroh 1.4.1 provides `address_lookup::memory::MemoryLookup` with
+`from_endpoint_info`, `set_endpoint_info` and `remove_endpoint_info`.
+`AddressLookupServices` runs its providers in parallel, so memory can sit next
+to n0 and mDNS. `Endpoint::remote_info` reports known addresses, including
+inactive ones; `Connection::paths_stream` reports path changes. iroh's remote
+memory is temporary. Its native `EndpointAddr` has Serde support, but this
+version supplies no disk persistence for it. These are the APIs in
+`iroh/src/address_lookup/memory.rs`, `iroh/src/address_lookup.rs`,
+`iroh/src/endpoint.rs` and `iroh-base/src/endpoint_addr.rs`.
+
+The owner approved a disposable cache at
+`<privateStateRoot>/federation/iroh-addresses.json`, separate from `peers.json`.
+Its JSON is a list of iroh's serialized `EndpointAddr` values, with no Korri
+address schema. Authenticated live connections fill it on binding, path
+updates and the existing membership-check tick. At startup it populates a
+`MemoryLookup` added alongside the existing n0 and mDNS providers. Calls still
+dial only by key. Korri never examines address values or transport kinds,
+orders them, or names a network. Only the first 16 values in iroh's reporting
+order are retained to enforce the count bound. Roster removal removes the
+peer from both the file and this lookup under the same authority lock.
+
+The cache is private (0600), atomically replaced, limited to the roster and
+an 8 MiB file bound. Missing, corrupt, unsafe or oversized files are ignored
+and rebuilt; cache errors never invalidate federation authority. Cached hints
+do not authorize a peer: iroh authenticates the endpoint key and the existing
+signed membership/endpoint proof still controls channels. Stale addresses may
+not work, and a restart must retain a reachable address and UDP port for an
+offline dial to succeed. No retry loop or stream recovery is added.
+
 ## One-off deployment migration
 
 Do **not** remove `identity/iroh.key`, owner statements, saves or publication
@@ -80,17 +111,30 @@ counters. The persisted directory document is unchanged, but its old encrypted
 `endpointEvent` values contain the removed address schema. Old values must not
 be read as the new binding schema.
 
-Before deploying this cut to a device, stop korrid. Make a private backup of
-`<privateStateRoot>/federation/peers.json`. In that document, set each existing
-`peers[device].endpointEvent` to JSON null. Keep every other field unchanged.
-Write the file atomically with its existing owner and mode 0600. This operation
-uses the existing `RememberedPeer.endpoint_event` nullable field; it creates no
-migration field or fallback reader. New signed binding records repopulate it.
+This migration applies to a pre-ADR-0095 bundle. The address-cache addition
+needs no authority migration. Stage and validate the new system and bundle
+before starting. Use this order:
 
-Remove an obsolete `host.stun` entry from any mutable `device.yaml`, with a
-backup first. Product Nix configuration no longer supplies `KORRID_STUN`.
-Restart korrid only after these one-off operations and the new deployment.
-This run does not deploy or modify device data.
+1. Switch the system first. This may restart the **old** korrid.
+2. Stop korrid after that switch. Make a private backup of
+   `<privateStateRoot>/federation/peers.json`. With a backup first, remove any
+   obsolete mutable `host.stun` entry from `device.yaml` now; product Nix no
+   longer supplies `KORRID_STUN`.
+3. Set each existing `peers[device].endpointEvent` to JSON null. Keep every
+   other field unchanged. Write atomically with its existing owner and mode
+   0600.
+4. Switch the bundle immediately and start only the new korrid. Do not run or
+   restart the old korrid between clearing the events and switching the bundle.
+
+Complete steps 2–4 as one maintenance operation. If bundle activation cannot
+complete, leave korrid stopped instead of restarting the old bundle. On ibuki,
+clearing the events before the system switch let the restarted old korrid write five old-format
+values back; the new korrid then refused startup with
+`open federation authority: Identity`.
+
+This operation uses the existing nullable `RememberedPeer.endpoint_event`
+field; it creates no migration field or fallback reader. New signed binding
+records repopulate it. This run does not deploy or modify device data.
 
 The federation proof holder now accepts `ROOT PORT RELAYS`, with no external
 Moonlight address. Its Sunshine must run on the holder's loopback at the
