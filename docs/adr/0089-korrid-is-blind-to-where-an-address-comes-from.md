@@ -3,6 +3,11 @@
 **Owner decision, 2026-11-19.** This amends ADR 0041 and changes how ADR 0026's
 relays are used.
 
+**Superseded in part by ADR 0095 (2026-11-22):** korrid still names no network,
+but iroh, not korrid, now chooses and changes paths; the relay fallback, address
+order, local discovery and live-connection rules below no longer apply. The
+private network plugin and the account sign-in card stand.
+
 The owner said: "I cannot couple our code base to anything like Tailscale or
 ZeroTier. However, I want to support plugins for all of that." and "I need to
 be able to do everything without Tailscale. The addition of something like

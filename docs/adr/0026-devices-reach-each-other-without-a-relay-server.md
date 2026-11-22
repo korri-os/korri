@@ -3,6 +3,9 @@
 **Owner decision, 2026-10-22.** Design in progress. How the connection is built
 and which library carries it are not decided.
 
+**Superseded in part by ADR 0095 (2026-11-22):** iroh's own discovery and n0's
+public relays carry reach; Nostr no longer signals connections.
+
 The devices of one federation must reach each other from any network with
 internet access, with no dependency on Tailscale and no server that Korri or the
 person hosts to carry their traffic.
