@@ -77,6 +77,13 @@ in
     options qcom_iris allow_fw_boot=1
   '';
 
+  # A640 GMEM rendering of the shell's layers faults in CCU (translation
+  # faults on Mesa 26.2.3 and 26.3.0). Keep GPU rendering, but bypass GMEM
+  # for this process only. Neither disabling eviction nor UBWC prevents it.
+  # The compositor and games keep their normal rendering path. This costs
+  # memory bandwidth; remove it only after the workload passes without it.
+  systemd.services.korri-shell.environment.FD_MESA_DEBUG = "sysmem";
+
   # USB gadget identity. One dwc3 controller (usb@a600000, dr_mode otg with
   # a userspace role switch), so exactly one UDC appears in device role.
   services.korriProduct.usbGadget = {
@@ -190,7 +197,9 @@ in
   # The GameSir-G8+ answers some HID-over-GATT reads with Attribute Not Found;
   # stock BlueZ then never reads the Report Map and makes no input device.
   hardware.bluetooth.package = pkgs.bluez.overrideAttrs (old: {
-    patches = (old.patches or [ ]) ++ [ ./bluetooth/bluez-hog-read-report-map-after-failed-reads.patch ];
+    patches = (old.patches or [ ]) ++ [
+      ./bluetooth/bluez-hog-read-report-map-after-failed-reads.patch
+    ];
   });
 
   services.korriLinuxHost = {
