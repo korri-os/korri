@@ -1509,6 +1509,17 @@
 	/delete-node/ adc-battery;
 };
 
+/* Phase A USB-C observer: Samsung's stock boot __symbols__ maps
+ * qupv3_se15_i2c to 0xc94000; both stock DTBOs put s2mm005@33 there,
+ * IRQ TLMM gpio123, SDA/SCL gpio27/28 (qup15). Enable the adapter ONLY.
+ * No client node: no driver can probe/configure/update the controller.
+ * The userspace observer makes only fixed, documented register reads.
+ */
+&i2c15 {
+	status = "okay";
+	clock-frequency = <400000>;
+};
+
 /* PTN36502 USB-C SuperSpeed redriver.
  *
  * USB-C can be plugged in either way round, so the SuperSpeed differential

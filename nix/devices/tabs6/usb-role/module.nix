@@ -14,6 +14,7 @@
 }:
 let
   cfg = config.tabs6.usbRole;
+  typecStatus = import ./typec-status.nix { inherit pkgs; };
   usbRole = pkgs.writeShellApplication {
     name = "tabs6-usb-role";
     runtimeInputs = [
@@ -36,6 +37,30 @@ in
     # The SM5705 sits on I2C bus 1; tabs6-charge loads i2c-dev for it too.
     boot.kernelModules = [ "i2c-dev" ];
     environment.systemPackages = [ usbRole ];
+
+    # Phase A observer only. No role changes, register data writes, interrupt
+    # acknowledgement or firmware loading. Existing charge/boot services stay.
+    systemd.services.tabs6-typec-status = {
+      description = "Tab S6 USB-C read-only Phase A observer";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "systemd-modules-load.service" ];
+      path = [
+        pkgs.i2c-tools
+        pkgs.libgpiod
+        pkgs.coreutils
+      ];
+      serviceConfig = {
+        ExecStart = lib.getExe typecStatus;
+        Restart = "on-failure";
+        RestartSec = 5;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        CapabilityBoundingSet = "";
+        RestrictAddressFamilies = [ "AF_UNIX" ];
+      };
+    };
 
     systemd.services.tabs6-usb-role-boot = {
       description = "Tab S6 USB-C role: gadget at boot";
