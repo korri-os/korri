@@ -1857,6 +1857,17 @@ impl UpstreamRegistry {
         if self.retire_selected_if_revoked(selected)? {
             return Err(UpstreamError::SourcePeerNotFound);
         }
+        if selected
+            .viewer
+            .as_ref()
+            .and_then(|viewer| viewer.reach.as_ref())
+            .is_some_and(|reach| reach.connection_gone())
+        {
+            return Err(viewer_error(
+                "PeerConnectionGone",
+                "Peer connection is gone. Leave or end this session.",
+            ));
+        }
         let result = match &selected.route {
             SelectedRemoteRoute::Native { device_public_key } => {
                 let host = self

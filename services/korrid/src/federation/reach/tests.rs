@@ -223,7 +223,7 @@ async fn key_only_connection_carries_signed_peer_rpc_and_rejects_local_authority
 }
 
 #[tokio::test]
-async fn closed_connection_is_terminal_and_reported_once_without_redial() {
+async fn closed_connection_is_evicted_and_reported_once_without_background_redial() {
     let devices = Devices::new();
     let (a, b, outgoing, incoming) = pair().await;
     let directory = devices.da.clone();
@@ -242,11 +242,9 @@ async fn closed_connection_is_terminal_and_reported_once_without_redial() {
     .await
     .unwrap();
     let updated = directory.snapshot().unwrap()[0].updated_at;
-    for _ in 0..4 {
-        assert!(directory.reach_connection(&device).await.is_err());
-    }
+    tokio::task::yield_now().await;
     assert_eq!(directory.snapshot().unwrap()[0].updated_at, updated);
-    assert_eq!(directory.reach.live.read().unwrap().len(), 1);
+    assert!(directory.reach.live.read().unwrap().is_empty());
     a.close().await;
     b.close().await;
 }
@@ -256,6 +254,18 @@ pub(crate) async fn listen(
     directory: FederationDirectory,
     router: axum::Router,
 ) -> (Endpoint, tokio::task::JoinHandle<()>) {
+    let (endpoint, task, _) = listen_counted(directory, router).await;
+    (endpoint, task)
+}
+async fn listen_counted(
+    directory: FederationDirectory,
+    router: axum::Router,
+) -> (
+    Endpoint,
+    tokio::task::JoinHandle<()>,
+    tokio::sync::mpsc::UnboundedReceiver<usize>,
+) {
+    let (accepted, connections) = tokio::sync::mpsc::unbounded_channel();
     let endpoint = endpoint().await;
     directory.reach.router.set(router).unwrap();
     directory.reach.endpoint.set(endpoint.clone()).unwrap();
@@ -263,14 +273,16 @@ pub(crate) async fn listen(
     let task = tokio::spawn(async move {
         while let Some(incoming) = server.accept().await {
             let directory = directory.clone();
+            let accepted = accepted.clone();
             tokio::spawn(async move {
                 if let Ok(connection) = incoming.await {
+                    let _ = accepted.send(connection.stable_id());
                     endpoint::admit(directory, None, connection);
                 }
             });
         }
     });
-    (endpoint, task)
+    (endpoint, task, connections)
 }
 pub(crate) fn learn(directory: &FederationDirectory, peer: &Endpoint) {
     directory
@@ -374,4 +386,268 @@ async fn first_signed_http_contact_binds_an_unknown_caller_before_stream_channel
     );
     a.close().await;
     b.close().await;
+}
+
+struct RpcPeer {
+    devices: Devices,
+    local: Endpoint,
+    remote: Endpoint,
+    tasks: [tokio::task::JoinHandle<()>; 2],
+    accepted: tokio::sync::mpsc::UnboundedReceiver<usize>,
+    client: crate::upstream_native::NativeClient,
+    device: String,
+}
+impl Drop for RpcPeer {
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
+}
+impl RpcPeer {
+    async fn new() -> Self {
+        let devices = Devices::new();
+        let (local, local_task) = listen(
+            devices.da.clone(),
+            Devices::router_on(devices._a.path(), devices.ca.clone()),
+        )
+        .await;
+        let (remote, remote_task, accepted) =
+            listen_counted(devices._db.clone(), devices.router()).await;
+        learn(&devices.da, &remote);
+        let device = devices.cb.public_key().unwrap();
+        let recipient = devices.ca.public_key().unwrap();
+        let record = crate::relay::EndpointRecord {
+            device_public_key: device.clone(),
+            owner_public_key: devices.da.snapshot().unwrap()[0]
+                .membership
+                .owner_public_key
+                .clone(),
+            generation: 1,
+            issued_at: unix_time(),
+            endpoint_id: remote.id().to_string(),
+        };
+        let event = devices
+            .cb
+            .identity_snapshot()
+            .unwrap()
+            .encrypt_tagged_event(
+                &recipient,
+                crate::relay::ENDPOINT_EVENT_KIND,
+                vec![
+                    vec!["d".into(), format!("org.korri.endpoint:{recipient}")],
+                    vec!["p".into(), recipient.clone()],
+                ],
+                &serde_json::to_string(&record).unwrap(),
+                record.issued_at,
+            )
+            .unwrap();
+        devices
+            .da
+            .apply_endpoint_event(&devices.da.begin_work().unwrap(), &event.json)
+            .unwrap();
+        let client = crate::upstream_native::NativeClient::new_secure_candidates(
+            Vec::new(),
+            device.clone(),
+            devices.ca.clone(),
+        )
+        .with_directory(devices.da.clone());
+        Self {
+            devices,
+            local,
+            remote,
+            tasks: [local_task, remote_task],
+            accepted,
+            client,
+            device,
+        }
+    }
+    async fn accepted(&mut self) {
+        timeout(Duration::from_secs(5), self.accepted.recv())
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    async fn close(&self) {
+        self.local.close().await;
+        self.remote.close().await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn later_peer_rpc_reconnects_after_a_closed_connection_is_evicted() {
+    let mut peer = RpcPeer::new().await;
+    peer.client.session_status().await.unwrap();
+    peer.accepted().await;
+    let old = peer
+        .devices
+        .da
+        .reach_connection(&peer.device)
+        .await
+        .unwrap();
+    peer.devices
+        .da
+        .reach
+        .bindings
+        .write()
+        .unwrap()
+        .replace(tunnel::Bindings {
+            address: std::net::Ipv4Addr::LOCALHOST.into(),
+            tcp: [0; 3],
+            udp: [0; 5],
+        });
+    let old_stream = peer
+        .devices
+        .da
+        .activate_stream(&peer.device)
+        .await
+        .unwrap()
+        .unwrap();
+    old.close(0u32.into(), b"test demand after close");
+    timeout(Duration::from_secs(5), async {
+        while peer
+            .devices
+            .da
+            .reach
+            .live
+            .read()
+            .unwrap()
+            .contains_key(&peer.device)
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("closed connection must be evicted without another caller");
+    assert!(
+        timeout(Duration::from_millis(100), peer.accepted.recv())
+            .await
+            .is_err(),
+        "closure alone must not cause a background dial"
+    );
+    peer.client.session_status().await.unwrap();
+    peer.accepted().await;
+    let new = peer
+        .devices
+        .da
+        .reach_connection(&peer.device)
+        .await
+        .unwrap();
+    assert_ne!(old.stable_id(), new.stable_id());
+    assert!(old_stream.connection_gone());
+    assert!(
+        old_stream.address().is_none(),
+        "a new RPC must not recover the old stream"
+    );
+    let new_stream = peer
+        .devices
+        .da
+        .activate_stream(&peer.device)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(new_stream.0.connection.stable_id(), new.stable_id());
+    assert!(new_stream.address().is_some());
+    assert!(matches!(
+        peer.accepted.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+    ));
+    assert_eq!(
+        peer.devices.da.snapshot().unwrap()[0].state,
+        PeerState::Ready
+    );
+    peer.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_peer_rpcs_after_close_share_one_new_dial() {
+    let mut peer = RpcPeer::new().await;
+    peer.client.session_status().await.unwrap();
+    peer.accepted().await;
+    let old = peer
+        .devices
+        .da
+        .reach_connection(&peer.device)
+        .await
+        .unwrap();
+    old.close(0u32.into(), b"test concurrent demand after close");
+    let barrier = Arc::new(tokio::sync::Barrier::new(9));
+    let mut callers = tokio::task::JoinSet::new();
+    for _ in 0..8 {
+        let (client, directory, device, barrier) = (
+            peer.client.clone(),
+            peer.devices.da.clone(),
+            peer.device.clone(),
+            barrier.clone(),
+        );
+        callers.spawn(async move {
+            barrier.wait().await;
+            client.session_status().await.unwrap();
+            directory
+                .reach_connection(&device)
+                .await
+                .unwrap()
+                .stable_id()
+        });
+    }
+    barrier.wait().await;
+    let mut connections = std::collections::BTreeSet::new();
+    while let Some(result) = callers.join_next().await {
+        connections.insert(result.unwrap());
+    }
+    assert_eq!(connections.len(), 1);
+    assert!(!connections.contains(&old.stable_id()));
+    peer.accepted().await;
+    assert!(
+        matches!(
+            peer.accepted.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ),
+        "concurrent callers must cause only one new accepted connection"
+    );
+    assert_eq!(peer.devices.da.reach.live.read().unwrap().len(), 1);
+    assert_eq!(
+        peer.devices.da.snapshot().unwrap()[0].state,
+        PeerState::Ready
+    );
+    peer.close().await;
+}
+
+#[tokio::test]
+async fn old_close_observer_does_not_evict_or_fail_a_new_connection() {
+    let devices = Devices::new();
+    let (a, b, old, _old_incoming) = pair().await;
+    let (c, d, new, _new_incoming) = pair().await;
+    let directory = devices.da.clone();
+    let device = devices.cb.public_key().unwrap();
+    directory.reach.router.set(axum::Router::new()).unwrap();
+    let old_observer =
+        endpoint::admit(directory.clone(), Some(device.clone()), old.clone()).unwrap();
+    // On the current-thread runtime, neither observer runs before replacement.
+    old.close(0u32.into(), b"test late close observer");
+    endpoint::admit(directory.clone(), Some(device.clone()), new.clone());
+    directory
+        .set_peer_state(
+            &directory.begin_peer_work(&device).unwrap(),
+            &device,
+            PeerState::Ready,
+        )
+        .unwrap();
+    timeout(Duration::from_secs(5), old_observer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        directory
+            .reach_connection(&device)
+            .await
+            .unwrap()
+            .stable_id(),
+        new.stable_id()
+    );
+    assert_eq!(directory.snapshot().unwrap()[0].state, PeerState::Ready);
+    a.close().await;
+    b.close().await;
+    c.close().await;
+    d.close().await;
 }

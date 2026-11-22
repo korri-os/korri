@@ -47,11 +47,12 @@ The product opens UDP 39217 and multicast UDP 5353. It no longer exposes TCP
 39217. The HTTP listener binds loopback for the local shell; peer HTTP travels
 inside iroh. Android uses an ephemeral UDP port and has no Nix firewall.
 
-A connection loss is terminal for that connection. The cache retains the
-closed connection so status polls cannot start a reconnect loop. A new daemon
-lifetime starts with an empty connection cache. The stream watcher reports a
-terminal failure once per selected launch. Netplay does not replace its forward
-or relaunch RetroArch after loss.
+A connection loss is terminal for the stream session that used it, not for the
+peer. The closed connection is evicted. A later RPC, save request or new stream
+dials the peer by key on demand. Concurrent callers share the per-peer dial
+lock and one new connection; there is no background retry loop. The old session
+keeps its old lease and reports failure once. Its status watcher does not dial
+again. Netplay does not replace its forward or relaunch RetroArch after loss.
 
 ## One-off deployment migration
 

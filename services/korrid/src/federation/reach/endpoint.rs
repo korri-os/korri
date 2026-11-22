@@ -1,6 +1,6 @@
 //! Endpoint lifetime and authenticated incoming connections, not path management.
 use super::{tunnel, Binding, Routes, ALPN};
-use crate::federation::{FederationDirectory, PeerState};
+use crate::federation::FederationDirectory;
 #[cfg(not(test))]
 use iroh::endpoint::presets::N0;
 use iroh::Endpoint;
@@ -111,7 +111,7 @@ pub(super) fn admit(
     directory: FederationDirectory,
     device: Option<String>,
     connection: iroh::endpoint::Connection,
-) {
+) -> Option<JoinHandle<()>> {
     let responses = tokio::sync::broadcast::channel(64).0;
     let binding = Binding {
         directory: directory.clone(),
@@ -122,7 +122,7 @@ pub(super) fn admit(
     };
     if let Some(device) = device {
         if binding.register(device).is_err() {
-            return;
+            return None;
         }
     }
     let router = directory
@@ -132,7 +132,7 @@ pub(super) fn admit(
         .cloned()
         .expect("peer router")
         .layer(axum::Extension(binding.clone()));
-    tokio::spawn(async move {
+    Some(tokio::spawn(async move {
         log::info!("peer iroh connection established");
         let membership = async {
             loop {
@@ -148,28 +148,21 @@ pub(super) fn admit(
             _ = connection.closed() => {},
             _ = membership => {},
         }
-        // One completion, no reconnect or viewer recovery. Keep the closed entry.
+        // Evict only this connection. A later caller may already have replaced
+        // it; an old observer must never remove or fail that new connection.
         if let Some(device) = binding.device.get() {
-            let current = directory
-                .reach
-                .live
-                .read()
-                .expect("peer connections")
+            let mut live = directory.reach.live.write().expect("peer connections");
+            if !live
                 .get(device)
-                .is_some_and(|peer| peer.connection.stable_id() == connection.stable_id());
-            if !current {
+                .is_some_and(|peer| peer.connection.stable_id() == connection.stable_id())
+            {
                 return;
             }
-            if let Ok(token) = directory.begin_peer_work(device) {
-                let _ = directory.set_peer_state(
-                    &token,
-                    device,
-                    PeerState::Failed {
-                        error: "Peer connection is gone".into(),
-                    },
-                );
-            }
+            // Publish the observation before allowing a new connection to be
+            // registered. This does not supersede an in-flight RPC's work token.
+            let _ = directory.note_peer_connection_closed(device);
+            live.remove(device);
         }
         log::info!("peer iroh connection gone");
-    });
+    }))
 }

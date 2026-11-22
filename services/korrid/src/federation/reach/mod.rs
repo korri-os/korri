@@ -190,21 +190,17 @@ impl FederationDirectory {
             .or_default()
             .clone();
         let _dialing = dialing.lock().await;
-        // Keep closed connections too: callers observe the terminal error, not a retry.
-        if let Some(connection) = self
-            .reach
-            .live
-            .read()
-            .expect("peer connections")
-            .get(device)
         {
-            if connection.connection.close_reason().is_some() {
-                return Err(io::Error::new(
-                    io::ErrorKind::ConnectionAborted,
-                    "peer connection is gone",
-                ));
+            let mut live = self.reach.live.write().expect("peer connections");
+            if let Some(peer) = live
+                .get(device)
+                .filter(|peer| peer.connection.close_reason().is_none())
+            {
+                return Ok(peer.connection.clone());
             }
-            return Ok(connection.connection.clone());
+            // The close observer may not have run yet. Evict here too, under
+            // the per-peer dial lock, so concurrent demand shares one new dial.
+            live.remove(device);
         }
         let ready = self.reach.ready.notified();
         tokio::pin!(ready);

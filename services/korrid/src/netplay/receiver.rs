@@ -535,7 +535,7 @@ async fn monitor(
     loop {
         let status = tokio::select! {
             _ = cancelled.changed() => return,
-            status = observations.next() => status,
+            status = observations.next(), if !copy.forward.connection_gone() => status,
             _ = tokio::time::sleep(MONITOR_INTERVAL) => None,
         };
         if *cancelled.borrow() {

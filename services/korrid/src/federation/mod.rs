@@ -635,6 +635,33 @@ impl FederationDirectory {
         })
     }
 
+    /// A transport observation is not a new peer operation. Preserve the
+    /// current attempt so a successful in-flight request can still publish Ready.
+    pub(crate) fn note_peer_connection_closed(&self, device: &str) -> Result<(), FederationError> {
+        self.mutate(
+            &self.begin_work()?,
+            |state, identity, authorization, now| {
+                let peer = state
+                    .memory
+                    .peers
+                    .get(device)
+                    .ok_or(FederationError::Identity)?;
+                if !is_authorized(identity, authorization, &peer.owner_statement)? {
+                    return Err(FederationError::Identity);
+                }
+                let peer = state
+                    .live
+                    .get_mut(device)
+                    .ok_or(FederationError::Identity)?;
+                peer.state = PeerState::Failed {
+                    error: "Peer connection is gone".into(),
+                };
+                peer.updated_at = peer.updated_at.max(now);
+                Ok(())
+            },
+        )
+    }
+
     pub fn set_peer_state(
         &self,
         token: &WorkToken,

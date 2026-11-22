@@ -487,6 +487,26 @@ fn peer_states_and_configuration_epoch_reject_stale_completions() {
 }
 
 #[test]
+fn connection_loss_observation_does_not_supersede_in_flight_peer_work() {
+    let f = Fixture::new();
+    let d = f.directory().unwrap();
+    f.roster(&d);
+    let stale = d.begin_peer_work(&f.key()).unwrap();
+    let current = d.begin_peer_work(&f.key()).unwrap();
+    d.note_peer_connection_closed(&f.key()).unwrap();
+    assert!(matches!(
+        d.snapshot().unwrap()[0].state,
+        PeerState::Failed { .. }
+    ));
+    assert!(d
+        .set_peer_state(&stale, &f.key(), PeerState::Ready)
+        .is_err());
+    d.set_peer_state(&current, &f.key(), PeerState::Ready)
+        .unwrap();
+    assert_eq!(d.snapshot().unwrap()[0].state, PeerState::Ready);
+}
+
+#[test]
 fn equal_generation_uses_issued_at_and_equal_records_do_not_replace() {
     let f = Fixture::new();
     let d = f.directory().unwrap();
