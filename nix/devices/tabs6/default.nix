@@ -140,6 +140,10 @@ in
     tabs6-deploy = import ./images/check.nix { pkgs = hostPkgs; };
     tabs6-esp = import ./esp/check.nix { pkgs = hostPkgs; };
     tabs6-usb-role = import ./usb-role/check.nix { pkgs = hostPkgs; };
+    tabs6-q6asm = import ./kernel/q6asm-check.nix {
+      pkgs = hostPkgs;
+      source = korriKernel.src;
+    };
   };
   moduleCheck =
     pkgs:

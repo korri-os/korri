@@ -25,6 +25,17 @@ InputPlumber and inputd, uhid for Bluetooth LE controllers, and the gamepad
 drivers (xpad, playstation, sony, nintendo, steam). The console kernel does
 not change.
 
+The product kernel also carries upstream `54e89fab723d`, which resets q6asm's
+three PCM ring positions on prepare. Without it, reusing an open PCM after a
+stop or xrun can leave the application and DSP ring positions out of step.
+This is a proposed fix for the game-start audio stall, not yet hardware-proven;
+see `docs/acceptance/tabs6-audio-stall-2026-11-22.md`. The offline regression
+check compiles the shipped prepare/map/ack functions:
+
+```sh
+nix build .#checks.x86_64-linux.tabs6-q6asm --no-link
+```
+
 The product kernel also carries the Venus video codec ("Video codec" below);
 its build also fails without the `qcom,sm8150-iris` node, `venus_mem` at
 `0x97800000`, `qcom-iris.ko` and an enabled `sdhc_2` ("microSD" below).
@@ -174,6 +185,7 @@ untested.
 | `clk-qcom-dispcc-sm8250-byte-clk-parent-enable` | ours | not carried | new: `CLK_OPS_PARENT_ENABLE` on the DSI byte clock sources (native display) |
 | `drm-panel-wire-samsung-ana38401` | ours | not carried | new: Kconfig/Makefile for `drivers/panel-samsung-ana38401.c` |
 | `net-qrtr-announce-local-services-after-hello` (product kernel only) | upstream 743b5c86276b (v7.4-rc, Cc stable), unchanged, from the tabs6 repository (feat/modem, a85332f) | not needed | new: 7.3 drops every QRTR packet but HELLO until our HELLO has gone out. When the modem's HELLO wins that race, the NEW_SERVER replies for rmtfs and tqftpserv are dropped ("failed to announce new service"), the modem watchdog fires every 40 s ("fatal error without message") and Wi-Fi comes up minutes late. Seen on the console and the Korri kernel. Drop it when the base has it |
+| `q6asm-reset-pcm-positions-on-prepare` (product kernel only) | upstream `54e89fab723d5a374972d3f5c3e0b89ae055bd18`, unchanged, Cc stable | not carried | new: reset `queue_ptr`, `dsp_buf`, and `hw_ptr` when preparing a new PCM ring; candidate for the game-start stall, pending device confirmation |
 | `media-iris-sm8150-legacy-vpu5` (product kernel only) | MCC45TR/nabu-linux-kernel 7.2.2 (0b3226fc8f3c), from CFM880/nabu-iris | not carried | new: SM8150 video codec ("Video codec" above) |
 | `media-iris-gen1-encoder-for-sunshine` (product kernel only) | ours, ported from the Mini V2's three gen1 encoder patches | not carried | new: FORCE_KEY_FRAME, PREPEND_SPSPPS_TO_IDR and the aligned raw layout for Sunshine |
 | ~~`dwc3-allow-userspace-role-control`~~ | port | applied | dropped: upstream in 7.3 (`dwc3_setup_role_switch` sets `allow_userspace_control`) |

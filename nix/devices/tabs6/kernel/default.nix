@@ -54,6 +54,10 @@ let
   # tabs6 repository (feat/modem, a85332f). Product only, so the console
   # kernel stays the tabs6 repository's derivation.
   ++ lib.optional product ./patches/net-qrtr-announce-local-services-after-hello.patch
+  # Upstream 54e89fab723d (Cc stable): prepare must reset all PCM ring
+  # positions, including after PipeWire drops/reprepares an open device.
+  # Product only; the console keeps its hardware-proven kernel derivation.
+  ++ lib.optional product ./patches/q6asm-reset-pcm-positions-on-prepare.patch
   # The Iris driver with SM8150 (Iris1, "legacy VPU5") support from
   # MCC45TR/nabu-linux-kernel 7.2.2 (README.md). Product only, with its
   # device tree node (dts/sm8150-samsung-gts6lwifi-venus.dtsi).
