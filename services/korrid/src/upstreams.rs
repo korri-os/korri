@@ -208,18 +208,8 @@ impl RegisteredHost {
         let RegisteredClient::Native(client) = &self.client else {
             return Err(UpstreamError::MoonlightHostCandidatesUnavailable);
         };
-        // Federation supplies authenticated RPC origins even when the endpoint
-        // has no explicit viewer address. Probe Sunshine on those same hosts.
-        let origins = moonlight_control_origins(&client.candidate_origins());
-        let selected = crate::federation::connect::select_origin(&origins)
-            .await
-            .map_err(|_| UpstreamError::MoonlightHostCandidatesUnavailable)?;
-        let address = origins[selected]
-            .strip_prefix("http://")
-            .expect("derived HTTP origin")
-            .to_owned();
-        log::info!("Moonlight control probe accepted address={address}");
-        Ok(address)
+        let _ = client;
+        Err(UpstreamError::MoonlightHostCandidatesUnavailable)
     }
 
     fn native_route_key(&self) -> Option<String> {
@@ -333,28 +323,28 @@ enum FreezerVerb {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RecoveredHolderPhase {
+enum HolderPhase {
     Running,
     Frozen,
     FocusFailed,
 }
 
-impl RecoveredHolderPhase {
+impl HolderPhase {
     fn parse(phase: Option<&str>) -> Result<Self, UpstreamError> {
         match phase {
             Some("running") => Ok(Self::Running),
             Some("frozen") => Ok(Self::Frozen),
             Some("focus-failed") => Ok(Self::FocusFailed),
             Some("stopping") => Err(viewer_error(
-                "NativeViewerRecoveryIncomplete",
+                "ViewerUnavailable",
                 "streamed launch is stopping; viewer recovery is blocked",
             )),
             Some(other) => Err(viewer_error(
-                "NativeViewerRecoveryIncomplete",
+                "ViewerUnavailable",
                 format!("streamed launch has unknown phase {other:?}"),
             )),
             None => Err(viewer_error(
-                "NativeViewerRecoveryIncomplete",
+                "ViewerUnavailable",
                 "streamed launch has no recoverable phase",
             )),
         }
@@ -393,6 +383,9 @@ pub struct UpstreamRegistry {
 }
 
 impl UpstreamRegistry {
+    pub(crate) fn selected_launch_id(&self) -> Option<String> {
+        self.selected().map(|selected| selected.launch_id)
+    }
     pub(crate) fn has_selected_session(&self) -> bool {
         self.selected().is_some()
     }
@@ -424,7 +417,9 @@ impl UpstreamRegistry {
                         }))
                     }
                     UpstreamKind::Native => {
-                        let base_url = match crate::federation::peer_origin(&config.base_url) {
+                        let base_url = match crate::upstream_native::configured_peer_origin(
+                            &config.base_url,
+                        ) {
                             Ok(origin) => origin,
                             Err(_) => {
                                 configuration_error = Some(format!(
@@ -699,15 +694,7 @@ impl UpstreamRegistry {
                 let RegisteredClient::Native(client) = host.client else {
                     unreachable!()
                 };
-                let mut candidates = client.candidate_origins();
-                if let Some(peer) = peers.iter().find(|p| p.device_public_key == key) {
-                    candidates.extend(endpoint_candidates(peer));
-                }
-                host.client = RegisteredClient::Native(
-                    client
-                        .with_candidates(candidates)?
-                        .with_directory(directory.clone()),
-                );
+                host.client = RegisteredClient::Native(client.with_directory(directory.clone()));
             }
             hosts.push(host);
         }
@@ -719,16 +706,10 @@ impl UpstreamRegistry {
                 .credentials
                 .clone()
                 .ok_or_else(|| UpstreamError::Wire("peer credentials unavailable".into()))?;
-            let metadata = peer
-                .current_endpoint
-                .as_ref()
-                .or(peer.remembered_endpoint.as_ref());
-            let label = metadata
-                .and_then(|e| e.label.clone())
-                .unwrap_or_else(|| peer.device_public_key.clone());
-            let moonlight_address = metadata.and_then(|e| e.moonlight_address.clone());
+            let label = peer.device_public_key.clone();
+            let moonlight_address = None;
             let client = NativeClient::new_secure_candidates(
-                endpoint_candidates(&peer),
+                Vec::new(),
                 peer.device_public_key.clone(),
                 credentials,
             )
@@ -808,15 +789,11 @@ impl UpstreamRegistry {
                             .and_then(|key| directory.stream_address(key))
                     })
                     .or_else(|| {
-                        host.device_public_key
-                            .as_deref()
-                            .and_then(|key| {
-                                crate::federation::reach::nearby_seam::moonlight_address(
-                                    key,
-                                    host.moonlight_address.as_deref(),
-                                )
-                            })
-                            .or_else(|| host.moonlight_address.clone())
+                        registry
+                            .directory
+                            .is_none()
+                            .then(|| host.moonlight_address.clone())
+                            .flatten()
                     })
                     .filter(|address| !address.trim().is_empty())
                     .map(|address| MoonlightHostCandidate {
@@ -1252,20 +1229,29 @@ impl UpstreamRegistry {
         }
     }
 
-    async fn recover_viewer(
+    async fn synchronize_viewer(
         &self,
         selected: &SelectedRemoteSession,
-        holder_phase: RecoveredHolderPhase,
+        holder_phase: HolderPhase,
     ) -> Result<(), UpstreamError> {
         let Some(viewer) = &selected.viewer else {
             return Ok(());
         };
+        if viewer
+            .reach
+            .as_ref()
+            .is_some_and(|reach| reach.connection_gone())
+        {
+            return Err(viewer_error(
+                "PeerConnectionGone",
+                "Peer connection is gone. Leave or end this session.",
+            ));
+        }
         if selected.viewer_target == LinuxViewerStatus::Stopped {
             return Ok(());
         }
         let viewer_backgrounded = selected.viewer_target == LinuxViewerStatus::Backgrounded
             || holder_phase.viewer_backgrounded();
-        let mut recovering = selected.clone();
         let result = match self.viewer.status(&selected.launch_id).await {
             Ok(LinuxViewerStatus::Running) if viewer_backgrounded => {
                 self.viewer.background(&selected.launch_id).await
@@ -1275,53 +1261,19 @@ impl UpstreamRegistry {
             }
             Ok(LinuxViewerStatus::Running | LinuxViewerStatus::Backgrounded) => Ok(()),
             Ok(LinuxViewerStatus::Stopped) => {
-                // Prepare this peer again before the viewer starts.
-                let mut address = viewer.moonlight_address.clone();
-                if let SelectedRemoteRoute::Native { device_public_key } = &selected.route {
-                    if let Some(host) = self.native_host_by_route_key(device_public_key) {
-                        let viewer = crate::federation::reach::prepare_peer_viewer(
-                            self.directory.as_ref(),
-                            device_public_key,
-                            host.moonlight_address.as_deref(),
-                        )
-                        .await?;
-                        address = viewer.moonlight_address.clone();
-                        recovering.viewer = Some(viewer);
-                        self.set_selected(recovering.clone());
-                    }
-                }
-                match self
-                    .viewer
-                    .start(&selected.launch_id, &address, selected.display.clone())
-                    .await
-                {
-                    Ok(()) if viewer_backgrounded => {
-                        self.viewer.background(&selected.launch_id).await
-                    }
-                    other => other,
-                }
-            }
-            Err(error) => {
                 return Err(viewer_error(
-                    "NativeViewerRecoveryIncomplete",
-                    error.to_string(),
-                ))
+                    "ViewerStopped",
+                    "The viewer stopped. Leave or end this session.",
+                ));
             }
+            Err(error) => return Err(viewer_error("ViewerUnavailable", error.to_string())),
         };
         match result {
             Ok(()) => {
                 self.set_viewer_confirmed(selected, true);
                 Ok(())
             }
-            Err(error) => {
-                if let Some(reach) = recovering.viewer.as_ref().and_then(|v| v.reach.as_ref()) {
-                    reach.release();
-                }
-                Err(viewer_error(
-                    "NativeViewerRecoveryIncomplete",
-                    error.to_string(),
-                ))
-            }
+            Err(error) => Err(viewer_error("ViewerUnavailable", error.to_string())),
         }
     }
 
@@ -1399,10 +1351,7 @@ impl UpstreamRegistry {
             .await;
             if let Err(error) = cleanup {
                 self.set_viewer_confirmed(selected, false);
-                return Err(viewer_error(
-                    "NativeViewerRecoveryIncomplete",
-                    error.to_string(),
-                ));
+                return Err(viewer_error("ViewerUnavailable", error.to_string()));
             }
         }
         self.clear_selected_if(selected);
@@ -1452,8 +1401,8 @@ impl UpstreamRegistry {
                         return Ok(status);
                     }
                     if selected.viewer.is_some() {
-                        let phase = RecoveredHolderPhase::parse(active.phase.as_deref())?;
-                        self.recover_viewer(&selected, phase).await?;
+                        let phase = HolderPhase::parse(active.phase.as_deref())?;
+                        self.synchronize_viewer(&selected, phase).await?;
                         let _ = self.synchronize_shape(&selected).await;
                     }
                     return Ok(status);
@@ -1613,7 +1562,23 @@ impl UpstreamRegistry {
     ) -> Result<SessionTransitionResult, UpstreamError> {
         let registry = self.resolved()?;
         let _mutation = registry.remote_prepare_mutation.lock().await;
-        let selected = registry.exact_live_selection(expected).await?;
+        // Leaving this device's screen must not require a working peer connection.
+        let expected = expected
+            .filter(|id| !id.is_empty())
+            .ok_or(UpstreamError::ExpectedLaunchIdRequired)?;
+        let selected = registry.selected().ok_or(UpstreamError::NoActiveSession)?;
+        if expected != selected.launch_id {
+            return Err(UpstreamError::StaleLaunchIdentity);
+        }
+        let gone = selected
+            .viewer
+            .as_ref()
+            .and_then(|viewer| viewer.reach.as_ref())
+            .is_some_and(|reach| reach.connection_gone());
+        if !gone {
+            registry.exact_live_selection(Some(expected)).await?;
+        }
+
         Ok(SessionTransitionResult {
             launch_id: selected.launch_id,
             state: crate::SessionFreezerState::Running,
@@ -1633,9 +1598,24 @@ impl UpstreamRegistry {
             // its route and restart only this viewer when the person resumes.
             let mut resumed = selected.clone();
             resumed.viewer_target = LinuxViewerStatus::Running;
+            let address = resumed
+                .viewer
+                .as_ref()
+                .and_then(|viewer| {
+                    viewer
+                        .reach
+                        .as_ref()
+                        .and_then(|reach| reach.address())
+                        .or_else(|| Some(viewer.moonlight_address.clone()))
+                })
+                .ok_or_else(|| {
+                    viewer_error("ViewerStopped", "The viewer address is unavailable")
+                })?;
             registry
-                .recover_viewer(&resumed, RecoveredHolderPhase::Running)
-                .await?;
+                .viewer
+                .start(&resumed.launch_id, &address, resumed.display.clone())
+                .await
+                .map_err(|error| viewer_error("ViewerStartFailed", error.to_string()))?;
         } else {
             registry
                 .viewer
@@ -1674,13 +1654,6 @@ impl UpstreamRegistry {
                 registry.stop_stream_player(&selected).await?;
             }
             crate::SessionViewerAction::Disconnect => {
-                if let Some(reach) = selected
-                    .viewer
-                    .as_ref()
-                    .and_then(|viewer| viewer.reach.as_ref())
-                {
-                    reach.release();
-                }
                 registry.set_viewer_target(&selected, LinuxViewerStatus::Stopped);
                 registry.set_viewer_confirmed(&selected, false);
             }
@@ -1811,10 +1784,10 @@ impl UpstreamRegistry {
         match result {
             Ok(result) => {
                 let viewer_phase = match verb {
-                    FreezerVerb::Freeze => RecoveredHolderPhase::Frozen,
-                    FreezerVerb::Thaw => RecoveredHolderPhase::Running,
+                    FreezerVerb::Freeze => HolderPhase::Frozen,
+                    FreezerVerb::Thaw => HolderPhase::Running,
                 };
-                match self.recover_viewer(&selected, viewer_phase).await {
+                match self.synchronize_viewer(&selected, viewer_phase).await {
                     Ok(()) => Ok(result),
                     Err(error) => {
                         self.set_viewer_confirmed(&selected, false);
@@ -1953,6 +1926,19 @@ impl UpstreamRegistry {
         }
         if self.retire_selected_if_revoked(selected)? {
             return Err(UpstreamError::SourcePeerNotFound);
+        }
+        if selected
+            .viewer
+            .as_ref()
+            .and_then(|viewer| viewer.reach.as_ref())
+            .is_some_and(|reach| reach.connection_gone())
+        {
+            self.viewer
+                .stop(&selected.launch_id)
+                .await
+                .map_err(|error| viewer_error("ViewerControlFailed", error.to_string()))?;
+            self.clear_selected_if(selected);
+            return Err(viewer_error("PeerConnectionGone", "This viewer ended. The other device's session could not be ended because its connection is gone."));
         }
         let result = match &selected.route {
             SelectedRemoteRoute::Native { device_public_key } => {
@@ -2212,29 +2198,6 @@ fn viewer_error(code: &'static str, message: impl Into<String>) -> UpstreamError
         code: code.into(),
         message: message.into(),
     }
-}
-
-fn moonlight_control_origins(candidates: &[String]) -> Vec<String> {
-    let mut seen = BTreeSet::new();
-    candidates
-        .iter()
-        .filter_map(|candidate| {
-            let origin = crate::federation::peer_origin(candidate).ok()?;
-            let mut url = url::Url::parse(&origin).ok()?;
-            url.set_scheme("http").ok()?;
-            url.set_port(Some(47989)).ok()?;
-            let origin = url.origin().ascii_serialization();
-            seen.insert(origin.clone()).then_some(origin)
-        })
-        .collect()
-}
-
-fn endpoint_candidates(peer: &crate::federation::PeerSnapshot) -> Vec<String> {
-    peer.current_endpoint
-        .iter()
-        .chain(peer.remembered_endpoint.iter())
-        .flat_map(|endpoint| endpoint.candidates.iter().cloned())
-        .collect()
 }
 
 fn active_session(
@@ -3639,79 +3602,6 @@ mod tests {
         assert!(missing_file.deferred_file_config.is_some());
     }
 
-    #[test]
-    fn moonlight_control_origins_derive_hosts_on_the_sunshine_port() {
-        let candidates = [
-            "https://192.168.1.130:39217",
-            "http://holder.example:8099",
-            "http://[fd00::1]:39217",
-            "http://192.168.1.130:8099",
-        ]
-        .map(str::to_owned);
-        assert_eq!(
-            moonlight_control_origins(&candidates),
-            [
-                "http://192.168.1.130:47989",
-                "http://holder.example:47989",
-                "http://[fd00::1]:47989",
-            ]
-        );
-    }
-
-    // The Sunshine port is fixed by its protocol. Run these network tests in
-    // an isolated namespace, so a build host's own Sunshine cannot answer them.
-    #[tokio::test]
-    async fn moonlight_control_probe_uses_a_reachable_candidate_without_rpc_or_selection() {
-        use tokio::{io::AsyncReadExt, net::TcpListener};
-        let sunshine = TcpListener::bind("127.0.0.2:47989").await.unwrap();
-        let rpc = TcpListener::bind("127.0.0.2:0").await.unwrap();
-        let rpc_origin = format!("http://{}", rpc.local_addr().unwrap());
-        let mut config = UpstreamHostConfig::native("holder", rpc_origin.clone());
-        config.moonlight_address = None;
-        let mut registry = UpstreamRegistry::new(vec![config]);
-        let RegisteredClient::Native(client) = registry.hosts[0].client.clone() else {
-            unreachable!()
-        };
-        registry.hosts[0].client = RegisteredClient::Native(
-            client
-                .with_candidates(vec![
-                    "http://127.0.0.3:39217".into(),
-                    rpc_origin,
-                    "http://127.0.0.2:39218".into(),
-                ])
-                .unwrap(),
-        );
-        assert_eq!(
-            registry.hosts[0].viewer_address().await.unwrap(),
-            "127.0.0.2:47989"
-        );
-        assert!(!registry.has_selected_session());
-        let (mut connection, _) = timeout(Duration::from_secs(1), sunshine.accept())
-            .await
-            .unwrap()
-            .unwrap();
-        let mut byte = [0];
-        assert_eq!(
-            timeout(Duration::from_secs(1), connection.read(&mut byte))
-                .await
-                .unwrap()
-                .unwrap(),
-            0
-        );
-        assert!(
-            timeout(Duration::from_millis(20), sunshine.accept())
-                .await
-                .is_err(),
-            "no duplicate probe"
-        );
-        assert!(
-            timeout(Duration::from_millis(20), rpc.accept())
-                .await
-                .is_err(),
-            "probe must not send RPC"
-        );
-    }
-
     #[tokio::test]
     async fn moonlight_control_probe_refuses_when_only_the_rpc_port_answers() {
         let rpc = tokio::net::TcpListener::bind("127.0.0.3:0").await.unwrap();
@@ -3730,18 +3620,6 @@ mod tests {
                 .is_err(),
             "probe must not send RPC"
         );
-    }
-
-    #[test]
-    fn moonlight_control_origins_reject_non_origins() {
-        let candidates = [
-            "http://user:secret@holder:39217",
-            "http://holder:39217/path",
-            "ws://holder:39217",
-            "http://holder:0",
-        ]
-        .map(str::to_owned);
-        assert!(moonlight_control_origins(&candidates).is_empty());
     }
 
     #[test]
@@ -4386,7 +4264,7 @@ command = ["native-game"]
             holder.end_with("HostLaunchFailed");
             viewer.fail_next(action, "viewer unavailable");
             assert!(matches!(registry.prepare_stream("game", None).await,
-                Err(UpstreamError::Tagged { code, .. }) if code == "NativeViewerRecoveryIncomplete"));
+                Err(UpstreamError::Tagged { code, .. }) if code == "ViewerUnavailable"));
             assert!(registry.has_selected_session());
             assert_eq!(
                 holder.terminal_error.lock().unwrap().as_deref(),
@@ -4462,13 +4340,17 @@ command = ["native-game"]
             );
             assert!(registry.selected().unwrap().viewer.unwrap().confirmed_live);
 
-            // Reopening a released decoder must keep the same composed size.
             viewer.seed(&state.launch_id, LinuxViewerStatus::Stopped);
-            registry.session_status().await.unwrap();
-            assert_eq!(viewer.calls().last().unwrap().display, composed);
+            assert!(
+                matches!(registry.session_status().await, Err(UpstreamError::Tagged { code, .. }) if code == "ViewerStopped")
+            );
             assert_eq!(
-                viewer.calls().last().unwrap().action,
-                LinuxViewerAction::Start
+                viewer
+                    .calls()
+                    .iter()
+                    .filter(|call| call.action == LinuxViewerAction::Start)
+                    .count(),
+                1
             );
         }
     }
@@ -4919,9 +4801,11 @@ command = ["native-game"]
             .prepare_stream("game", None)
             .await
             .unwrap();
+        let viewer = TestLinuxStreamViewer::default();
+        viewer.seed(&state.launch_id, LinuxViewerStatus::Running);
         let registry = selected_viewer_registry(
             UpstreamRegistry::new(vec![UpstreamHostConfig::native("peer", url)])
-                .with_linux_viewer(Arc::new(TestLinuxStreamViewer::default())),
+                .with_linux_viewer(Arc::new(viewer)),
             &state.launch_id,
         )
         .await;
@@ -4942,7 +4826,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn recovery_restores_only_the_explicitly_selected_streamed_launch_viewer() {
+    async fn status_reports_a_stopped_viewer_without_restarting_it() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
             .prepare_stream("game", None)
@@ -4956,25 +4840,17 @@ command = ["native-game"]
         )
         .await;
 
-        let status = registry.session_status().await.unwrap();
-
-        assert_eq!(active_session(&status).unwrap().launch_id, state.launch_id);
+        assert!(
+            matches!(registry.session_status().await, Err(UpstreamError::Tagged { code, .. }) if code == "ViewerStopped")
+        );
         assert_eq!(
             viewer.calls(),
-            vec![
-                LinuxViewerCall {
-                    display: None,
-                    action: LinuxViewerAction::Status,
-                    launch_id: state.launch_id.clone(),
-                    moonlight_address: None,
-                },
-                LinuxViewerCall {
-                    display: None,
-                    action: LinuxViewerAction::Start,
-                    launch_id: state.launch_id,
-                    moonlight_address: Some("zao:47989".into()),
-                },
-            ]
+            vec![LinuxViewerCall {
+                display: None,
+                action: LinuxViewerAction::Status,
+                launch_id: state.launch_id,
+                moonlight_address: None,
+            }]
         );
     }
 
@@ -5070,7 +4946,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn status_recovery_and_stop_share_one_lifecycle_mutation_gate() {
+    async fn status_error_and_stop_share_one_lifecycle_mutation_gate() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
             .prepare_stream("game", None)
@@ -5101,7 +4977,9 @@ command = ["native-game"]
         assert!(!stop_task.is_finished());
 
         status_release.add_permits(1);
-        status_task.await.unwrap().unwrap();
+        assert!(
+            matches!(status_task.await.unwrap(), Err(UpstreamError::Tagged { code, .. }) if code == "ViewerStopped")
+        );
         assert!(matches!(
             stop_task.await.unwrap().unwrap(),
             UpstreamSessionStop::Stopped { .. }
@@ -5112,11 +4990,7 @@ command = ["native-game"]
                 .into_iter()
                 .map(|call| call.action)
                 .collect::<Vec<_>>(),
-            vec![
-                LinuxViewerAction::Status,
-                LinuxViewerAction::Start,
-                LinuxViewerAction::Stop,
-            ]
+            vec![LinuxViewerAction::Status, LinuxViewerAction::Stop,]
         );
         assert!(registry.selected().is_none());
     }
@@ -5140,7 +5014,7 @@ command = ["native-game"]
         assert!(matches!(
             registry.session_status().await,
             Err(UpstreamError::Tagged { code, message })
-                if code == "NativeViewerRecoveryIncomplete"
+                if code == "ViewerUnavailable"
                     && message == "viewer status unavailable"
         ));
         assert_eq!(registry.selected().unwrap().launch_id, state.launch_id);

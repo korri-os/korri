@@ -45,7 +45,7 @@ export type NativeInputDeviceClass = "gamepad" | "keyboard" | "mouse" | "touch" 
 
 export type NativeInputEvent = NativeInputInput | NativeInputDeviceAdded | NativeInputDeviceRemoved | NativeInputAction;
 
-export type NetplayPhase = { _tag: "Copying"; done: number; total: number } | { _tag: "Connecting" } | { _tag: "Playing" } | { _tag: "HolderLeft" } | { _tag: "Reconnecting" };
+export type NetplayPhase = { _tag: "Copying"; done: number; total: number } | { _tag: "Connecting" } | { _tag: "Playing" } | { _tag: "HolderLeft" };
 
 export type NonFinalDownloadReason = "interstitial" | "requires-user-action" | "unsupported";
 

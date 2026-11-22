@@ -70,11 +70,6 @@ let
     }) cfg.nativePeers
   );
   relayJson = builtins.toJSON relayUrls;
-  # The same host:port shape that StunList::configured accepts in settings.rs.
-  validStunAddress =
-    value:
-    builtins.match "^[^][[:space:]/@?#]+:[1-9][0-9]{0,4}$" value != null
-    || builtins.match "^\\[[0-9A-Fa-f:.]+]:[1-9][0-9]{0,4}$" value != null;
   identityExecutable =
     if bundleCfg.enable then
       "${bundleCfg.launcherPackage}/bin/korri-bundle-launch korrid"
@@ -193,7 +188,7 @@ in
     localSignerGid = lib.mkOption { type = lib.types.ints.positive; };
     address = lib.mkOption {
       type = lib.types.str;
-      default = "[::]:43117";
+      default = "127.0.0.1:43117";
     };
     deviceConfig = lib.mkOption {
       type = lib.types.path;
@@ -272,16 +267,6 @@ in
       type = lib.types.listOf lib.types.str;
       description = "Ordered relay URLs. Production relays use wss://; ws:// is limited to loopback tests.";
     };
-    stun = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ ];
-      description = "Ordered public STUN host:port addresses passed as KORRID_STUN. Empty leaves korrid to device.yaml host.stun.";
-    };
-    moonlightAddress = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Optional Moonlight address in authenticated endpoint announcements.";
-    };
     nativePeers = lib.mkOption {
       default = [ ];
       description = "Native peer endpoints serialized to the established KORRID_UPSTREAMS schema.";
@@ -349,24 +334,6 @@ in
           && lib.all validRelayUrl relayUrls
           && builtins.length (lib.unique relayUrls) == builtins.length relayUrls;
         message = "korrid relays must contain one to eight unique normalized wss:// URLs, with ws:// allowed only for loopback tests.";
-      }
-      {
-        assertion =
-          builtins.length cfg.stun <= 8
-          && lib.all validStunAddress cfg.stun
-          && builtins.length (lib.unique cfg.stun) == builtins.length cfg.stun;
-        message = "korrid stun must contain at most eight unique host:port addresses.";
-      }
-      {
-        assertion =
-          cfg.moonlightAddress == null
-          || (
-            builtins.stringLength cfg.moonlightAddress >= 1
-            && builtins.stringLength cfg.moonlightAddress <= 256
-            && builtins.match ".*[[:cntrl:]].*" cfg.moonlightAddress == null
-            && builtins.match "[[:space:]]*" cfg.moonlightAddress == null
-          );
-        message = "korrid advertised moonlightAddress must be null or bounded nonblank text without control characters.";
       }
       {
         assertion =
@@ -716,12 +683,12 @@ in
       };
     };
 
-    # The signed peer surface follows the device on every network interface.
-    networking.firewall.allowedTCPPorts = [ (lib.toInt (lib.last (lib.splitString ":" cfg.address))) ];
-    # ADR 0089: local discovery's multicast DNS announce and browse, on every
-    # network the device joins. This is the product's only UDP 5353 rule; a
-    # resolved mDNS responder on the same device uses it too.
-    networking.firewall.allowedUDPPorts = [ 5353 ];
+    # iroh-mdns-address-lookup uses multicast DNS for offline LAN discovery.
+    networking.firewall.allowedUDPPorts = [
+      5353
+      # The one iroh endpoint reuses korrid's configured port over UDP.
+      (lib.toInt (lib.last (lib.splitString ":" cfg.address)))
+    ];
 
     systemd.services.korrid = {
       description = "Korri Linux device daemon";
@@ -772,9 +739,6 @@ in
         # directory with this (linux_viewer/selection.rs, ADR 0060).
         KORRID_SETFACL = "${pkgs.acl.bin}/bin/setfacl";
       }
-      // lib.optionalAttrs (cfg.stun != [ ]) {
-        KORRID_STUN = builtins.toJSON cfg.stun;
-      }
       // lib.optionalAttrs pluginHostCfg.enable {
         KORRID_PLUGIN_ADMIN_SOCKET = pluginHostCfg.adminSocket;
       }
@@ -786,9 +750,6 @@ in
       }
       // lib.optionalAttrs (cfg.certificateControlDirectory != null) {
         KORRID_CERTIFICATE_CONTROL_DIRECTORY = cfg.certificateControlDirectory;
-      }
-      // lib.optionalAttrs (cfg.moonlightAddress != null) {
-        KORRID_MOONLIGHT_ADDRESS = cfg.moonlightAddress;
       }
       // lib.optionalAttrs (cfg.compositorControlSocket != null) {
         KORRID_COMPOSITOR_CONTROL_SOCKET = cfg.compositorControlSocket;

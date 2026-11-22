@@ -8,7 +8,6 @@ use crate::{
     RpcResponse,
 };
 pub mod app;
-mod framework_network;
 
 /// This device's broker provisions a client certificate at the Sunshine with
 /// this host UUID, through korrid's own authenticated localhost RPC, for the

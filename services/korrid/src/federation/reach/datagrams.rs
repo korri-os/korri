@@ -37,12 +37,20 @@ fn fragments(port: u16, id: u64, payload: &[u8], mtu: usize) -> io::Result<Vec<V
     }
     Ok(out)
 }
-pub(super) fn send(connection: &Connection, port: u16, payload: &[u8]) -> io::Result<()> {
+pub(super) fn send(
+    connection: &Connection,
+    port: u16,
+    payload: &[u8],
+    response: bool,
+) -> io::Result<()> {
     let mtu = connection
         .max_datagram_size()
         .ok_or_else(|| io::Error::other("no datagram path"))?
         .min(MAX_FRAGMENT);
-    for part in fragments(port, NEXT.fetch_add(1, Ordering::Relaxed), payload, mtu)? {
+    for mut part in fragments(port, NEXT.fetch_add(1, Ordering::Relaxed), payload, mtu)? {
+        if response {
+            part[0] = 2;
+        }
         connection
             .send_datagram(part.into())
             .map_err(io::Error::other)?;
@@ -60,7 +68,7 @@ pub(super) struct Receiver {
 }
 impl Receiver {
     pub(super) fn push(&mut self, bytes: &[u8]) -> Option<(u16, Vec<u8>)> {
-        if bytes.len() < HEADER || bytes.len() > MAX_FRAGMENT || bytes[0] != 1 {
+        if bytes.len() < HEADER || bytes.len() > MAX_FRAGMENT || !matches!(bytes[0], 1 | 2) {
             return None;
         }
         self.partial

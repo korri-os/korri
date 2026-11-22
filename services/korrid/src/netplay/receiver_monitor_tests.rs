@@ -237,7 +237,7 @@ impl Fixture {
             _route: route,
         }
     }
-    async fn status(&self) -> SessionStatus {
+    async fn status_outcome(&self) -> SessionStatusOutcome {
         let response = crate::dispatch(
             &self.state,
             &authorization::AuthorizationContext::LocalSurfaceHost,
@@ -245,7 +245,13 @@ impl Fixture {
         )
         .await
         .unwrap();
-        let RpcResponse::SessionStatus(SessionStatusOutcome::Ok(status)) = response else {
+        let RpcResponse::SessionStatus(outcome) = response else {
+            panic!("wrong response");
+        };
+        outcome
+    }
+    async fn status(&self) -> SessionStatus {
+        let SessionStatusOutcome::Ok(status) = self.status_outcome().await else {
             panic!("status failed");
         };
         status
@@ -534,88 +540,6 @@ async fn netplay_failed_holder_status_does_not_freeze_a_connected_client() {
 }
 
 #[tokio::test]
-async fn netplay_leave_uses_the_observed_identity_after_a_reconnect_relaunch() {
-    let fixture = Fixture::new().await;
-    let client = fixture.connected_client().await;
-    let observed = fixture.status().await.active.unwrap().launch_id;
-    let lost_at = tokio::time::Instant::now();
-    drop(client);
-    tokio::time::sleep(Duration::from_millis(1250)).await;
-    assert_eq!(
-        fixture.backend.launch_count(),
-        1,
-        "a live client must first get time to finish a local quit"
-    );
-    tokio::time::timeout(Duration::from_secs(4), async {
-        while fixture.backend.launch_count() < 2 {
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
-    })
-    .await
-    .expect("a lost bridge must relaunch the native client");
-    assert!(lost_at.elapsed() >= Duration::from_secs(3));
-    let status = fixture.status().await;
-    assert!(matches!(
-        status.netplay.unwrap().phase,
-        NetplayPhase::Reconnecting
-    ));
-    let replacement = if let ServerMode::Host(host) = &fixture.state.mode {
-        let SessionStatusOutcome::Ok(native) =
-            host_session_status_outcome(host.session_status().await)
-        else {
-            panic!("native status failed");
-        };
-        native.active.unwrap().launch_id
-    } else {
-        unreachable!()
-    };
-    assert_ne!(replacement, fixture.launch);
-    let refused = crate::dispatch(
-        &fixture.state,
-        &authorization::AuthorizationContext::LocalSurfaceHost,
-        RpcRequest::SessionLeave(SessionLeaveRequest {
-            expected_launch_id: Some("another-run".into()),
-        }),
-    )
-    .await
-    .unwrap();
-    assert!(
-        matches!(refused, RpcResponse::SessionLeave(SessionTransitionOutcome::Err(RpcFailure { code, .. })) if code == "StaleLaunchIdentity")
-    );
-    let response = crate::dispatch(
-        &fixture.state,
-        &authorization::AuthorizationContext::LocalSurfaceHost,
-        RpcRequest::SessionLeave(SessionLeaveRequest {
-            expected_launch_id: Some(observed.clone()),
-        }),
-    )
-    .await
-    .unwrap();
-    assert!(
-        matches!(
-            response,
-            RpcResponse::SessionLeave(SessionTransitionOutcome::Ok(_))
-        ),
-        "Leave with the observed identity must stop the replacement: {response:?}"
-    );
-    assert_eq!(status.active.unwrap().launch_id, observed);
-    assert!(!fixture.state.netplay_receiver.busy());
-    assert_eq!(
-        fixture.backend.state(&replacement).unwrap(),
-        LaunchUnitState::Completed
-    );
-    assert_eq!(
-        fixture.backend.freeze_count(),
-        0,
-        "reconnecting must not freeze the client"
-    );
-    assert!(matches!(
-        fixture.holder.session_status().await.unwrap(),
-        host::control::HostSessionStatus::Running { .. }
-    ));
-}
-
-#[tokio::test]
 async fn netplay_timed_out_holder_status_keeps_the_last_connected_observation() {
     let fixture = Fixture::new().await;
     let _client = fixture.connected_client().await;
@@ -673,7 +597,7 @@ async fn netplay_holder_left_waits_through_failed_polls_then_resumes() {
 }
 
 #[tokio::test]
-async fn netplay_lost_bridge_expires_even_when_holder_status_is_slow() {
+async fn netplay_lost_bridge_reports_once_without_relaunch_even_when_status_is_slow() {
     let fixture = Fixture::new().await;
     let client = fixture.connected_client().await;
     fixture.status_delay_ms.store(4500, Ordering::SeqCst);
@@ -681,7 +605,14 @@ async fn netplay_lost_bridge_expires_even_when_holder_status_is_slow() {
     drop(client);
     tokio::time::timeout(Duration::from_secs(12), async {
         loop {
-            if let Some(ended) = fixture.status().await.stream_play_ended {
+            let status = match fixture.status_outcome().await {
+                SessionStatusOutcome::Ok(status) => status,
+                SessionStatusOutcome::Err(error) => {
+                    assert_eq!(error.code, "PeerConnectionGone");
+                    break;
+                }
+            };
+            if let Some(ended) = status.stream_play_ended {
                 assert!(matches!(
                     ended.cause,
                     stream_play::StreamPlayEndCause::DeviceUnreachable
@@ -694,8 +625,8 @@ async fn netplay_lost_bridge_expires_even_when_holder_status_is_slow() {
     })
     .await
     .expect("transport reconnect must not wait for the slow status RPC");
-    assert!(lost_at.elapsed() >= RECONNECT_WINDOW);
-    assert_eq!(fixture.backend.launch_count(), 2);
+    assert!(lost_at.elapsed() < Duration::from_secs(5));
+    assert_eq!(fixture.backend.launch_count(), 1);
     assert_eq!(fixture.backend.freeze_count(), 0);
     assert!(matches!(
         fixture.holder.session_status().await.unwrap(),
@@ -704,7 +635,7 @@ async fn netplay_lost_bridge_expires_even_when_holder_status_is_slow() {
 }
 
 #[tokio::test]
-async fn netplay_lost_iroh_route_expires_even_while_waiting_for_the_holder() {
+async fn netplay_connection_gone_ends_without_retry_while_waiting_for_the_holder() {
     let fixture = Fixture::new().await;
     let _client = fixture.connected_client().await;
     fixture.holder.session_freeze(&fixture.held).await.unwrap();
@@ -731,7 +662,14 @@ async fn netplay_lost_iroh_route_expires_even_while_waiting_for_the_holder() {
     connection.close(0u32.into(), b"test route loss");
     tokio::time::timeout(Duration::from_secs(12), async {
         loop {
-            if let Some(ended) = fixture.status().await.stream_play_ended {
+            let status = match fixture.status_outcome().await {
+                SessionStatusOutcome::Ok(status) => status,
+                SessionStatusOutcome::Err(error) => {
+                    assert_eq!(error.code, "PeerConnectionGone");
+                    break;
+                }
+            };
+            if let Some(ended) = status.stream_play_ended {
                 assert!(matches!(
                     ended.cause,
                     stream_play::StreamPlayEndCause::DeviceUnreachable
@@ -743,7 +681,7 @@ async fn netplay_lost_iroh_route_expires_even_while_waiting_for_the_holder() {
     })
     .await
     .expect("losing the iroh route must still have a reconnect deadline");
-    assert!(lost_at.elapsed() >= RECONNECT_WINDOW);
+    assert!(lost_at.elapsed() < Duration::from_secs(5));
     assert_eq!(fixture.backend.launch_count(), 1);
 }
 
@@ -786,22 +724,6 @@ async fn netplay_holder_kill_chord_ends_the_session_and_the_receiving_copy() {
     let fixture = Fixture::new().await;
     let _client = fixture.connected_client().await;
     fixture.holder_ends_and_copy_follows().await;
-}
-
-#[tokio::test]
-async fn netplay_receiver_kill_chord_after_reconnect_stops_the_replacement() {
-    let fixture = Fixture::new().await;
-    let client = fixture.connected_client().await;
-    drop(client);
-    tokio::time::timeout(Duration::from_secs(4), async {
-        while fixture.backend.launch_count() < 2 {
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
-    })
-    .await
-    .expect("a broken link must still reconnect");
-    stop_via_inputd(fixture.state.clone(), fixture._roots[1].path()).await;
-    fixture.wait_until_left(2).await;
 }
 
 #[tokio::test]

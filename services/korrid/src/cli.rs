@@ -101,14 +101,8 @@ async fn forward_to_owner(
             code: "OwnerDeviceRequired".into(),
             message: "The device has no verified membership for this owner. Use SSH or local access on that device.".into(),
         })?;
-    let candidates = peer
-        .current_endpoint
-        .as_ref()
-        .or(peer.remembered_endpoint.as_ref())
-        .map(|endpoint| endpoint.candidates.clone())
-        .unwrap_or_default();
     let client = crate::upstream_native::NativeClient::new_secure_candidates(
-        candidates,
+        Vec::new(),
         peer.device_public_key,
         state.resources.credentials.clone(),
     )

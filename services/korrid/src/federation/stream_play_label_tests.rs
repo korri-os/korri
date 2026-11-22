@@ -6,7 +6,7 @@ use crate::{
 };
 
 #[tokio::test]
-async fn stream_play_prefers_a_verified_directory_label_and_otherwise_keeps_the_caller_label() {
+async fn stream_play_keeps_the_authenticated_caller_label() {
     let fixture = Fixture::new();
     let directory = fixture.directory().unwrap();
     fixture.roster(&directory);
@@ -38,8 +38,8 @@ async fn stream_play_prefers_a_verified_directory_label_and_otherwise_keeps_the_
         owner_public_key: fixture.owner.public_key().to_hex(),
     });
     for (generation, label) in [(1, None), (2, Some("Living room")), (3, None)] {
-        let mut endpoint = fixture.endpoint(generation, 1000);
-        endpoint.label = label.map(str::to_owned);
+        let endpoint = fixture.endpoint(generation, 1000);
+        let _ = label;
         directory
             .apply_endpoint_event(&directory.begin_work().unwrap(), &fixture.event(&endpoint))
             .unwrap();
@@ -51,10 +51,7 @@ async fn stream_play_prefers_a_verified_directory_label_and_otherwise_keeps_the_
         let RpcResponse::SessionStreamPlay(SessionStreamPlayOutcome::Ok(active)) = response else {
             panic!("registration failed")
         };
-        assert_eq!(
-            active.stream_players[0].label,
-            label.unwrap_or("Pocket Mini")
-        );
+        assert_eq!(active.stream_players[0].label, "Pocket Mini");
         assert_ne!(active.stream_players[0].label, fixture.key());
     }
 }

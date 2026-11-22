@@ -77,16 +77,6 @@ let
     };
   };
   pluginFreeService = pluginFree.config.systemd.services.korrid;
-  advertised = evaluate {
-    services.korridLinuxDevice = {
-      enable = true;
-      moonlightAddress = "device:47989";
-    };
-  };
-  invalidMoonlight = evaluate {
-    services.korridLinuxDevice.enable = true;
-    services.korridLinuxDevice.moonlightAddress = "";
-  };
   bundled = evaluate {
     services.korriBundle = {
       enable = true;
@@ -196,30 +186,6 @@ let
       ];
     };
   };
-  withStun = evaluate {
-    services.korridLinuxDevice = {
-      enable = true;
-      stun = [
-        "stun.example.com:3478"
-        "[2001:db8::1]:3478"
-      ];
-    };
-  };
-  portlessStun = evaluate {
-    services.korridLinuxDevice = {
-      enable = true;
-      stun = [ "stun.example.com" ];
-    };
-  };
-  duplicateStun = evaluate {
-    services.korridLinuxDevice = {
-      enable = true;
-      stun = [
-        "stun.example.com:3478"
-        "stun.example.com:3478"
-      ];
-    };
-  };
   invalidPeerKey = evaluate {
     services.korridLinuxDevice.enable = true;
     services.korridLinuxDevice.nativePeers = lib.mkForce [
@@ -316,7 +282,9 @@ assert !(enabled.config.systemd.services ? korri-shell);
 assert !(service.environment ? KORRID_SHELL_FREEZER_ENABLED);
 assert enabled.config.systemd.package == pkgs.systemd;
 assert builtins.length gameFreezerPolicies == 1;
-assert builtins.elem 43117 enabled.config.networking.firewall.allowedTCPPorts;
+assert !(builtins.elem 43117 enabled.config.networking.firewall.allowedTCPPorts);
+assert builtins.elem 43117 enabled.config.networking.firewall.allowedUDPPorts;
+assert builtins.elem 5353 enabled.config.networking.firewall.allowedUDPPorts;
 assert allAssertionsPass pluginFree;
 assert protectedEnvironmentIsValid pluginFreeService.environment;
 assert protectedEnvironmentIsValid service.environment;
@@ -327,11 +295,6 @@ assert
   !(builtins.elem "/home/korri/.config/sunshine" pluginFreeService.serviceConfig.InaccessiblePaths);
 assert
   !(builtins.elem "-/home/korri/.config/sunshine" pluginFreeService.serviceConfig.InaccessiblePaths);
-assert allAssertionsPass advertised;
-assert
-  advertised.config.systemd.services.korrid.environment.KORRID_MOONLIGHT_ADDRESS == "device:47989";
-assert !(service.environment ? KORRID_MOONLIGHT_ADDRESS);
-assert hasFailedAssertion "moonlightAddress" invalidMoonlight;
 assert service.serviceConfig.User == "korrid";
 assert service.serviceConfig.LimitCORE == 0;
 assert service.serviceConfig.TimeoutStopSec >= 120;
@@ -339,7 +302,7 @@ assert service.serviceConfig.User != "korri";
 assert
   builtins.removeAttrs service.environment [ "PATH" ] == {
     HOSTNAME = enabled.config.networking.hostName;
-    KORRID_ADDRESS = "[::]:43117";
+    KORRID_ADDRESS = "127.0.0.1:43117";
     KORRID_CERTIFICATE_CONTROL_DIRECTORY = "/run/korri-certificate-control";
     KORRID_COMPOSITOR_CONTROL_DIRECTORY = "/run/korri-compositor";
     KORRID_CONTROL_DIRECTORY = "/run/korrid-control";
@@ -372,7 +335,7 @@ assert service.environment.KORRID_SYSTEMD_RUN == "${pkgs.systemd}/bin/systemd-ru
 assert service.environment.KORRID_LIMITS_SOCKET == "/run/korri-limits/limits.sock";
 assert service.serviceConfig.Group == "korrid";
 assert service.environment.KORRID_SYSTEMCTL == "${pkgs.systemd}/bin/systemctl";
-assert service.environment.KORRID_ADDRESS == "[::]:43117";
+assert service.environment.KORRID_ADDRESS == "127.0.0.1:43117";
 assert service.environment.KORRID_PRIVATE_STATE_ROOT == "/var/lib/korrid";
 # The boot identity must be injected by PID 1, not read inside the /proc sandbox.
 assert service.environment.KORRID_BOOT_ID == "%b";
@@ -534,13 +497,6 @@ assert !(lib.hasInfix ''/^korri-hook-[0-9a-f]{32}-[0-9]{1,3}\\.service$/'' polki
 assert !(lib.hasInfix ''/^korri-game-[0-9a-f]{32}\\.service$/'' polkit);
 assert allAssertionsPass bundled;
 assert allAssertionsPass loopbackRelay;
-assert allAssertionsPass withStun;
-assert
-  withStun.config.systemd.services.korrid.environment.KORRID_STUN
-  == ''["stun.example.com:3478","[2001:db8::1]:3478"]'';
-assert !(service.environment ? KORRID_STUN);
-assert hasFailedAssertion "at most eight unique host:port" portlessStun;
-assert hasFailedAssertion "at most eight unique host:port" duplicateStun;
 assert
   loopbackRelay.config.systemd.services.korrid.environment.KORRID_RELAYS
   == ''["ws://127.0.0.1:7447"]'';

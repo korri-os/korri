@@ -723,35 +723,20 @@ async fn main() {
     let address =
         resolve_address(mode, configured_address.as_deref()).expect("valid KORRID_ADDRESS");
     let lan_listener = korrid::peer_listener::bind(address).expect("bind korrid server");
-    let address = lan_listener.local_addr().expect("bound korrid address");
     let discovery = {
         let relays = korrid::relay::RelayList::from_linux_environment(
             std::env::var("KORRID_RELAYS").ok().as_deref(),
         )
         .unwrap_or_else(|error| panic!("invalid relay configuration: {error}"));
-        let initial_inputs = DiscoveryInputs {
-            relays,
-            advertised_endpoints: Vec::new(),
-            label: std::env::var("HOSTNAME").ok(),
-            moonlight_address: std::env::var("KORRID_MOONLIGHT_ADDRESS").ok(),
-        };
-        initial_inputs
-            .validate()
-            .expect("valid advertised endpoints and metadata");
+        let initial_inputs = DiscoveryInputs { relays };
         let config = korrid::config::snapshot::ConfigSnapshotCoordinator::new(config_root);
-        let interface_warning = std::sync::Once::new();
         Discovery::new(
             resources.directory.clone(),
             resources.credentials.clone(),
             Arc::new(move || {
-                DiscoveryInputs::linux(
-                    &config,
-                    &initial_inputs,
-                    korrid::federation::interfaces::endpoints_or_query_only(
-                        korrid::federation::interfaces::endpoints(address),
-                        &interface_warning,
-                    ),
-                )
+                let mut inputs = DiscoveryInputs::query_only(&config)?;
+                inputs.relays = initial_inputs.relays.clone();
+                Ok(inputs)
             }),
             Arc::new(korrid::relay::WebSocketRelayTransport::new()),
             DiscoveryTiming::default(),
@@ -770,12 +755,6 @@ async fn main() {
     let nearby = tokio::spawn(korrid::network::nearby::run(
         resources.clone(),
         nearby_stopped,
-    ));
-    // ADR 0089: devices on one local network find each other with no server.
-    let local_discovery = tokio::spawn(korrid::federation::local_discovery::run(
-        resources.directory.clone(),
-        resources.credentials.clone(),
-        address,
     ));
     let (lan_router, local_control_router, cli_router, host_runtime) = match mode {
         Mode::Brain => (
@@ -856,24 +835,9 @@ async fn main() {
         }
     };
     let (wake, discovery) = discovery;
-    let monitor = korrid::federation::interfaces::watch_endpoints(
-        wake.clone(),
-        move || korrid::federation::interfaces::endpoints(address),
-        korrid::federation::interfaces::ADDRESS_POLL,
-    );
-    let discovery = async move {
-        tokio::pin!(discovery);
-        tokio::pin!(monitor);
-        // Observe addresses before the first publication can read them.
-        // Otherwise a change between those reads could miss its wake.
-        tokio::select! { biased; _ = &mut monitor => {}, _ = &mut discovery => {} }
-    };
     let result = serve_with_discovery(serving, shutdown, wake, discovery).await;
     let _ = stop_nearby.send(());
     nearby.await.expect("stop nearby link");
-    // Dropping the task sends the announcement's goodbye.
-    local_discovery.abort();
-    let _ = local_discovery.await;
     if let Some(runtime) = host_runtime {
         if let Err(error) = runtime.shutdown_sessions().await {
             eprintln!("korrid shutdown: {}", error.message);
@@ -1046,9 +1010,6 @@ mod tests {
                 Arc::new(move || {
                     Ok(DiscoveryInputs {
                         relays: Some(relays.clone()),
-                        advertised_endpoints: vec![],
-                        label: None,
-                        moonlight_address: None,
                     })
                 }),
                 transport,

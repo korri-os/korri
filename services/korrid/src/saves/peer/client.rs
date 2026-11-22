@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    federation::{peer_origin, PeerState, WorkToken},
+    federation::{PeerState, WorkToken},
     identity::OwnerStatementStatus,
     peer_rpc::{unix_time, MAX_PEER_EVENT_BYTES},
     RpcRequest, RpcResponse,
@@ -18,10 +18,9 @@ const TRANSFER_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const STALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 impl SavePeerService {
-    fn origins(&self, person: &str, device: &str) -> Result<Vec<String>, PeerSaveError> {
+    fn require_peer(&self, person: &str, device: &str) -> Result<(), PeerSaveError> {
         self.require_owner(person)?;
-        let peer = self
-            .directory
+        self.directory
             .snapshot()
             .map_err(|_| PeerSaveError::Unauthorized)?
             .into_iter()
@@ -31,16 +30,7 @@ impl SavePeerService {
                     && peer.membership.status == OwnerStatementStatus::Owned
             })
             .ok_or(PeerSaveError::Unauthorized)?;
-        // Membership authorizes saves. An endpoint event is optional: a peer
-        // may have only its device-bound iroh route and no HTTP origins.
-        let mut candidates = Vec::new();
-        if let Some(endpoint) = peer.current_endpoint.or(peer.remembered_endpoint) {
-            for origin in endpoint.candidates {
-                candidates.push(peer_origin(&origin).map_err(|_| PeerSaveError::Protocol)?);
-            }
-        }
-        crate::federation::reach::nearby_seam::prepend(device, &mut candidates);
-        Ok(candidates)
+        Ok(())
     }
 
     async fn request<T>(
@@ -78,18 +68,17 @@ impl SavePeerService {
         provenance: RequestProvenance,
         token: &mut Option<WorkToken>,
     ) -> Result<RpcResponse, PeerSaveError> {
-        let read_only = match &request {
-            RpcRequest::SaveHeads(_) | RpcRequest::SaveInUse(_) => true,
-            RpcRequest::SaveRecords(request) => request.records.is_none(),
-            _ => false,
-        };
-        let deadline = tokio::time::Instant::now() + TRANSFER_TIMEOUT;
-        let mut origins = self.origins(person, peer)?;
-        if origins.is_empty() && !self.directory.has_iroh_route(peer) {
+        self.require_peer(person, peer)?;
+        if !self.directory.has_peer_connection(peer)
+            && !self
+                .directory
+                .snapshot()
+                .map_err(|_| PeerSaveError::Unauthorized)?
+                .iter()
+                .any(|entry| entry.device_public_key == peer && entry.remembered_endpoint.is_some())
+        {
             return Err(PeerSaveError::Network);
         }
-        // Reserve work before probing an advertised or connected peer.
-        // A member with neither route supplies no reachability evidence.
         *token = Some(
             match provenance {
                 RequestProvenance::Independent => self.directory.begin_peer_work(peer),
@@ -97,118 +86,49 @@ impl SavePeerService {
             }
             .map_err(|_| PeerSaveError::Unauthorized)?,
         );
-        let mut reach_tried = false;
-        while !origins.is_empty() || !reach_tried {
-            // The origin that answered last is used again without a probe.
-            // Selecting removes it from the list, so a failure probes the rest.
-            let answering = self
-                .answering_origin(peer)
-                .and_then(|known| origins.iter().position(|origin| *origin == known));
-            let selected = match answering {
-                Some(index) => Ok(index),
-                None => tokio::time::timeout_at(
-                    deadline,
-                    crate::federation::connect::select_origin(&origins),
-                )
-                .await
-                .map_err(|_| PeerSaveError::Deadline)?,
-            };
-            let (origin, connection) = match selected {
-                Ok(index) => (Some(origins.remove(index)), None),
-                Err(_) if !reach_tried => {
-                    reach_tried = true;
-                    origins.clear();
-                    let connection = self
-                        .directory
-                        .reach_connection(peer)
-                        .await
-                        .map_err(|_| PeerSaveError::Network)?;
-                    (None, Some(connection))
-                }
-                Err(_) => return Err(PeerSaveError::Network),
-            };
-            self.origins(person, peer)?;
-            let encoded = self
-                .credentials
-                .encode_request(peer, request.clone(), unix_time())
-                .map_err(|_| PeerSaveError::Unauthorized)?;
-            let result = tokio::time::timeout_at(deadline, async {
-                let mut response = if let Some(connection) = &connection {
-                    crate::federation::reach::http::post(
-                        connection,
-                        "/peer-rpc",
-                        encoded.event_json.clone(),
-                        None,
-                    )
-                    .await
-                    .map_err(|_| PeerSaveError::Network)?
-                } else {
-                    crate::federation::reach::http::Response::Tcp(
-                        self.http
-                            .post(format!(
-                                "{}/peer-rpc",
-                                origin.as_ref().expect("selected HTTP origin")
-                            ))
-                            .header(header::CONTENT_TYPE, "application/json")
-                            .body(encoded.event_json.clone())
-                            .send()
-                            .await
-                            .map_err(|_| PeerSaveError::Network)?,
-                    )
-                };
-                if !response.status().is_success() {
-                    return Err(PeerSaveError::Network);
-                }
-                let mut body = Vec::new();
-                while let Some(chunk) =
-                    response.chunk().await.map_err(|_| PeerSaveError::Network)?
-                {
-                    if body.len().saturating_add(chunk.len()) > MAX_PEER_EVENT_BYTES {
-                        return Err(PeerSaveError::Protocol);
-                    }
-                    body.extend_from_slice(&chunk);
-                }
-                // Recheck the shared identity and roster after asynchronous work.
-                self.origins(person, peer)?;
-                self.credentials
-                    .decode_response(
-                        peer,
-                        &encoded,
-                        std::str::from_utf8(&body).map_err(|_| PeerSaveError::Protocol)?,
-                        unix_time(),
-                    )
-                    .map_err(|_| PeerSaveError::Protocol)
-            })
+        let deadline = tokio::time::Instant::now() + TRANSFER_TIMEOUT;
+        let connection = self
+            .directory
+            .reach_connection(peer)
             .await
-            .map_err(|_| PeerSaveError::Deadline);
-            if let Some(origin) = &origin {
-                self.remember_answering_origin(peer, origin, matches!(result, Ok(Ok(_))));
+            .map_err(|_| PeerSaveError::Network)?;
+        let encoded = self
+            .credentials
+            .encode_request(peer, request.clone(), unix_time())
+            .map_err(|_| PeerSaveError::Unauthorized)?;
+        let result = tokio::time::timeout_at(deadline, async {
+            let mut response = crate::federation::reach::http::post(
+                &connection,
+                "/peer-rpc",
+                encoded.event_json.clone(),
+                None,
+            )
+            .await
+            .map_err(|_| PeerSaveError::Network)?;
+            if !response.status().is_success() {
+                return Err(PeerSaveError::Network);
             }
-            match result? {
-                // A failed response does not prove a metadata push had no
-                // effects. Only reads may try another origin after HTTP send.
-                Err(PeerSaveError::Network) if read_only => continue,
-                result => return result,
+            let mut body = Vec::new();
+            while let Some(chunk) = response.chunk().await.map_err(|_| PeerSaveError::Network)? {
+                if body.len().saturating_add(chunk.len()) > MAX_PEER_EVENT_BYTES {
+                    return Err(PeerSaveError::Protocol);
+                }
+                body.extend_from_slice(&chunk);
             }
-        }
-        Err(PeerSaveError::Network)
-    }
-
-    fn answering_origin(&self, peer: &str) -> Option<String> {
-        self.answering_origins
-            .lock()
-            .ok()
-            .and_then(|origins| origins.get(peer).cloned())
-    }
-
-    fn remember_answering_origin(&self, peer: &str, origin: &str, answered: bool) {
-        if let Ok(mut origins) = self.answering_origins.lock() {
-            if answered {
-                origins.insert(peer.to_owned(), origin.to_owned());
-            } else if origins.get(peer).is_some_and(|known| known == origin) {
-                origins.remove(peer);
-            }
-        }
+            // Recheck the shared identity and roster after asynchronous work.
+            self.require_peer(person, peer)?;
+            self.credentials
+                .decode_response(
+                    peer,
+                    &encoded,
+                    std::str::from_utf8(&body).map_err(|_| PeerSaveError::Protocol)?,
+                    unix_time(),
+                )
+                .map_err(|_| PeerSaveError::Protocol)
+        })
+        .await
+        .map_err(|_| PeerSaveError::Deadline);
+        result?
     }
 
     pub(super) async fn remote_heads(
@@ -288,7 +208,7 @@ impl SavePeerService {
         record: SnapshotRecord,
         expected_id: Option<&str>,
     ) -> Result<String, PeerSaveError> {
-        self.origins(person, peer)?;
+        self.require_peer(person, peer)?;
         let id = snapshot_id(&record)?;
         if expected_id.is_some_and(|expected| expected != id) {
             return Err(PeerSaveError::Protocol);
@@ -355,40 +275,19 @@ impl SavePeerService {
         let mut done = 0;
         let mut hash = Sha256::new();
         let mut attempt = 0;
-        let mut tried_origins = std::collections::BTreeSet::new();
+        let connection = self
+            .directory
+            .reach_connection(peer)
+            .await
+            .map_err(|_| PeerSaveError::Network)?;
         loop {
-            let origins = self.origins(person, peer)?;
-            // Preserve the six-attempt retry floor, but never omit candidates
-            // seven/eight. Re-read the bound when live endpoint evidence changes.
-            if attempt >= origins.len().max(6) {
+            self.require_peer(person, peer)?;
+            if connection.close_reason().is_some() {
+                return Err(PeerSaveError::Network);
+            }
+            if attempt >= 6 {
                 break;
             }
-            if attempt > 0 {
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
-            let mut candidates = origins
-                .iter()
-                .filter(|origin| !tried_origins.contains(*origin))
-                .cloned()
-                .collect::<Vec<_>>();
-            if candidates.is_empty() {
-                tried_origins.clear();
-                candidates = origins.clone();
-            }
-            let selected = crate::federation::connect::select_origin(&candidates).await;
-            let (origin, connection) = match selected {
-                Ok(index) => {
-                    tried_origins.insert(candidates[index].clone());
-                    (Some(candidates[index].clone()), None)
-                }
-                Err(_) => match self.directory.reach_connection(peer).await {
-                    Ok(connection) => (None, Some(connection)),
-                    Err(_) => {
-                        attempt += 1;
-                        continue;
-                    }
-                },
-            };
             attempt += 1;
             let encoded = self
                 .credentials
@@ -401,34 +300,12 @@ impl SavePeerService {
                 )
                 .map_err(|_| PeerSaveError::Unauthorized)?;
             let range = (done > 0).then(|| format!("bytes={done}-"));
-            let transfer = async {
-                if let Some(connection) = &connection {
-                    crate::federation::reach::http::post(
-                        connection,
-                        "/peer-saves-object",
-                        encoded.event_json,
-                        range,
-                    )
-                    .await
-                } else {
-                    let mut request = self
-                        .http
-                        .post(format!(
-                            "{}/peer-saves-object",
-                            origin.expect("selected HTTP origin")
-                        ))
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .body(encoded.event_json);
-                    if let Some(range) = range {
-                        request = request.header(header::RANGE, range);
-                    }
-                    request
-                        .send()
-                        .await
-                        .map(crate::federation::reach::http::Response::Tcp)
-                        .map_err(std::io::Error::other)
-                }
-            };
+            let transfer = crate::federation::reach::http::post(
+                &connection,
+                "/peer-saves-object",
+                encoded.event_json,
+                range,
+            );
             let mut response = match tokio::time::timeout(STALL_TIMEOUT, transfer).await {
                 Ok(Ok(response)) => response,
                 _ => continue,
@@ -499,11 +376,6 @@ impl SavePeerService {
                 .map_err(|_| PeerSaveError::Network)?
                 .map_err(|e| SaveError::Storage(e.to_string()))?;
             }
-            if done > 0 && done < file.bytes {
-                // A partial body is resumable progress, not a failed origin.
-                // Race the same list again for the fresh signed Range request.
-                tried_origins.clear();
-            }
             if finished && done == file.bytes {
                 if format!("sha256:{}", hex::encode(hash.clone().finalize())) != file.sha256 {
                     reset(&mut output)?;
@@ -511,7 +383,7 @@ impl SavePeerService {
                     hash = Sha256::new();
                     continue;
                 }
-                self.origins(person, peer)?;
+                self.require_peer(person, peer)?;
                 let (person, hash) = (person.to_owned(), file.sha256.clone());
                 return self
                     .storage(move |repository| {

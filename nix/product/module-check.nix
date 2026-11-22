@@ -1065,16 +1065,15 @@ assert
   == rg353m.systemd.services.korri-compositor.environment.KORRI_WAYLAND_DISPLAY;
 assert rg353m.services.korriLinuxHost.label == "haku";
 assert rg353m.services.korriLinuxHost.relays == requirements.constants.relays;
-assert rg353m.services.korriLinuxHost.stun == requirements.constants.stun;
-assert
-  rg353m.systemd.services.korrid.environment.KORRID_STUN
-  == builtins.toJSON requirements.constants.stun;
+
+
 # Every product device opens Pico (Phase 2 of Pico on Korri).
 assert requirements.constants.surfaceId == "velvet";
 assert rg353m.services.korri.shell.startSurface == "velvet";
 assert lib.hasInfix "--surfaces velvet," rg353m.systemd.services.korri-shell.serviceConfig.ExecStart;
 assert rg353m.services.korridLinuxDevice.address == requirements.constants.korridAddress;
-assert builtins.elem 39217 rg353m.networking.firewall.allowedTCPPorts;
+assert !(builtins.elem 39217 rg353m.networking.firewall.allowedTCPPorts);
+assert builtins.elem 39217 rg353m.networking.firewall.allowedUDPPorts;
 # ADR 0089: local discovery's multicast DNS on every network interface.
 assert builtins.elem 5353 rg353m.networking.firewall.allowedUDPPorts;
 # Every device runs the same shell arguments; no device passes its own flags.

@@ -5618,15 +5618,6 @@ mod shared_play {
         assert!(
             matches!(netplay_status_from(&netplay(json!({ "_tag": "HolderLeft" })), None), Some(SurfaceStatus::Paused { actions, decline_action_id: Some(decline), .. }) if actions[0].id == "netplay:leave:N1" && decline == "netplay:leave:N1")
         );
-        // A drop is korrid's to retry: nothing to back out of, Back is swallowed.
-        assert!(matches!(
-            netplay_status_from(&netplay(json!({ "_tag": "Reconnecting" })), None),
-            Some(SurfaceStatus::Busy {
-                actions: None,
-                decline_action_id: None,
-                ..
-            })
-        ));
         assert!(netplay_status_from(&netplay(json!({ "_tag": "Playing" })), None).is_none());
     }
 
@@ -5711,7 +5702,6 @@ mod shared_play {
             ("Connecting", true),
             ("Playing", false),
             ("HolderLeft", false),
-            ("Reconnecting", false),
         ] {
             let report = if phase == "Copying" {
                 json!({ "_tag": phase, "done": 1, "total": 2 })

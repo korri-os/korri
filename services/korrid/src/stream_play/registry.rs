@@ -193,13 +193,16 @@ impl UpstreamRegistry {
             if let Some(active) =
                 active_session(status).filter(|a| a.launch_id == selected.launch_id)
             {
-                self.recover_viewer(
-                    selected,
-                    RecoveredHolderPhase::parse(active.phase.as_deref())?,
-                )
-                .await?;
+                self.synchronize_viewer(selected, HolderPhase::parse(active.phase.as_deref())?)
+                    .await?;
                 return Ok(status.clone());
             }
+        }
+        if result
+            .as_ref()
+            .is_err_and(|error| error.code() == "PeerConnectionGone")
+        {
+            return result;
         }
         match &result {
             Err(error) => eprintln!(

@@ -680,6 +680,12 @@ impl PeerRpcServer {
         admission: Option<&AdmissionPermit>,
     ) -> Result<String, PeerRpcError> {
         let authenticated = self.authenticate(event_json, now, false).await?;
+        if let Some(binding) = admission.and_then(|admission| admission.binding.as_ref()) {
+            binding.prove(
+                &authenticated.context,
+                authenticated.envelope.owner_statement.as_deref(),
+            )?;
+        }
         // Admission bounds buffered unauthenticated bodies and verification.
         // An authenticated request's own work must not hold a permit.
         if let Some(admission) = admission {
@@ -829,7 +835,13 @@ async fn limit_peer_request(
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
     // Held until the handler releases it or the request completes.
-    let admission = AdmissionPermit(Arc::new(Mutex::new(Some(permit))));
+    let admission = AdmissionPermit {
+        permit: Arc::new(Mutex::new(Some(permit))),
+        binding: request
+            .extensions()
+            .get::<crate::federation::reach::Binding>()
+            .cloned(),
+    };
     let (mut parts, body) = request.into_parts();
     parts.extensions.insert(admission.clone());
     let bytes = match tokio::time::timeout(
@@ -851,11 +863,14 @@ async fn limit_peer_request(
 
 /// One admission permit, shared between the limiter and the request handler.
 #[derive(Clone)]
-struct AdmissionPermit(Arc<Mutex<Option<tokio::sync::OwnedSemaphorePermit>>>);
+struct AdmissionPermit {
+    permit: Arc<Mutex<Option<tokio::sync::OwnedSemaphorePermit>>>,
+    binding: Option<crate::federation::reach::Binding>,
+}
 
 impl AdmissionPermit {
     fn release(&self) {
-        if let Ok(mut permit) = self.0.lock() {
+        if let Ok(mut permit) = self.permit.lock() {
             permit.take();
         }
     }

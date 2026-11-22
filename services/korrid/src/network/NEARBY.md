@@ -92,17 +92,15 @@ checkpoint, korrid accepts another stop call without repeating restoration.
 | Retry delay | 30, 60, 120, 240, then 300 s |
 | Independent crash rollback | 120 s since the last refresh |
 
-The existing LAN calls prove peer contact through federation's `Ready`
+Signed peer HTTP over iroh proves peer contact through federation's `Ready`
 state. An AP with no reachable peer does not keep the device away from its
 home network indefinitely. A successful peer contact clears this deadline.
 A later loss of contact starts it again. The nearby task does not write
 peer state.
 
-`nearby_peer_ip(device_public_key)` exposes `.2` to the starter and `.1` to
-the other device while the Wi-Fi connection is active. It returns `None`
-before activation, during restoration, for another peer and after an expired
-local lease. The connection worker adds this IP to the LAN candidate race.
-It uses the peer's existing korrid port. This code adds no peer RPC.
+The nearby link records only the selected device key. It injects no address
+into federation. iroh discovers the peer on the new interface through its own
+local-network address lookup and carries peer RPC and streams on its connection.
 This code adds no Bluetooth path. The stream uses Wi-Fi.
 
 ## Known limit

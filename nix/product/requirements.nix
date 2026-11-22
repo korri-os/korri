@@ -24,16 +24,10 @@ let
       "wss://nos.lol"
       "wss://nostr.oxtr.dev"
     ];
-    # Owner decision, 2026-10-28 (#313): two independent operators, so one
-    # outage leaves the other. They see a device's public IP, never traffic.
-    stun = [
-      "stun.cloudflare.com:3478"
-      "stun.l.google.com:19302"
-    ];
     # Every product device opens Velvet (#424). Pico and Zone stay installed
     # and selectable: the shell lists every other installed surface after it.
     surfaceId = "velvet";
-    korridAddress = "[::]:39217";
+    korridAddress = "127.0.0.1:39217";
     publishers = {
       "@korri" = {
         publicKey = "korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=";
@@ -208,11 +202,6 @@ in
       "korriLinuxHost"
       "relays"
     ] constants.relays [ "wss://invalid.example" ])
-    (lockedSettingWithTestValue "product stun" [
-      "services"
-      "korriLinuxHost"
-      "stun"
-    ] constants.stun [ "stun.invalid:3478" ])
     (setting "host validation disabled" [
       "services"
       "korriLinuxHost"

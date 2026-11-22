@@ -52,7 +52,6 @@ fn snapshot(state: PeerState) -> PeerSnapshot {
             created_at: 1,
             vouchers: Vec::new(),
         },
-        current_endpoint: None,
         remembered_endpoint: None,
         first_seen: 1,
         last_seen: 1,
@@ -137,16 +136,16 @@ async fn nearby_starter_scans_first_starts_only_lower_key_and_restores_on_succes
             resources,
             link: None,
         };
-        assert_eq!(nearby_peer_ip(&peer), None);
+        assert!(!active_peer_is(&peer));
         assert_eq!(link.start(&peer).await.is_ok(), activation == 2);
         if activation == 2 {
-            assert_eq!(nearby_peer_ip(&peer), Some("10.77.77.2".parse().unwrap()));
-            assert_eq!(nearby_peer_ip("other-peer"), None);
+            assert!(active_peer_is(&peer));
+            assert!(!active_peer_is("other-peer"));
             // The normal local network controls share the radio operation.
             assert!(radio_operation().try_lock().is_err());
             link.stop().await.unwrap();
         }
-        assert_eq!(nearby_peer_ip(&peer), None);
+        assert!(!active_peer_is(&peer));
         assert!(state.home.load(Ordering::SeqCst));
         assert_eq!(
             *state.calls.lock().unwrap(),
@@ -176,7 +175,7 @@ async fn nearby_visible_hidden_network_wins_over_starter_rule_and_higher_key_nev
             link: None,
         };
         link.start(&peer).await.unwrap();
-        assert_eq!(nearby_peer_ip(&peer), Some("10.77.77.1".parse().unwrap()));
+        assert!(active_peer_is(&peer));
         link.stop().await.unwrap();
         assert!(state.calls.lock().unwrap().contains(&"NearbyClient"));
         if !lower {
@@ -193,7 +192,7 @@ async fn nearby_visible_hidden_network_wins_over_starter_rule_and_higher_key_nev
                 0
             );
             assert!(link.link.is_none());
-            assert_eq!(nearby_peer_ip(&peer), None);
+            assert!(!active_peer_is(&peer));
         }
     }
 }
@@ -244,7 +243,7 @@ async fn nearby_trigger_starts_lower_key_without_default_route() {
         .unwrap();
     assert!(state.calls.lock().unwrap().contains(&"NearbyAP"));
     assert_eq!(state.scan_requests.load(Ordering::SeqCst), 1);
-    assert!(nearby_peer_ip(&peer).is_some());
+    assert!(active_peer_is(&peer));
     link.stop().await.unwrap();
     let calls = state.calls.lock().unwrap().len();
     link.tick(&mut backoff, &mut refresh_at, false)
@@ -278,14 +277,14 @@ async fn nearby_pending_activation_can_be_cancelled_and_stopped_without_a_candid
             .is_err()
     );
     assert!(link.link.is_some());
-    assert_eq!(nearby_peer_ip(&peer), None);
+    assert!(!active_peer_is(&peer));
     link.stop().await.unwrap();
     assert!(state.home.load(Ordering::SeqCst));
-    assert_eq!(nearby_peer_ip(&peer), None);
+    assert!(!active_peer_is(&peer));
 }
 
 #[tokio::test]
-async fn nearby_candidate_expires_without_refresh_and_drop_clears_it() {
+async fn nearby_link_drop_clears_the_active_peer() {
     let _radio = RADIO_TEST.lock().await;
     let (_roots, resources, peer) = owned_resources(true);
     let (_server, bus, _state) = dbus::dbus_tests::bus().await;
@@ -294,16 +293,10 @@ async fn nearby_candidate_expires_without_refresh_and_drop_clears_it() {
         resources,
         link: None,
     };
-    *ACTIVE_PEER.lock().unwrap() = Some(PeerAddress {
-        key: peer.clone(),
-        ip: "10.77.77.2".parse().unwrap(),
-        valid_until: Instant::now() - Duration::from_secs(1),
-    });
-    assert_eq!(nearby_peer_ip(&peer), None);
-    ACTIVE_PEER.lock().unwrap().as_mut().unwrap().valid_until = Instant::now() + REFRESH_INTERVAL;
-    assert!(nearby_peer_ip(&peer).is_some());
+    *ACTIVE_PEER.lock().unwrap() = Some(peer.clone());
+    assert!(active_peer_is(&peer));
     drop(link);
-    assert_eq!(nearby_peer_ip(&peer), None);
+    assert!(!active_peer_is(&peer));
 }
 
 #[tokio::test]
@@ -357,7 +350,7 @@ async fn nearby_unreachable_peer_is_bounded_and_ready_peer_keeps_the_link() {
         .unwrap();
     assert!(link.link.is_none());
     assert!(state.home.load(Ordering::SeqCst));
-    assert_eq!(nearby_peer_ip(&peer), None);
+    assert!(!active_peer_is(&peer));
 }
 
 #[tokio::test]
@@ -410,7 +403,7 @@ async fn nearby_trigger_connects_to_visible_network_despite_either_default_route
             assert!(state.calls.lock().unwrap().contains(&"NearbyClient"));
             assert!(!state.calls.lock().unwrap().contains(&"NearbyAP"));
             assert_eq!(state.scan_requests.load(Ordering::SeqCst), 1);
-            assert_eq!(nearby_peer_ip(&peer), Some("10.77.77.1".parse().unwrap()));
+            assert!(active_peer_is(&peer));
             link.stop().await.unwrap();
             assert!(state.home.load(Ordering::SeqCst));
         }
@@ -453,7 +446,7 @@ async fn nearby_trigger_scans_once_with_either_default_route_and_no_visible_netw
         assert!(state.calls.lock().unwrap().is_empty());
         assert!(link.link.is_none());
         assert!(state.home.load(Ordering::SeqCst));
-        assert_eq!(nearby_peer_ip(&peer), None);
+        assert!(!active_peer_is(&peer));
         link.tick(&mut backoff, &mut refresh_at, kernel_route)
             .await
             .unwrap();

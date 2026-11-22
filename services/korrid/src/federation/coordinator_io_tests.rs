@@ -133,60 +133,6 @@ async fn success_polls_but_empty_success_does_not_use_failure_backoff() {
 }
 
 #[tokio::test]
-async fn linux_interface_failure_still_publishes_owner_and_reads_roster() {
-    let f = Fixture::new();
-    let readable = tempfile::tempdir().unwrap();
-    let config = crate::config::snapshot::ConfigSnapshotCoordinator::new(readable.path());
-    let directory = f.directory().unwrap();
-    let relays = RelayList::configured(vec!["ws://localhost:7001".into()]).unwrap();
-    let network = Arc::new(InProcessRelayNetwork::new(&relays));
-    network
-        .inject(
-            &relays.as_slice()[0],
-            &f.peer.owner_statement_json().unwrap(),
-        )
-        .unwrap();
-    let initial = inputs(&relays, true);
-    let warning = Arc::new(std::sync::Once::new());
-    let provider_warning = warning.clone();
-    let task = Discovery::new(
-        directory.clone(),
-        f.credentials.clone(),
-        Arc::new(move || {
-            let endpoints = interfaces::endpoints_or_query_only(
-                Err(std::io::Error::from_raw_os_error(libc::EAFNOSUPPORT)),
-                &provider_warning,
-            );
-            let inputs = DiscoveryInputs::linux(&config, &initial, endpoints)?;
-            assert!(inputs.advertised_endpoints.is_empty());
-            assert!(inputs.label.is_none());
-            assert!(inputs.moonlight_address.is_none());
-            Ok(inputs)
-        }),
-        network.clone(),
-        timing(),
-        Arc::new(|| 1000),
-    )
-    .spawn();
-    wait_for(|| directory.snapshot().unwrap().len() == 1).await;
-    let reader = CoordinatedRelays::new(relays, f.peer.clone(), network).unwrap();
-    // The peer reads the roster rather than its own statement: our owner event
-    // reached the relay even though no endpoint enumeration succeeded.
-    let roster = reader.read_owner_roster().await.unwrap();
-    assert_eq!(roster.len(), 1);
-    assert_eq!(
-        roster[0].latest.event_json,
-        f.credentials
-            .identity_snapshot()
-            .unwrap()
-            .owner_statement_json()
-            .unwrap()
-    );
-    assert!(warning.is_completed());
-    task.shutdown().await.unwrap();
-}
-
-#[tokio::test]
 async fn two_owned_devices_discover_and_persist_each_other_through_actual_relays() {
     let f = Fixture::new();
     fs::set_permissions(f._peer_root.path(), fs::Permissions::from_mode(0o700)).unwrap();
@@ -226,12 +172,12 @@ async fn two_owned_devices_discover_and_persist_each_other_through_actual_relays
             .snapshot()
             .unwrap()
             .first()
-            .is_some_and(|p| p.current_endpoint.is_some())
+            .is_some_and(|p| p.remembered_endpoint.is_some())
             && peer
                 .snapshot()
                 .unwrap()
                 .first()
-                .is_some_and(|p| p.current_endpoint.is_some())
+                .is_some_and(|p| p.remembered_endpoint.is_some())
     })
     .await;
     first.shutdown().await.unwrap();
@@ -319,7 +265,6 @@ fn query_only_inputs_reload_actual_config_and_reject_retained_unauthorized_autho
     assert!(config.current_snapshot().host.is_none());
     let inputs = DiscoveryInputs::query_only(&config).unwrap();
     assert_eq!(inputs.relays.unwrap().as_slice(), &["ws://localhost:7001"]);
-    assert!(inputs.advertised_endpoints.is_empty());
     // Query-only discovery does not publish metadata, so the endpoint metadata
     // bounds must not add a constraint to existing readable host.title.
     fs::write(
@@ -327,10 +272,7 @@ fn query_only_inputs_reload_actual_config_and_reject_retained_unauthorized_autho
         "host:\n  title: ''\n  relays: [ws://localhost:7001]\n",
     )
     .unwrap();
-    DiscoveryInputs::query_only(&config)
-        .unwrap()
-        .validate()
-        .unwrap();
+    DiscoveryInputs::query_only(&config).unwrap();
     fs::remove_file(root.path().join("device.yaml")).unwrap();
     fs::create_dir(root.path().join("device.yaml")).unwrap();
     assert!(DiscoveryInputs::query_only(&config).is_err());

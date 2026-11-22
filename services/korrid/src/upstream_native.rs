@@ -28,9 +28,43 @@ const MAX_NATIVE_RPC_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const NATIVE_RPC_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const PEER_OPERATION_FAILED_MESSAGE: &str = "Authenticated peer operation failed";
 
+/// One policy for static, relay and remembered peer endpoints. Check the raw
+/// authority/path too: URL parsing alone silently repairs credentials, dot paths,
+/// backslashes and whitespace. Relay WebSocket URLs use their separate policy.
+pub(crate) fn configured_peer_origin(value: &str) -> Result<String, UpstreamError> {
+    if value.is_empty()
+        || value.len() > 2048
+        || value.chars().any(|c| c.is_control() || c.is_whitespace())
+        || value.contains('\\')
+    {
+        return Err(UpstreamError::Wire("invalid configured peer origin".into()));
+    }
+    let (_, rest) = value
+        .split_once("://")
+        .ok_or(UpstreamError::Wire("invalid configured peer origin".into()))?;
+    let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+    if !path.is_empty() || authority.contains(['@', '?', '#']) || authority.ends_with(':') {
+        return Err(UpstreamError::Wire("invalid configured peer origin".into()));
+    }
+    let url = url::Url::parse(value)
+        .map_err(|_| UpstreamError::Wire("invalid configured peer origin".into()))?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.path() != "/"
+        || url.port_or_known_default().is_none_or(|port| port == 0)
+    {
+        return Err(UpstreamError::Wire("invalid configured peer origin".into()));
+    }
+    Ok(url.origin().ascii_serialization())
+}
+
 #[derive(Clone)]
 pub struct NativeClient {
-    // Secure constructors retain raw input until peer_origin validates it.
+    // Secure constructors retain raw input until configured_peer_origin validates it.
     origins: Vec<String>,
     peer_label: Option<String>,
     directory: Option<Arc<crate::federation::FederationDirectory>>,
@@ -65,7 +99,7 @@ impl NativeClient {
         credentials: PeerCredentials,
     ) -> Self {
         let http = reqwest::Client::builder()
-            .connect_timeout(crate::federation::connect::CONNECT_TIMEOUT)
+            .connect_timeout(Duration::from_secs(5))
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -105,7 +139,7 @@ impl NativeClient {
     pub fn new(base_url: String) -> Self {
         let http = reqwest::Client::builder()
             .timeout(NATIVE_RPC_TIMEOUT)
-            .connect_timeout(crate::federation::connect::CONNECT_TIMEOUT)
+            .connect_timeout(Duration::from_secs(5))
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -122,19 +156,6 @@ impl NativeClient {
         }
     }
 
-    pub fn with_candidates(mut self, candidates: Vec<String>) -> Result<Self, UpstreamError> {
-        let mut origins = Vec::new();
-        for candidate in candidates {
-            let origin = crate::federation::peer_origin(&candidate)
-                .map_err(|_| UpstreamError::Wire("invalid peer origin".into()))?;
-            if !origins.contains(&origin) {
-                origins.push(origin);
-            }
-        }
-        self.origins = origins;
-        Ok(self)
-    }
-
     pub(crate) fn with_directory(
         mut self,
         directory: crate::federation::FederationDirectory,
@@ -146,10 +167,6 @@ impl NativeClient {
     pub(crate) fn with_peer_label(mut self, label: String) -> Self {
         self.peer_label = Some(label);
         self
-    }
-
-    pub(crate) fn candidate_origins(&self) -> Vec<String> {
-        self.origins.clone()
     }
 
     #[cfg(test)]
@@ -486,37 +503,6 @@ impl NativeClient {
         }
     }
 
-    /// Read one signed status through this existing connection. The caller
-    /// owns the directory work token. This read starts no route discovery.
-    pub(crate) async fn probe_signed_connection(
-        &self,
-        connection: &iroh::endpoint::Connection,
-    ) -> Result<(), UpstreamError> {
-        self.ensure_not_revoked()?;
-        let request = RpcRequest::SessionStatus(SessionStatusRequest {});
-        let answered = AtomicBool::new(false);
-        let result = match tokio::time::timeout(
-            self.operation_timeout,
-            self.attempt("/peer-rpc", request.clone(), Some(connection), &answered),
-        )
-        .await
-        {
-            Ok(Ok(response)) => match checked_response(&request, response) {
-                Ok(_) | Err(UpstreamError::Tagged { .. }) => Ok(()),
-                Err(error) => Err(error),
-            },
-            Ok(Err(failure)) => Err(failure.error),
-            Err(_) if answered.load(Ordering::Relaxed) => {
-                Err(UpstreamError::Wire("peer response did not complete".into()))
-            }
-            Err(_) => Err(UpstreamError::Unreachable(
-                "peer operation timed out".into(),
-            )),
-        };
-        self.ensure_not_revoked()?;
-        result
-    }
-
     pub async fn session_controls(
         &self,
         launch_id: &str,
@@ -704,6 +690,11 @@ impl NativeClient {
                         .map(|label| format!("Can't reach {label} from this network right now"))
                         .unwrap_or_else(|| directory.unreachable_sentence(key)),
                 },
+                Err(UpstreamError::Tagged { code, .. }) if code == "PeerConnectionGone" => {
+                    crate::federation::PeerState::Failed {
+                        error: "Peer connection is gone".into(),
+                    }
+                }
                 Err(_) => crate::federation::PeerState::Failed {
                     error: PEER_OPERATION_FAILED_MESSAGE.into(),
                 },
@@ -740,145 +731,54 @@ impl NativeClient {
         request: &RpcRequest,
         answered: &AtomicBool,
     ) -> Result<RpcResponse, UpstreamError> {
-        let catalog_read = matches!(request, RpcRequest::CatalogSnapshot(_));
-        let read_only = matches!(
-            request,
-            RpcRequest::CatalogSnapshot(_)
-                | RpcRequest::SessionStatus(_)
-                | RpcRequest::SourceStatus(_)
-                | RpcRequest::SettingsSnapshot(_)
-        );
-        let mut candidates = self
-            .candidate_origins()
-            .into_iter()
-            .map(|origin| {
-                crate::federation::peer_origin(&origin)
-                    .map(|origin| format!("{origin}/peer-rpc"))
-                    .map_err(|_| UpstreamError::Wire("invalid peer origin".into()))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        if let Some(key) = &self.expected_peer_public_key {
-            crate::federation::reach::nearby_seam::prepend(key, &mut candidates);
-            // nearby_seam accepts origins. All candidates below name peer HTTP.
-            for candidate in &mut candidates {
-                if !candidate.ends_with("/peer-rpc") {
-                    candidate.push_str("/peer-rpc");
+        self.ensure_not_revoked()?;
+        let connection = if let (Some(directory), Some(key)) =
+            (&self.directory, &self.expected_peer_public_key)
+        {
+            Some(directory.reach_connection(key).await.map_err(|error| {
+                if error.kind() == std::io::ErrorKind::ConnectionAborted {
+                    UpstreamError::Tagged {
+                        code: "PeerConnectionGone".into(),
+                        message: "Peer connection is gone. Leave or end this session.".into(),
+                    }
+                } else {
+                    UpstreamError::Unreachable("peer connection unavailable".into())
                 }
-            }
-        }
-        let mut seen = std::collections::BTreeSet::new();
-        candidates.retain(|url| seen.insert(url.clone()));
-        let started = tokio::time::Instant::now();
-        let deadline = started + self.operation_timeout;
-        // A TCP peer can accept and then never answer HTTP. Reserve half the
-        // catalog budget for a sequential signed read over reach, rather than
-        // letting that stalled candidate hide an already-working connection.
-        // Effectful requests keep their existing single-destination policy.
-        let candidate_deadline = if catalog_read && self.directory.is_some() {
-            started + self.operation_timeout / 2
+            })?)
         } else {
-            deadline
+            None
         };
-        let mut last_error = UpstreamError::Unreachable("no eligible peer endpoint".into());
-        let mut may_try_reach = true;
-        while !candidates.is_empty() {
-            // Only TCP probes race. HTTP effects go to one winning origin.
-            let selected = match tokio::time::timeout_at(
-                candidate_deadline,
-                crate::federation::connect::select_origin(&candidates),
+        // Explicit configured native endpoints are still used by isolated CLI/test adapters.
+        // Federation never selects, probes, or falls back to an IP endpoint.
+        let url = if connection.is_some() {
+            "/peer-rpc".to_owned()
+        } else {
+            let origin = self
+                .origins
+                .first()
+                .ok_or_else(|| UpstreamError::Unreachable("peer endpoint unavailable".into()))?;
+            format!(
+                "{}/peer-rpc",
+                configured_peer_origin(origin)
+                    .map_err(|_| UpstreamError::Wire("invalid peer origin".into()))?
+            )
+        };
+        match self
+            .attempt_with_wait(
+                &url,
+                request.clone(),
+                connection.as_ref(),
+                answered,
+                self.operation_timeout,
             )
             .await
-            {
-                Ok(Ok(index)) => index,
-                Ok(Err(_)) => {
-                    last_error = UpstreamError::Unreachable("peer connect failed".into());
-                    break;
-                }
-                Err(_) => {
-                    last_error = UpstreamError::Unreachable("peer operation timed out".into());
-                    break;
-                }
-            };
-            let url = candidates.remove(selected);
-            self.ensure_not_revoked()?;
-            let remaining =
-                candidate_deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                break;
-            }
-            // Candidates share one direct-request budget, including the TCP
-            // probes. Catalogs reserve reach time; admin calls use host bounds.
-            let attempt = self
-                .attempt_with_wait(&url, request.clone(), None, answered, remaining)
-                .await;
-            match attempt {
-                Ok(Ok(response)) => return checked_response(request, response),
-                Ok(Err(failure)) => {
-                    let retry = failure.before_send
-                        || (read_only && !matches!(failure.error, UpstreamError::Http(400..=499)));
-                    last_error = failure.error;
-                    if !retry {
-                        may_try_reach = false;
-                        break;
-                    }
-                }
-                Err(_) => {
-                    last_error = UpstreamError::Unreachable("peer operation timed out".into());
-                    if !read_only {
-                        may_try_reach = false;
-                        break;
-                    }
-                }
-            }
+        {
+            Ok(Ok(response)) => checked_response(request, response),
+            Ok(Err(failure)) => Err(failure.error),
+            Err(_) => Err(UpstreamError::Unreachable(
+                "peer operation timed out".into(),
+            )),
         }
-        // Only transport failures before send (or repeatable reads) may use
-        // another route. A mutation with an uncertain result is never replayed.
-        if may_try_reach {
-            if let (Some(directory), Some(key)) = (&self.directory, &self.expected_peer_public_key)
-            {
-                // Catalog fan-out has a short total budget. Other operations
-                // retain reach's bounded discovery wait and then their request
-                // budget: member-relay setup can take longer than five seconds.
-                let connection = if catalog_read {
-                    tokio::time::timeout_at(deadline, directory.reach_connection(key))
-                        .await
-                        .ok()
-                        .and_then(Result::ok)
-                } else {
-                    directory.reach_connection(key).await.ok()
-                };
-                if let Some(connection) = connection {
-                    self.ensure_not_revoked()?;
-                    let request_timeout = if catalog_read {
-                        deadline.saturating_duration_since(tokio::time::Instant::now())
-                    } else {
-                        self.operation_timeout
-                    };
-                    if request_timeout.is_zero() {
-                        return Err(UpstreamError::Unreachable(
-                            "peer operation timed out".into(),
-                        ));
-                    }
-                    return match self
-                        .attempt_with_wait(
-                            "/peer-rpc",
-                            request.clone(),
-                            Some(&connection),
-                            answered,
-                            request_timeout,
-                        )
-                        .await
-                    {
-                        Ok(Ok(response)) => checked_response(request, response),
-                        Ok(Err(failure)) => Err(failure.error),
-                        Err(_) => Err(UpstreamError::Unreachable(
-                            "peer operation timed out".into(),
-                        )),
-                    };
-                }
-            }
-        }
-        Err(last_error)
     }
 
     async fn attempt_with_wait(
@@ -890,8 +790,8 @@ impl NativeClient {
         timeout: Duration,
     ) -> Result<Result<RpcResponse, AttemptFailure>, tokio::time::error::Elapsed> {
         // PluginAdminSocket owns transfer/stall bounds and has no total
-        // deadline. Candidate selection/connection above remain bounded, and
-        // the existing before_send rule still forbids mutation retries.
+        // deadline. The transport sends each request once; mutations are never
+        // replayed on another connection.
         if crate::plugin_repositories::is_admin_request(&request) {
             Ok(self.attempt(rpc_url, request, connection, answered).await)
         } else {
@@ -942,7 +842,6 @@ impl NativeClient {
             )
             .await
             .map_err(|_| AttemptFailure {
-                before_send: false,
                 error: UpstreamError::Unreachable("peer transport failed".into()),
             })?
         } else {
@@ -955,8 +854,7 @@ impl NativeClient {
                 pending = pending.timeout(self.operation_timeout);
             }
             crate::federation::reach::http::Response::Tcp(pending.send().await.map_err(
-                |error| AttemptFailure {
-                    before_send: error.is_connect(),
+                |_error| AttemptFailure {
                     error: UpstreamError::Unreachable("peer transport failed".into()),
                 },
             )?)
@@ -1014,15 +912,11 @@ impl NativeClient {
 
 struct AttemptFailure {
     error: UpstreamError,
-    before_send: bool,
 }
 
 impl From<UpstreamError> for AttemptFailure {
     fn from(error: UpstreamError) -> Self {
-        Self {
-            error,
-            before_send: false,
-        }
+        Self { error }
     }
 }
 

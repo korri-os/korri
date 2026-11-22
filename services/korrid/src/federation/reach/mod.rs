@@ -1,76 +1,39 @@
-//! Internet reachability sits below signed peer HTTP. The directory owns live
-//! routes. The existing selected remote session owns the one local forward set.
-mod controller;
+//! One authenticated iroh connection per peer. iroh owns discovery and paths.
+mod binding;
 mod datagrams;
-mod diagnostics;
-pub(crate) use diagnostics::relay_read_failure;
+pub(crate) use binding::Binding;
+mod endpoint;
 pub(crate) mod http;
-pub(crate) mod nearby_seam;
-mod policy;
-mod recovery;
-mod relay;
-mod settings;
-pub mod signal;
-mod stun;
 mod tunnel;
-pub(crate) use tunnel::NetplayForward;
 mod viewer;
-
-// The registry uses this boundary to prepare a viewer and retain its lease.
-pub(crate) use policy::RelayEnvironment;
-#[cfg(any(test, target_os = "android"))]
-pub(crate) use policy::RelayFacts;
-pub(crate) use viewer::{prepare_peer_viewer, SelectedViewer};
-
-pub(crate) type InterfaceReader =
-    Arc<dyn Fn() -> io::Result<Vec<super::interfaces::InterfaceAddress>> + Send + Sync>;
-
-/// Live platform observations and public product policy, never persisted config.
-#[derive(Clone)]
-pub(crate) struct Environment {
-    pub interfaces: InterfaceReader,
-    pub relay: Arc<dyn RelayEnvironment>,
-    pub relays: Option<crate::relay::RelayList>,
-}
-impl Environment {
-    pub(crate) fn linux() -> Self {
-        Self {
-            interfaces: Arc::new(super::interfaces::interface_addresses),
-            relay: Arc::new(policy::LinuxEnvironment::new()),
-            relays: None,
-        }
-    }
-}
-
 use crate::federation::FederationDirectory;
-use iroh::endpoint::Connection;
+pub(crate) use endpoint::start;
+use iroh::{endpoint::Connection, Endpoint};
 use std::{
     collections::BTreeMap,
     io,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex, RwLock, Weak,
-    },
-    time::Duration,
+    sync::{Arc, Mutex, RwLock, Weak},
 };
-use tokio::sync::Notify;
-pub(super) const ALPN: &[u8] = b"korri/reach/1";
-pub(super) struct LiveRoute {
-    connection: Connection,
-    /// The signed direct addresses this route was dialed with.
-    signalled: Vec<std::net::SocketAddr>,
-}
+pub(crate) use tunnel::NetplayForward;
+pub(crate) use viewer::{prepare_peer_viewer, SelectedViewer};
+pub(super) const ALPN: &[u8] = b"korri/peer/1";
 #[derive(Clone, Default)]
 pub(crate) struct Routes {
-    live: Arc<RwLock<BTreeMap<String, LiveRoute>>>,
-    recovery: Arc<Mutex<recovery::Recovery>>,
-    changed: Arc<Notify>,
-    active: Arc<AtomicBool>,
-    diagnostics: diagnostics::Diagnostics,
+    live: Arc<RwLock<BTreeMap<String, PeerConnection>>>,
+    endpoint: Arc<tokio::sync::OnceCell<Endpoint>>,
+    starting: Arc<std::sync::atomic::AtomicBool>,
+    ready: Arc<tokio::sync::Notify>,
+    router: Arc<tokio::sync::OnceCell<axum::Router>>,
+    dialing: Arc<Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<()>>>>>,
     selected: Arc<tokio::sync::Mutex<Option<Weak<Lease>>>>,
     retired: Arc<Mutex<Vec<tunnel::Forwards>>>,
     #[cfg(test)]
     bindings: Arc<RwLock<Option<tunnel::Bindings>>>,
+}
+#[derive(Clone)]
+struct PeerConnection {
+    connection: Connection,
+    responses: tunnel::Responses,
 }
 struct Lease {
     device: String,
@@ -113,6 +76,9 @@ impl StreamLease {
     pub(crate) fn release(&self) {
         self.0.release();
     }
+    pub(crate) fn connection_gone(&self) -> bool {
+        self.0.connection.close_reason().is_some()
+    }
     pub(crate) fn address(&self) -> Option<String> {
         if self.0.connection.close_reason().is_some() {
             return None;
@@ -126,114 +92,27 @@ impl StreamLease {
     }
 }
 impl Routes {
-    fn owns_forward_origin(&self, origin: &str) -> bool {
-        let owns = |forward: &tunnel::Forwards| {
-            nearby_seam::moonlight_control_origin(&forward.address).as_deref() == Some(origin)
-        };
-        // Do not probe an address while another task changes forward ownership.
-        let Ok(selected) = self.selected.try_lock() else {
-            return true;
-        };
-        if let Some(lease) = selected.as_ref().and_then(Weak::upgrade) {
-            let forwards = lease.forwards.lock().expect("stream forwards");
-            if forwards.as_ref().is_some_and(owns) {
-                return true;
-            }
-        }
-        self.retired
-            .lock()
-            .expect("retired forwards")
-            .iter()
-            .any(owns)
-    }
-
     fn connection(&self, device: &str) -> Option<Connection> {
         self.live
             .read()
             .ok()?
             .get(device)
-            .filter(|r| r.connection.close_reason().is_none())
-            .map(|r| r.connection.clone())
-    }
-    /// A peer endpoint binds every local address on one fresh port, and keeps
-    /// it for its whole life. A signal that shares no address with the one
-    /// this live route was dialed with comes from a rebuilt endpoint. The old
-    /// route can still look live here until iroh's idle timeout, because the
-    /// peer's close was lost with its network. While any connection to an
-    /// endpoint id is open, iroh sends a new dial only on that connection's
-    /// selected path: the old address. So close those connections first.
-    fn close_replaced(&self, device: &str, addresses: &[std::net::SocketAddr]) {
-        let Ok(live) = self.live.read() else {
-            return;
-        };
-        let Some(route) = live.get(device).filter(|route| {
-            route.connection.close_reason().is_none()
-                && !route.signalled.is_empty()
-                && !addresses.is_empty()
-                && !addresses.iter().any(|a| route.signalled.contains(a))
-        }) else {
-            return;
-        };
-        route
-            .connection
-            .close(0u32.into(), b"peer endpoint replaced");
-        drop(live);
-        self.recovery
-            .lock()
-            .expect("reach recovery")
-            .close_replaced(device, addresses);
+            .filter(|c| c.connection.close_reason().is_none())
+            .map(|c| c.connection.clone())
     }
     fn stream_address(&self, device: &str) -> Option<String> {
         let lease = self.selected.try_lock().ok()?.as_ref()?.upgrade()?;
-        if lease.device != device {
-            return None;
-        }
-        StreamLease(lease).address()
+        (lease.device == device)
+            .then(|| StreamLease(lease).address())
+            .flatten()
     }
     fn clear(&self) {
-        self.clear_connections(true);
-    }
-    fn clear_connections(&self, forget_losses: bool) {
-        self.recovery
-            .lock()
-            .expect("reach recovery")
-            .stop(forget_losses);
-        if let Ok(selected) = self.selected.try_lock() {
-            if let Some(lease) = selected.as_ref().and_then(Weak::upgrade) {
-                StreamLease(lease).release();
+        if let Ok(mut live) = self.live.write() {
+            for c in live.values() {
+                c.connection.close(0u32.into(), b"transport stopped");
             }
+            live.clear();
         }
-        if let Ok(mut routes) = self.live.write() {
-            for route in routes.values() {
-                route
-                    .connection
-                    .close(0u32.into(), b"network or authority changed");
-            }
-            routes.clear();
-        }
-        self.changed.notify_waiters();
-    }
-    async fn wait(&self, device: &str) -> io::Result<Connection> {
-        if let Some(c) = self.connection(device) {
-            return Ok(c);
-        }
-        if !self.active.load(Ordering::Acquire) {
-            return Err(io::Error::new(
-                io::ErrorKind::NotConnected,
-                "reach transport is not active",
-            ));
-        }
-        tokio::time::timeout(Duration::from_secs(20), async {
-            loop {
-                let notified = self.changed.notified();
-                if let Some(c) = self.connection(device) {
-                    return c;
-                }
-                notified.await;
-            }
-        })
-        .await
-        .map_err(|_| io::Error::new(io::ErrorKind::NotConnected, "no reachable federation route"))
     }
     async fn activate(&self, device: &str) -> io::Result<Option<StreamLease>> {
         let mut selected = self.selected.lock().await;
@@ -245,9 +124,9 @@ impl Routes {
         for forwards in retired {
             forwards.shutdown().await;
         }
-        let Some(connection) = self.connection(device) else {
-            return Ok(None);
-        };
+        let connection = self
+            .connection(device)
+            .ok_or_else(|| io::Error::other("peer connection is gone"))?;
         #[cfg(test)]
         let bindings = self
             .bindings
@@ -257,7 +136,15 @@ impl Routes {
             .unwrap_or_default();
         #[cfg(not(test))]
         let bindings = tunnel::Bindings::default();
-        let forwards = tunnel::Forwards::open(connection.clone(), bindings).await?;
+        let responses = self
+            .live
+            .read()
+            .expect("peer connections")
+            .get(device)
+            .ok_or_else(|| io::Error::other("peer connection is gone"))?
+            .responses
+            .subscribe();
+        let forwards = tunnel::Forwards::open(connection.clone(), bindings, responses).await?;
         let lease = Arc::new(Lease {
             device: device.into(),
             connection,
@@ -270,71 +157,89 @@ impl Routes {
 }
 impl FederationDirectory {
     pub fn stream_address(&self, device: &str) -> Option<String> {
-        if self
-            .snapshot()
-            .ok()?
-            .iter()
-            .any(|p| p.device_public_key == device)
-        {
-            self.reach.stream_address(device)
-        } else {
-            None
-        }
+        self.reach.stream_address(device)
     }
-    pub(crate) fn has_iroh_route(&self, device: &str) -> bool {
+    pub(crate) fn has_peer_connection(&self, device: &str) -> bool {
         self.reach.connection(device).is_some()
     }
     pub(crate) async fn activate_stream(&self, device: &str) -> io::Result<Option<StreamLease>> {
-        // Static and native-only peers need no federation transport authority.
-        // Retire any previous forward selection, then preserve their address.
-        if !self.has_iroh_route(device) {
-            return self.reach.activate(device).await;
-        }
-        if !self
-            .snapshot()
-            .map_err(io::Error::other)?
-            .iter()
-            .any(|p| p.device_public_key == device)
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "peer is not a federation member",
-            ));
-        }
+        self.reach_connection(device).await?;
         self.reach.activate(device).await
     }
     pub(crate) async fn netplay_forward(&self, device: &str) -> io::Result<NetplayForward> {
-        let mut wait = self.reach.diagnostics.route_wait(device);
-        let connection = self.reach_connection(device).await;
-        wait.finish(connection.is_ok());
-        drop(wait);
-        NetplayForward::open(connection?).await
+        NetplayForward::open(self.reach_connection(device).await?).await
     }
     pub(crate) async fn reach_connection(&self, device: &str) -> io::Result<Connection> {
-        if !self
+        let peer = self
             .snapshot()
             .map_err(io::Error::other)?
-            .iter()
-            .any(|p| p.device_public_key == device)
+            .into_iter()
+            .find(|p| p.device_public_key == device)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "peer is not a federation member",
+                )
+            })?;
+        let dialing = self
+            .reach
+            .dialing
+            .lock()
+            .expect("peer dial locks")
+            .entry(device.into())
+            .or_default()
+            .clone();
+        let _dialing = dialing.lock().await;
+        // Keep closed connections too: callers observe the terminal error, not a retry.
+        if let Some(connection) = self
+            .reach
+            .live
+            .read()
+            .expect("peer connections")
+            .get(device)
         {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "peer is not a federation member",
-            ));
+            if connection.connection.close_reason().is_some() {
+                return Err(io::Error::new(
+                    io::ErrorKind::ConnectionAborted,
+                    "peer connection is gone",
+                ));
+            }
+            return Ok(connection.connection.clone());
         }
-        self.reach.wait(device).await
+        let ready = self.reach.ready.notified();
+        tokio::pin!(ready);
+        ready.as_mut().enable();
+        if self.reach.endpoint.get().is_none()
+            && self
+                .reach
+                .starting
+                .load(std::sync::atomic::Ordering::Acquire)
+        {
+            ready.await;
+        }
+        let endpoint = self.reach.endpoint.get().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotConnected, "peer transport is not active")
+        })?;
+        let id = peer
+            .remembered_endpoint
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::NotFound, "peer endpoint key is not known")
+            })?
+            .endpoint_id
+            .parse::<iroh::EndpointId>()
+            .map_err(io::Error::other)?;
+        let connection = endpoint.connect(id, ALPN).await.map_err(io::Error::other)?;
+        endpoint::admit(self.clone(), Some(device.to_owned()), connection.clone());
+        self.reach
+            .connection(device)
+            .ok_or_else(|| io::Error::other("peer connection is gone"))
     }
     pub(crate) fn unreachable_sentence(&self, device: &str) -> String {
-        let label = self
-            .snapshot()
-            .ok()
-            .and_then(|peers| peers.into_iter().find(|p| p.device_public_key == device))
-            .and_then(|p| p.current_endpoint.or(p.remembered_endpoint))
-            .and_then(|e| e.label)
-            .unwrap_or_else(|| device.into());
-        format!("Can't reach {label} from this network right now")
+        format!("Can't reach {device} from this network right now")
     }
 }
-pub(crate) use controller::start;
 #[cfg(test)]
 pub(crate) mod tests;
+
+#[cfg(test)]
+mod path_change_tests;

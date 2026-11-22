@@ -53,7 +53,7 @@ fn launch_process(
     let resources = federation::coordinator::FederationResources::open(&private).unwrap();
     let now = peer_rpc::unix_time();
     let recipient = resources.credentials.public_key().unwrap();
-    for (credentials, origin) in peers {
+    for (credentials, _origin) in peers {
         let identity = credentials.identity_snapshot().unwrap();
         resources
             .directory
@@ -69,11 +69,8 @@ fn launch_process(
                 .public_key()
                 .to_hex(),
             generation: 1,
-            candidates: vec![(*origin).into()],
+            endpoint_id: identity.transport_key().to_string(),
             issued_at: now,
-            expires_at: now + 600,
-            label: Some("Peer".into()),
-            moonlight_address: None,
         };
         let event = identity
             .encrypt_tagged_event(
@@ -82,7 +79,6 @@ fn launch_process(
                 vec![
                     vec!["d".into(), format!("org.korri.endpoint:{recipient}")],
                     vec!["p".into(), recipient.clone()],
-                    vec!["expiration".into(), record.expires_at.to_string()],
                 ],
                 &serde_json::to_string(&record).unwrap(),
                 now,
@@ -449,7 +445,7 @@ fn remote_process_owner_revocation_and_unavailable_refusals_have_no_launch_effec
     let target = tempfile::tempdir().unwrap();
     let target_resources = resources(&target.path().join("private"), &"66".repeat(32), OWNER);
     let target_key = target_resources.public_key().unwrap();
-    let _target_process = launch_process(target.path(), &[], None);
+    let mut target_process = launch_process(target.path(), &[], None);
     let origin = fs::read_to_string(target.path().join("ready")).unwrap();
     for case in ["other-owner", "revoked-target", "unavailable"] {
         let caller = tempfile::tempdir().unwrap();
@@ -482,6 +478,8 @@ fn remote_process_owner_revocation_and_unavailable_refusals_have_no_launch_effec
                 .unwrap();
         }
         let peers = if case == "unavailable" {
+            target_process.0.kill().unwrap();
+            target_process.0.wait().unwrap();
             vec![(&target_resources, "http://127.0.0.1:9")]
         } else {
             vec![]

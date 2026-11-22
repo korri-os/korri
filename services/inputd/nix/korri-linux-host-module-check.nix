@@ -289,8 +289,9 @@ assert korrid.environment.KORRID_RELAYS == ''["wss://relay.example.com"]'';
 assert korrid.environment.HOSTNAME == "consumer";
 assert builtins.elem "/var/lib/korrid" korrid.serviceConfig.ReadWritePaths;
 assert inputd.serviceConfig.User == "korri-inputd";
-assert builtins.elem 39217 cfg.networking.firewall.allowedTCPPorts;
-assert cfg.services.korridLinuxDevice.address == "[::]:39217";
+assert !(builtins.elem 39217 cfg.networking.firewall.allowedTCPPorts);
+assert builtins.elem 39217 cfg.networking.firewall.allowedUDPPorts;
+assert cfg.services.korridLinuxDevice.address == "127.0.0.1:39217";
 assert builtins.hasAttr "workspace-next" cfg.services.korriLinuxInput.inputd.actions;
 assert
   validationAction == [

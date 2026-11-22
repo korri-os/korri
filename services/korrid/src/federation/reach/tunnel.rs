@@ -80,7 +80,11 @@ fn socket(address: SocketAddr, tcp: bool) -> io::Result<socket2::Socket> {
     Ok(socket)
 }
 impl Forwards {
-    pub async fn open(connection: Connection, bindings: Bindings) -> io::Result<Self> {
+    pub async fn open(
+        connection: Connection,
+        bindings: Bindings,
+        mut responses: tokio::sync::broadcast::Receiver<(u16, Vec<u8>)>,
+    ) -> io::Result<Self> {
         let mut tcp = Vec::new();
         let mut udp = Vec::new();
         for (logical, port) in TCP_PORTS.into_iter().zip(bindings.tcp) {
@@ -130,7 +134,7 @@ impl Forwards {
                         result = socket.recv_from(&mut bytes) => {
                             let Ok((n,src)) = result else {break};
                             clients.lock().expect("stream clients").insert(port,src);
-                            let _ = datagrams::send(&c,port,&bytes[..n]);
+                            let _ = datagrams::send(&c,port,&bytes[..n], false);
                         }
                         _ = c.closed() => break,
                     }
@@ -138,15 +142,20 @@ impl Forwards {
             });
         }
         tasks.spawn(async move {
-            let mut receiver = datagrams::Receiver::default();
-            while let Ok(bytes) = connection.read_datagram().await {
-                if let Some((port, payload)) = receiver.push(&bytes) {
-                    let client = clients.lock().expect("stream clients").get(&port).copied();
-                    if let (Some(client), Some((_, socket))) =
-                        (client, udp.iter().find(|(p, _)| *p == port))
-                    {
-                        let _ = socket.send_to(&payload, client).await;
-                    }
+            loop {
+                let (port, payload) = tokio::select! {
+                    packet = responses.recv() => match packet {
+                        Ok(packet) => packet,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(_) => break,
+                    },
+                    _ = connection.closed() => break,
+                };
+                let client = clients.lock().expect("stream clients").get(&port).copied();
+                if let (Some(client), Some((_, socket))) =
+                    (client, udp.iter().find(|(p, _)| *p == port))
+                {
+                    let _ = socket.send_to(&payload, client).await;
                 }
             }
         });
@@ -167,25 +176,38 @@ impl Forwards {
     }
 }
 
-/// The accepted connection is the Sunshine side. Both devices dial after a
-/// signal, so either can view the other without a direction field in a packet.
-pub(super) async fn serve(connection: Connection, router: axum::Router) {
-    serve_on(connection, router, Targets::default()).await;
+pub(super) type Responses = tokio::sync::broadcast::Sender<(u16, Vec<u8>)>;
+/// Each side serves streams and demultiplexes UDP requests and replies exactly once.
+pub(super) async fn serve(
+    connection: Connection,
+    router: axum::Router,
+    responses: Responses,
+    binding: Option<super::Binding>,
+) {
+    serve_on(connection, router, Targets::default(), responses, binding).await;
 }
-async fn serve_on(connection: Connection, router: axum::Router, targets: Targets) {
+async fn serve_on(
+    connection: Connection,
+    router: axum::Router,
+    targets: Targets,
+    responses: Responses,
+    binding: Option<super::Binding>,
+) {
     let mut tasks = JoinSet::new();
     let c = connection.clone();
     let udp_targets = targets.clone();
+    let udp_binding = binding.clone();
     tasks.spawn(async move {
-        serve_udp(c, udp_targets).await;
+        serve_udp(c, udp_targets, responses, udp_binding).await;
     });
     loop {
         tokio::select! {
             result = connection.accept_bi(), if tasks.len() < 36 => {
                 let Ok((mut send,mut recv)) = result else {break};
-                let router = router.clone();let targets = targets.clone();
+                let router = router.clone();let targets = targets.clone(); let binding = binding.clone();
                 tasks.spawn(async move {
                     let Ok(kind) = recv.read_u8().await else {return};
+                    if kind != 0 && binding.as_ref().is_some_and(|binding| !binding.allows_streams()) { return; }
                     match kind {
                         0 => http::serve(send,recv,router).await,
                         1 => {
@@ -214,7 +236,12 @@ async fn serve_on(connection: Connection, router: axum::Router, targets: Targets
         }
     }
 }
-async fn serve_udp(connection: Connection, targets: Targets) {
+async fn serve_udp(
+    connection: Connection,
+    targets: Targets,
+    responses: Responses,
+    binding: Option<super::Binding>,
+) {
     let mut tasks = JoinSet::new();
     let mut sockets = BTreeMap::new();
     for (port, target) in UDP_PORTS.into_iter().zip(targets.udp) {
@@ -232,7 +259,7 @@ async fn serve_udp(connection: Connection, targets: Targets) {
             loop {
                 tokio::select! {
                     result = socket.recv(&mut bytes) => {
-                        if let Ok(n) = result {let _ = datagrams::send(&c,port,&bytes[..n]);}
+                        if let Ok(n) = result {let _ = datagrams::send(&c,port,&bytes[..n], true);}
                         else {tokio::time::sleep(std::time::Duration::from_millis(50)).await;}
                     }
                     _ = c.closed() => break,
@@ -242,8 +269,16 @@ async fn serve_udp(connection: Connection, targets: Targets) {
     }
     let mut receiver = datagrams::Receiver::default();
     while let Ok(bytes) = connection.read_datagram().await {
+        if binding
+            .as_ref()
+            .is_some_and(|binding| !binding.allows_streams())
+        {
+            continue;
+        }
         if let Some((port, payload)) = receiver.push(&bytes) {
-            if let Some(socket) = sockets.get(&port) {
+            if bytes[0] == 2 {
+                let _ = responses.send((port, payload));
+            } else if let Some(socket) = sockets.get(&port) {
                 let _ = socket.send(&payload).await;
             }
         }
@@ -278,7 +313,20 @@ mod tests {
                 socket.send_to(&bytes[..n], src).await.unwrap();
             });
         }
-        let task = tokio::spawn(serve_on(incoming, axum::Router::new(), targets));
+        let task = tokio::spawn(serve_on(
+            incoming,
+            axum::Router::new(),
+            targets,
+            tokio::sync::broadcast::channel(64).0,
+            None,
+        ));
+        let responses = tokio::sync::broadcast::channel(64).0;
+        let local = tokio::spawn(serve(
+            outgoing.clone(),
+            axum::Router::new(),
+            responses.clone(),
+            None,
+        ));
         let forwards = Forwards::open(
             outgoing,
             Bindings {
@@ -286,6 +334,7 @@ mod tests {
                 tcp: [0; 3],
                 udp: [0; 5],
             },
+            responses.subscribe(),
         )
         .await
         .unwrap();
@@ -313,6 +362,7 @@ mod tests {
         assert!(!TCP_PORTS.contains(&47990));
         assert!(!UDP_PORTS.contains(&47990));
         forwards.shutdown().await;
+        local.abort();
         task.abort();
         a.close().await;
         b.close().await;
@@ -336,8 +386,8 @@ mod tests {
     }
 }
 
-/// Netplay never takes the native-LAN shortcut used by a stream viewer.
-/// This listener is ephemeral and loopback-only. The lease owns every copy.
+/// This ephemeral loopback listener carries netplay on the peer connection.
+/// Its lease owns every copy task.
 pub(crate) struct NetplayForward {
     connection: Connection,
     disconnected: Arc<std::sync::atomic::AtomicBool>,
@@ -353,9 +403,11 @@ impl NetplayForward {
     pub(crate) fn has_connected(&self) -> bool {
         self.connected.load(std::sync::atomic::Ordering::Acquire)
     }
-    pub(crate) fn lost(&self) -> bool {
+    pub(crate) fn connection_gone(&self) -> bool {
         self.connection.close_reason().is_some()
-            || self.disconnected.load(std::sync::atomic::Ordering::Acquire)
+    }
+    pub(crate) fn lost(&self) -> bool {
+        self.connection_gone() || self.disconnected.load(std::sync::atomic::Ordering::Acquire)
     }
     pub(super) async fn open(connection: Connection) -> io::Result<Self> {
         let disconnected = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -424,7 +476,7 @@ pub(super) async fn netplay_echo(connection: Connection) -> tokio::task::JoinHan
             }
         };
         tokio::select! {
-            _ = serve_on(connection, axum::Router::new(), targets) => {},
+            _ = serve_on(connection, axum::Router::new(), targets, tokio::sync::broadcast::channel(64).0, None) => {},
             _ = echo => {},
         }
     })
@@ -447,7 +499,13 @@ mod netplay_tests {
             let (mut read, mut write) = tcp.into_split();
             tokio::io::copy(&mut read, &mut write).await.unwrap();
         });
-        let server = tokio::spawn(serve_on(incoming, axum::Router::new(), targets));
+        let server = tokio::spawn(serve_on(
+            incoming,
+            axum::Router::new(),
+            targets,
+            tokio::sync::broadcast::channel(64).0,
+            None,
+        ));
         let forward = NetplayForward::open(outgoing).await.unwrap();
         assert!(forward.address.ip().is_loopback());
         assert_ne!(forward.address.port(), 55435);

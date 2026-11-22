@@ -5,81 +5,6 @@ use coordinator::Discovery;
 use std::time::Duration;
 
 #[tokio::test]
-async fn renewal_address_change_and_revocation_preserve_signed_order_and_memory() {
-    let f = Fixture::new();
-    let directory = f.directory().unwrap();
-    let relays = RelayList::configured(vec!["ws://localhost:7001".into()]).unwrap();
-    let network = Arc::new(InProcessRelayNetwork::new(&relays));
-    let recipient =
-        CoordinatedRelays::new(relays.clone(), f.peer.clone(), network.clone()).unwrap();
-    recipient.publish_owner_statement().await.unwrap();
-    let current = Arc::new(Mutex::new(inputs(&relays, true)));
-    let config = current.clone();
-    let clock = f.clock.clone();
-    let task = Discovery::new(
-        directory.clone(),
-        f.credentials.clone(),
-        Arc::new(move || Ok(config.lock().unwrap().clone())),
-        network.clone(),
-        timing(),
-        Arc::new(move || clock.load(Ordering::SeqCst)),
-    )
-    .spawn();
-    async fn generation(
-        recipient: &CoordinatedRelays<InProcessRelayNetwork>,
-        now: u64,
-        generation: u64,
-    ) -> crate::relay::EndpointRecord {
-        tokio::time::timeout(Duration::from_secs(3), async {
-            loop {
-                if let Some(evidence) = recipient.receive(now).await.unwrap().endpoints.first() {
-                    if evidence.record.generation == generation {
-                        return evidence.record.clone();
-                    }
-                }
-                tokio::time::sleep(Duration::from_millis(2)).await;
-            }
-        })
-        .await
-        .unwrap()
-    }
-    assert_eq!(
-        generation(&recipient, 1000, 1).await.expires_at,
-        1000 + 86400
-    );
-    f.clock.store(1000 + 21600, Ordering::SeqCst);
-    task.control().wake().unwrap();
-    let renewed = generation(&recipient, 22600, 2).await;
-    assert_eq!(renewed.issued_at, 22600);
-    assert_eq!(renewed.expires_at, 22600 + 86400);
-    {
-        let mut config = current.lock().unwrap();
-        config.advertised_endpoints = vec!["https://moved.example:43117".into()];
-        config.label = Some("Moved".into());
-        config.moonlight_address = Some("moved:47989".into());
-    }
-    task.control().wake().unwrap();
-    let moved = generation(&recipient, 22600, 3).await;
-    assert_eq!(moved.issued_at, 22601);
-    assert_eq!(moved.candidates, ["https://moved.example:43117"]);
-    assert_eq!(moved.label.as_deref(), Some("Moved"));
-    assert_eq!(moved.moonlight_address.as_deref(), Some("moved:47989"));
-    let revoked = binding(&f.owner, &f.key(), "revoked", 2000);
-    network.inject(&relays.as_slice()[0], &revoked).unwrap();
-    task.control().wake().unwrap();
-    tokio::time::timeout(Duration::from_secs(3), async {
-        while !directory.snapshot().unwrap().is_empty() {
-            tokio::time::sleep(Duration::from_millis(2)).await;
-        }
-    })
-    .await
-    .unwrap();
-    task.shutdown().await.unwrap();
-    drop(directory);
-    assert!(f.directory().unwrap().snapshot().unwrap().is_empty());
-}
-
-#[tokio::test]
 async fn relay_config_reload_wake_uses_new_authorized_source_without_waiting_for_poll() {
     let f = Fixture::new();
     let readable = tempfile::tempdir().unwrap();
@@ -124,5 +49,61 @@ async fn relay_config_reload_wake_uses_new_authorized_source_without_waiting_for
     })
     .await
     .unwrap();
+    task.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn endpoint_binding_is_published_once_and_only_changes_with_the_iroh_key() {
+    let f = Fixture::new();
+    let directory = f.directory().unwrap();
+    let relays = RelayList::configured(vec!["ws://localhost:7001".into()]).unwrap();
+    let network = Arc::new(InProcessRelayNetwork::new(&relays));
+    let recipient =
+        CoordinatedRelays::new(relays.clone(), f.peer.clone(), network.clone()).unwrap();
+    recipient.publish_owner_statement().await.unwrap();
+    let config = inputs(&relays, true);
+    let clock = f.clock.clone();
+    let task = Discovery::new(
+        directory,
+        f.credentials.clone(),
+        Arc::new(move || Ok(config.clone())),
+        network,
+        timing(),
+        Arc::new(move || clock.load(Ordering::SeqCst)),
+    )
+    .spawn();
+    async fn binding(
+        recipient: &CoordinatedRelays<InProcessRelayNetwork>,
+        generation: u64,
+        now: u64,
+    ) -> crate::relay::EndpointRecord {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if let Some(e) = recipient.receive(now).await.unwrap().endpoints.first() {
+                    if e.record.generation == generation {
+                        break e.record.clone();
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+        })
+        .await
+        .unwrap()
+    }
+    let first = binding(&recipient, 1, 1000).await;
+    f.clock.store(200_000, Ordering::SeqCst);
+    task.control().wake().unwrap();
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    assert_eq!(binding(&recipient, 1, 200_000).await, first);
+    let key = iroh::SecretKey::generate();
+    std::fs::write(
+        f.root.path().join("identity/iroh.key"),
+        format!("{}\n", hex::encode(key.to_bytes())),
+    )
+    .unwrap();
+    task.control().wake().unwrap();
+    let changed = binding(&recipient, 2, 200_000).await;
+    assert_eq!(changed.endpoint_id, key.public().to_string());
+    assert_ne!(changed.endpoint_id, first.endpoint_id);
     task.shutdown().await.unwrap();
 }

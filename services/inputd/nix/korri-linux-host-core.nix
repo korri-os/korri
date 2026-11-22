@@ -339,10 +339,6 @@ in
       default = "/var/lib/korrid";
     };
     relays = lib.mkOption { type = lib.types.listOf lib.types.str; };
-    stun = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ ];
-    };
     ownerBindingFile = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
       default = null;
@@ -559,12 +555,11 @@ in
       localSignerUid = cfg.serviceIdentities.localSignerUid;
       localSignerGid = cfg.serviceIdentities.localSignerGid;
       inherit deviceConfig;
-      address = "[::]:${toString cfg.apiPort}";
+      address = "127.0.0.1:${toString cfg.apiPort}";
       storageRoot = cfg.storageRoot;
       privateStateRoot = cfg.privateStateRoot;
       inherit (cfg)
         relays
-        stun
         ownerBindingFile
         ;
       inherit compositorControlDirectory compositorControlSocket;

@@ -39,7 +39,7 @@ hmac = "0.12"
 hyper = { version = "1", features = ["client", "server", "http1"] }
 http-body-util = "0.1"
 iroh = { version = "=1.4.1", default-features = false, features = ["tls-ring", "portmapper"] }
-iroh-relay = { version = "=1.4.1", default-features = false, features = ["server", "tls-ring"] }
+iroh-mdns-address-lookup = "=0.6.1"
 hyper-util = { version = "0.1", features = ["tokio", "service"] }
 socket2 = "0.6"
 subtle = "2"
@@ -47,9 +47,6 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 rand = "0.9"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 libc = "0.2"
-netlink-packet-core = "0.9"
-netlink-packet-route = "0.33"
-netlink-sys = "0.9"
 korri-settings-treaty = { path = "../../contracts/settings" }
 toml_edit = "0.22"
 korri-input-contract = { path = "../../contracts/input" }
@@ -114,7 +111,6 @@ proseql-storage = { path = ".cache/proseql/crates/proseql-storage" }
 # TV-side edge only; the shell never links this reader.
 evdev = { version = "0.13.2", features = ["stream-trait"] }
 # ADR 0089: local discovery announces and browses with multicast DNS (DNS-SD).
-mdns-sd = { version = "0.22", default-features = false, features = ["async", "logging"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"

@@ -27,19 +27,16 @@ pub const COORDINATION_RUMOR_KIND: u16 = 29_100;
 const ENDPOINT_EVENT_PREFIX: &str = "org.korri.endpoint:";
 const MAX_RELAYS: usize = 8;
 const MAX_RELAY_URL_BYTES: usize = 2_048;
-const MAX_ENDPOINT_CANDIDATES: usize = 8;
 const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_STORED_EVENTS_PER_RELAY: usize = 256;
 pub(crate) const MAX_READ_EVENTS: usize = 128;
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
-const MAX_ENDPOINT_LIFETIME_SECONDS: u64 = 7 * 24 * 60 * 60;
 const MAX_CLOCK_FUTURE_SECONDS: u64 = 5 * 60;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(8);
 const INITIAL_RECONNECT_DELAY: Duration = Duration::from_secs(5);
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(300);
 const REFUSAL_BACKOFF: Duration = Duration::from_secs(300);
-const READ_COMPLETION_GRACE: Duration = Duration::from_millis(200);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelayList(Vec<String>);
@@ -127,50 +124,25 @@ pub struct EndpointRecord {
     pub device_public_key: String,
     pub owner_public_key: String,
     pub generation: u64,
-    pub candidates: Vec<String>,
+    /// Ed25519 EndpointId, authenticated by this device's Nostr signature.
+    /// Name and encoding come from the former reach Offer.
+    pub endpoint_id: String,
     pub issued_at: u64,
-    pub expires_at: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub moonlight_address: Option<String>,
 }
 
 impl EndpointRecord {
     pub fn validate(&self, now: u64) -> Result<(), RelayError> {
         validate_public_key(&self.device_public_key)?;
         validate_public_key(&self.owner_public_key)?;
-        for value in [&self.label, &self.moonlight_address].into_iter().flatten() {
-            if value.trim().is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
-                return Err(RelayError::InvalidEvent(
-                    "endpoint metadata is invalid".into(),
-                ));
-            }
-        }
         if self.generation == 0 {
             return Err(RelayError::InvalidEvent(
                 "endpoint generation must be positive".into(),
             ));
         }
-        if self.candidates.is_empty() || self.candidates.len() > MAX_ENDPOINT_CANDIDATES {
-            return Err(RelayError::InvalidEvent(
-                "endpoint record has an invalid candidate count".into(),
-            ));
-        }
-        if self
-            .candidates
-            .iter()
-            .any(|candidate| crate::federation::peer_origin(candidate).is_err())
-        {
-            return Err(RelayError::InvalidEvent(
-                "endpoint candidate is invalid".into(),
-            ));
-        }
-        if self.issued_at > now.saturating_add(MAX_CLOCK_FUTURE_SECONDS)
-            || self.expires_at <= now
-            || self.expires_at <= self.issued_at
-            || self.expires_at - self.issued_at > MAX_ENDPOINT_LIFETIME_SECONDS
-        {
+        self.endpoint_id
+            .parse::<iroh::EndpointId>()
+            .map_err(|_| RelayError::InvalidEvent("endpoint key is invalid".into()))?;
+        if self.issued_at > now.saturating_add(MAX_CLOCK_FUTURE_SECONDS) {
             return Err(RelayError::Expired);
         }
         Ok(())
@@ -179,14 +151,6 @@ impl EndpointRecord {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CoordinationCommand {
-    ReachOffer {
-        sender_device_public_key: String,
-        offer: crate::federation::reach::signal::Offer,
-    },
-    ReachAnswer {
-        sender_device_public_key: String,
-        answer: crate::federation::reach::signal::Answer,
-    },
     RunIdleKorrid {
         sender_device_public_key: String,
         requested_at: u64,
@@ -211,8 +175,6 @@ pub enum CoordinationCommand {
 impl CoordinationCommand {
     fn expires_at(&self) -> u64 {
         match self {
-            Self::ReachOffer { offer, .. } => offer.expires_at,
-            Self::ReachAnswer { answer, .. } => answer.expires_at,
             Self::RunIdleKorrid { expires_at, .. }
             | Self::OwnerBindingRequested { expires_at, .. }
             | Self::OwnerBindingResponse { expires_at, .. } => *expires_at,
@@ -223,8 +185,6 @@ impl CoordinationCommand {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "_tag", rename_all_fields = "camelCase", deny_unknown_fields)]
 enum QueuedMessage {
-    ReachOffer(crate::federation::reach::signal::Offer),
-    ReachAnswer(crate::federation::reach::signal::Answer),
     RunIdleKorrid {
         requested_at: u64,
         expires_at: u64,
@@ -246,8 +206,6 @@ enum QueuedMessage {
 impl QueuedMessage {
     fn expires_at(&self) -> u64 {
         match self {
-            Self::ReachOffer(offer) => offer.expires_at,
-            Self::ReachAnswer(answer) => answer.expires_at,
             Self::RunIdleKorrid { expires_at, .. }
             | Self::OwnerBindingRequested { expires_at, .. }
             | Self::OwnerBindingResponse { expires_at, .. } => *expires_at,
@@ -470,59 +428,6 @@ where
         })
     }
 
-    /// Reach admits a completed batch without waiting for unavailable relays.
-    /// Deduplication and the total decode bound span this entire read cycle.
-    /// Only the final batch can report that every configured read failed.
-    /// After one successful read, abandon the unfinished tail after 200 ms;
-    /// persistent transports retain already buffered events for the next pass.
-    pub(crate) fn receive_batches(
-        &self,
-        now: u64,
-    ) -> Result<futures::stream::BoxStream<'_, CoordinationSnapshot>, RelayError> {
-        let decoder = CoordinationDecoder::new(&self.identity, now)?;
-        let mut filter = decoder.filter();
-        // Covers the longest accepted endpoint lifetime, and the randomized
-        // outer timestamps of NIP-59 wraps. Reconnects retain this overlap.
-        filter.since = Some(now.saturating_sub(MAX_ENDPOINT_LIFETIME_SECONDS));
-        let auth: Arc<dyn RelayAuthSigner> = Arc::new(DeviceAuthSigner(self.identity.clone()));
-        let count = self.relays.as_slice().len();
-        let reads = self
-            .relays
-            .as_slice()
-            .iter()
-            .map(|relay| {
-                let filter = filter.clone();
-                let auth = auth.clone();
-                async move { self.transport.read_coordination(relay, &filter, auth).await }
-            })
-            .collect::<futures::stream::FuturesUnordered<_>>();
-        Ok(futures::stream::unfold(
-            (reads, decoder, 0, 0, None::<Instant>),
-            move |(mut reads, mut decoder, mut completed, mut failures, mut deadline)| async move {
-                let result = match deadline {
-                    Some(until) => tokio::time::timeout_at(until, reads.next())
-                        .await
-                        .ok()
-                        .flatten()?,
-                    None => reads.next().await?,
-                };
-                if result.is_ok() && deadline.is_none() {
-                    deadline = Some(Instant::now() + READ_COMPLETION_GRACE);
-                }
-                completed += 1;
-                let failed = usize::from(result.is_err());
-                failures += failed;
-                let batch = decoder.decode(
-                    result.unwrap_or_default(),
-                    failed,
-                    completed == count && failures == count,
-                );
-                Some((batch, (reads, decoder, completed, failures, deadline)))
-            },
-        )
-        .boxed())
-    }
-
     // Both publication APIs encode and authorize the exact same command once.
     // The aggregate API below retains its complete per-relay result contract.
     fn command_event(
@@ -540,26 +445,6 @@ where
             .device_public_key()
             .ok_or(RelayError::Identity)?;
         let queued = match command {
-            CoordinationCommand::ReachOffer {
-                sender_device_public_key,
-                offer,
-            } => {
-                if sender_device_public_key != own_key {
-                    return Err(RelayError::Identity);
-                }
-                offer.validate(now)?;
-                QueuedMessage::ReachOffer(offer)
-            }
-            CoordinationCommand::ReachAnswer {
-                sender_device_public_key,
-                answer,
-            } => {
-                if sender_device_public_key != own_key {
-                    return Err(RelayError::Identity);
-                }
-                answer.validate(now)?;
-                QueuedMessage::ReachAnswer(answer)
-            }
             CoordinationCommand::RunIdleKorrid {
                 sender_device_public_key,
                 requested_at,
@@ -636,38 +521,6 @@ where
             )
             .map_err(|_| RelayError::Identity)?;
         Ok(event.json)
-    }
-
-    /// Each future owns its transport, ciphertext and signer. The consumer
-    /// owns the stream's lifetime and can keep fanout alive after the first ack.
-    pub(crate) fn queue_command_results(
-        &self,
-        recipient: &str,
-        command: CoordinationCommand,
-        now: u64,
-    ) -> Result<futures::stream::BoxStream<'static, Result<String, RelayFailure>>, RelayError> {
-        let event = self.command_event(recipient, command, now)?;
-        let auth: Arc<dyn RelayAuthSigner> = Arc::new(DeviceAuthSigner(self.identity.clone()));
-        let results = self
-            .relays
-            .as_slice()
-            .iter()
-            .cloned()
-            .map(|relay| {
-                let (transport, auth, event) =
-                    (self.transport.clone(), auth.clone(), event.clone());
-                async move {
-                    match transport.publish(&relay, &event, auth).await {
-                        Ok(()) => Ok(relay),
-                        Err(error) => Err(RelayFailure {
-                            relay,
-                            message: error.to_string(),
-                        }),
-                    }
-                }
-            })
-            .collect::<futures::stream::FuturesUnordered<_>>();
-        Ok(results.boxed())
     }
 
     pub fn relay_list(&self) -> &RelayList {
@@ -1037,7 +890,6 @@ where
                             format!("{ENDPOINT_EVENT_PREFIX}{recipient_device_public_key}"),
                         ],
                         vec!["p".into(), recipient_device_public_key.into()],
-                        vec!["expiration".into(), endpoint.expires_at.to_string()],
                     ],
                     &plaintext,
                     now,
@@ -1211,12 +1063,7 @@ pub(crate) fn decode_endpoint(
         vec!["d".into(), format!("{ENDPOINT_EVENT_PREFIX}{recipient}")],
         vec!["p".into(), recipient.into()],
     ];
-    if verified.kind != ENDPOINT_EVENT_KIND
-        || verified.tags.len() != 3
-        || verified.tags[..2] != expected_tags
-        || verified.tags[2].len() != 2
-        || verified.tags[2][0] != "expiration"
-    {
+    if verified.kind != ENDPOINT_EVENT_KIND || verified.tags != expected_tags {
         return Err(RelayError::InvalidEvent(
             "endpoint event shape is invalid".into(),
         ));
@@ -1227,9 +1074,7 @@ pub(crate) fn decode_endpoint(
     let endpoint: EndpointRecord = serde_json::from_str(&plaintext)
         .map_err(|_| RelayError::InvalidEvent("endpoint content is malformed".into()))?;
     endpoint.validate(now)?;
-    if endpoint.device_public_key != author
-        || verified.tags[2][1] != endpoint.expires_at.to_string()
-    {
+    if endpoint.device_public_key != author || verified.author != author {
         return Err(RelayError::InvalidEvent(
             "endpoint binding is invalid".into(),
         ));
@@ -1253,22 +1098,6 @@ fn decode_command(
     let queued: QueuedMessage = serde_json::from_str(&rumor.content)
         .map_err(|_| RelayError::InvalidEvent("coordination command is malformed".into()))?;
     let command = match queued {
-        QueuedMessage::ReachOffer(offer) => {
-            // The read may start before this signal exists. Bound its lifetime
-            // by the authenticated producer time. Reach rechecks the current clock.
-            offer.validate(rumor.created_at)?;
-            CoordinationCommand::ReachOffer {
-                sender_device_public_key: rumor.author,
-                offer,
-            }
-        }
-        QueuedMessage::ReachAnswer(answer) => {
-            answer.validate(rumor.created_at)?;
-            CoordinationCommand::ReachAnswer {
-                sender_device_public_key: rumor.author,
-                answer,
-            }
-        }
         QueuedMessage::RunIdleKorrid {
             requested_at,
             expires_at,
@@ -1321,14 +1150,6 @@ fn decode_command(
 
 fn command_order(command: &CoordinationCommand) -> (u64, String) {
     match command {
-        CoordinationCommand::ReachOffer {
-            sender_device_public_key,
-            offer,
-        } => (offer.expires_at, sender_device_public_key.clone()),
-        CoordinationCommand::ReachAnswer {
-            sender_device_public_key,
-            answer,
-        } => (answer.expires_at, sender_device_public_key.clone()),
         CoordinationCommand::RunIdleKorrid {
             sender_device_public_key,
             requested_at,
@@ -1391,78 +1212,6 @@ pub(crate) fn publish_state(results: Vec<Result<String, RelayFailure>>) -> Publi
             failed_relays,
         },
         (true, _) => PublishState::Failed { failed_relays },
-    }
-}
-
-/// Static configured native peers remain a real directory adapter.
-pub trait PeerDirectory: Send + Sync {
-    fn endpoint_candidates(&self, device_public_key: &str) -> Vec<String>;
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ConfiguredNativePeer {
-    pub device_public_key: String,
-    pub endpoint: String,
-}
-
-pub struct ConfiguredNativePeerDirectory {
-    peers: BTreeMap<String, String>,
-}
-
-impl ConfiguredNativePeerDirectory {
-    pub fn new(peers: Vec<ConfiguredNativePeer>) -> Result<Self, RelayError> {
-        let mut configured = BTreeMap::new();
-        for peer in peers {
-            validate_public_key(&peer.device_public_key)?;
-            let origin = crate::federation::peer_origin(&peer.endpoint)
-                .map_err(|_| RelayError::Configuration("native peer endpoint is invalid".into()))?;
-            if configured.insert(peer.device_public_key, origin).is_some() {
-                return Err(RelayError::Configuration(
-                    "native peer is duplicated".into(),
-                ));
-            }
-        }
-        Ok(Self { peers: configured })
-    }
-}
-
-impl PeerDirectory for ConfiguredNativePeerDirectory {
-    fn endpoint_candidates(&self, device_public_key: &str) -> Vec<String> {
-        self.peers
-            .get(device_public_key)
-            .cloned()
-            .into_iter()
-            .collect()
-    }
-}
-
-pub struct RelayEndpointDirectory {
-    records: BTreeMap<String, EndpointRecord>,
-}
-
-impl RelayEndpointDirectory {
-    pub fn from_snapshot(snapshot: &CoordinationSnapshot) -> Self {
-        Self {
-            records: snapshot
-                .endpoints
-                .iter()
-                .map(|evidence| {
-                    (
-                        evidence.record.device_public_key.clone(),
-                        evidence.record.clone(),
-                    )
-                })
-                .collect(),
-        }
-    }
-}
-
-impl PeerDirectory for RelayEndpointDirectory {
-    fn endpoint_candidates(&self, device_public_key: &str) -> Vec<String> {
-        self.records
-            .get(device_public_key)
-            .map(|record| record.candidates.clone())
-            .unwrap_or_default()
     }
 }
 
@@ -1732,7 +1481,7 @@ impl RelayConnection {
         Ok(())
     }
 
-    fn read_failed(&mut self, relay: &str, error: &RelayError) {
+    fn read_failed(&mut self, _relay: &str, error: &RelayError) {
         self.read_failures = self.read_failures.saturating_add(1);
         let class = relay_failure_class(&error.to_string());
         let now = Instant::now();
@@ -1741,7 +1490,10 @@ impl RelayConnection {
         if self.read_report.as_ref().is_none_or(|(at, previous)| {
             previous != &class || now.duration_since(*at) >= Duration::from_secs(60)
         }) {
-            crate::federation::reach::relay_read_failure(relay, error, self.read_failures);
+            log::warn!(
+                "Nostr record relay read failed: {}",
+                relay_failure_class(&error.to_string())
+            );
             self.read_report = Some((now, class));
         }
     }
@@ -2564,10 +2316,6 @@ impl RelayInformation {
 }
 
 #[cfg(test)]
-#[path = "relay_timing_tests.rs"]
-mod timing_tests;
-
-#[cfg(test)]
 mod tests {
     use super::*;
     use crate::identity::{Nip46ConnectionIdentity, OwnerStatementStatus};
@@ -2701,14 +2449,8 @@ mod tests {
             device_public_key: identity.device_public_key().unwrap().into(),
             owner_public_key: owner.public_key().to_hex(),
             generation,
-            candidates: vec![
-                "http://100.64.0.4:43117".into(),
-                "http://192.168.1.4:43117".into(),
-            ],
+            endpoint_id: iroh::SecretKey::generate().public().to_string(),
             issued_at: now,
-            expires_at: now + 600,
-            label: None,
-            moonlight_address: None,
         }
     }
 
@@ -3447,7 +3189,7 @@ mod tests {
         let transport = WebSocketRelayTransport::new();
         let auth: Arc<dyn RelayAuthSigner> = Arc::new(DeviceAuthSigner(Arc::new(identity.clone())));
         let mut filter = CoordinationDecoder::new(&identity, now).unwrap().filter();
-        filter.since = Some(now - MAX_ENDPOINT_LIFETIME_SECONDS);
+        filter.since = Some(now - (7 * 24 * 60 * 60));
         for second in 0..60 {
             for url in &urls {
                 let events = transport
@@ -3519,7 +3261,7 @@ mod tests {
         let mut filter = CoordinationDecoder::new(&identity, unix_now())
             .unwrap()
             .filter();
-        filter.since = Some(unix_now() - MAX_ENDPOINT_LIFETIME_SECONDS);
+        filter.since = Some(unix_now() - (7 * 24 * 60 * 60));
         let since = filter.since;
         let connections = Arc::new(AtomicUsize::new(0));
         let count = connections.clone();
@@ -4093,17 +3835,15 @@ mod tests {
             .await
             .unwrap();
         let mut next = endpoint(&first, &owner, 2, 110);
-        next.candidates = vec!["http://10.0.0.4:43117".into()];
+        next.endpoint_id = iroh::SecretKey::generate().public().to_string();
+        let expected = next.endpoint_id.clone();
         publisher
             .publish_endpoint(second.device_public_key().unwrap(), next, 110)
             .await
             .unwrap();
         let snapshot = reader.receive(111).await.unwrap();
         assert_eq!(snapshot.endpoints[0].record.generation, 2);
-        assert_eq!(
-            snapshot.endpoints[0].record.candidates,
-            vec!["http://10.0.0.4:43117"]
-        );
+        assert_eq!(snapshot.endpoints[0].record.endpoint_id, expected);
         assert!(network.stored_event_count("ws://127.0.0.1:17001") <= 2);
     }
 
@@ -4131,7 +3871,7 @@ mod tests {
             .unwrap();
         assert!(network.inject(&relays.as_slice()[0], "{bad").is_err());
         let snapshot = reader.receive(701).await.unwrap();
-        assert!(snapshot.endpoints.is_empty());
+        assert_eq!(snapshot.endpoints.len(), 1);
         assert!(snapshot.rejected_events >= 1);
     }
 
@@ -4160,87 +3900,6 @@ mod tests {
                 .as_slice(),
             &["wss://relay.example.com"]
         );
-    }
-
-    #[tokio::test]
-    async fn reach_signals_use_the_existing_gift_wrap_path_and_stay_bounded() {
-        let (relays, network, first, second, _) = setup();
-        let publisher =
-            CoordinatedRelays::new(relays.clone(), first.clone(), network.clone()).unwrap();
-        let reader = CoordinatedRelays::new(relays, second, network).unwrap();
-        let offer = crate::federation::reach::signal::Offer {
-            endpoint_id: iroh::SecretKey::generate().public().to_string(),
-            direct_addresses: vec!["192.168.1.2:49217".parse().unwrap(); 16],
-            expires_at: 160,
-            request_id: "ab".repeat(32),
-        };
-        let command = CoordinationCommand::ReachOffer {
-            sender_device_public_key: first.device_public_key().unwrap().into(),
-            offer: offer.clone(),
-        };
-        publisher
-            .queue_command(
-                reader.identity.device_public_key().unwrap(),
-                command.clone(),
-                100,
-            )
-            .await
-            .unwrap();
-        let received = reader.receive(101).await.unwrap();
-        assert_eq!(received.commands, [command]);
-        let queued = QueuedMessage::ReachOffer(offer.clone());
-        assert!(serde_json::to_vec(&queued).unwrap().len() < MAX_EVENT_BYTES / 4);
-        let answer = crate::federation::reach::signal::Answer {
-            endpoint_id: offer.endpoint_id,
-            direct_addresses: offer.direct_addresses,
-            expires_at: 160,
-            request_id: offer.request_id,
-            can_relay_now: true,
-            relay_addresses: vec!["192.168.1.3:443".parse().unwrap()],
-        };
-        let command = CoordinationCommand::ReachAnswer {
-            sender_device_public_key: first.device_public_key().unwrap().into(),
-            answer,
-        };
-        publisher
-            .queue_command(
-                reader.identity.device_public_key().unwrap(),
-                command.clone(),
-                101,
-            )
-            .await
-            .unwrap();
-        assert!(reader
-            .receive(102)
-            .await
-            .unwrap()
-            .commands
-            .contains(&command));
-        // The caller samples the time before relay I/O. A signal that arrives
-        // during that read must not fail its 60-second lifetime bound.
-        let during_read = CoordinationCommand::ReachOffer {
-            sender_device_public_key: first.device_public_key().unwrap().into(),
-            offer: crate::federation::reach::signal::Offer {
-                endpoint_id: iroh::SecretKey::generate().public().to_string(),
-                direct_addresses: Vec::new(),
-                expires_at: 161,
-                request_id: "cd".repeat(32),
-            },
-        };
-        publisher
-            .queue_command(
-                reader.identity.device_public_key().unwrap(),
-                during_read.clone(),
-                101,
-            )
-            .await
-            .unwrap();
-        assert!(reader
-            .receive(100)
-            .await
-            .unwrap()
-            .commands
-            .contains(&during_read));
     }
 
     #[tokio::test]

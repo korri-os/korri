@@ -10,7 +10,6 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::{
     collections::BTreeMap,
-    net::{IpAddr, Ipv4Addr},
     sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
@@ -23,12 +22,7 @@ const SCAN_TIMEOUT: Duration = Duration::from_secs(25);
 const CALL_TIMEOUT: Duration = Duration::from_secs(15);
 const REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 
-struct PeerAddress {
-    key: String,
-    ip: IpAddr,
-    valid_until: Instant,
-}
-static ACTIVE_PEER: Mutex<Option<PeerAddress>> = Mutex::new(None);
+static ACTIVE_PEER: Mutex<Option<String>> = Mutex::new(None);
 static RADIO_OPERATION: OnceLock<Arc<tokio::sync::Mutex<()>>> = OnceLock::new();
 
 pub(super) fn radio_operation() -> Arc<tokio::sync::Mutex<()>> {
@@ -37,14 +31,9 @@ pub(super) fn radio_operation() -> Arc<tokio::sync::Mutex<()>> {
         .clone()
 }
 
-/// This function returns the peer's Wi-Fi address while its nearby link is up.
-/// The caller uses this LAN candidate with the peer's existing korrid port.
-pub fn nearby_peer_ip(device_public_key: &str) -> Option<IpAddr> {
-    let active = ACTIVE_PEER.lock().ok()?;
-    active
-        .as_ref()
-        .filter(|peer| peer.key == device_public_key && peer.valid_until > Instant::now())
-        .map(|peer| peer.ip)
+#[cfg(test)]
+fn active_peer_is(device: &str) -> bool {
+    ACTIVE_PEER.lock().unwrap().as_deref() == Some(device)
 }
 
 struct Credentials {
@@ -164,11 +153,7 @@ impl NearbyLink {
         link.contact_deadline = Some(Instant::now() + ATTEMPT_TIMEOUT);
         *ACTIVE_PEER
             .lock()
-            .map_err(|_| NetworkFailure::unavailable())? = Some(PeerAddress {
-            key: peer.into(),
-            ip: IpAddr::V4(Ipv4Addr::new(10, 77, 77, if starter { 2 } else { 1 })),
-            valid_until: Instant::now() + REFRESH_INTERVAL + CALL_TIMEOUT,
-        });
+            .map_err(|_| NetworkFailure::unavailable())? = Some(peer.into());
         Ok(())
     }
 
@@ -195,13 +180,6 @@ impl NearbyLink {
             .await
             .map_err(|_| NetworkFailure::timeout())?
             .map_err(|_| NetworkFailure::unavailable())?;
-        if let Some(peer) = ACTIVE_PEER
-            .lock()
-            .map_err(|_| NetworkFailure::unavailable())?
-            .as_mut()
-        {
-            peer.valid_until = Instant::now() + REFRESH_INTERVAL + CALL_TIMEOUT;
-        }
         Ok(())
     }
 
@@ -226,7 +204,7 @@ impl NearbyLink {
                 peer.as_ref().and_then(|p| {
                     peers
                         .iter()
-                        .find(|entry| entry.device_public_key == p.key)
+                        .find(|entry| entry.device_public_key == *p)
                         .map(|entry| (entry.device_public_key.clone(), entry.state.clone()))
                 })
             });
@@ -360,9 +338,7 @@ pub async fn run(resources: FederationResources, mut stopped: oneshot::Receiver<
     let mut backoff = Backoff::default();
     let mut refresh_at = Instant::now();
     loop {
-        let kernel_has_default_route = crate::federation::interfaces::default_route_interfaces()
-            .map(|interfaces| !interfaces.is_empty())
-            .unwrap_or(true);
+        let kernel_has_default_route = nm::has_default_route(&link.bus).await.unwrap_or(true);
         tokio::select! {
             _ = &mut stopped => break,
             result = link.tick(&mut backoff, &mut refresh_at, kernel_has_default_route) => {

@@ -87,6 +87,7 @@ pub(crate) fn spawn_watch(
         let mut ticks = tokio::time::interval(std::time::Duration::from_secs(1));
         ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let signal = peers.local_viewer().change_signal();
+        let mut failed_launch = None;
         loop {
             tokio::select! {
                 _ = ticks.tick() => {},
@@ -95,11 +96,17 @@ pub(crate) fn spawn_watch(
                     else { std::future::pending::<()>().await; }
                 } => {},
             }
-            if peers.has_selected_session() {
-                if let Err(error) = peers.session_status().await {
-                    if error.code() == "HostLaunchFailed" {
-                        on_failure(error.to_string());
-                    }
+            let launch = peers.selected_launch_id();
+            if launch.is_none() || launch == failed_launch {
+                continue;
+            }
+            if let Err(error) = peers.session_status().await {
+                if matches!(
+                    error.code(),
+                    "PeerConnectionGone" | "ViewerStopped" | "HostLaunchFailed"
+                ) {
+                    failed_launch = launch;
+                    on_failure(error.to_string());
                 }
             }
         }

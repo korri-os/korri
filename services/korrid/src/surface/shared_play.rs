@@ -239,7 +239,6 @@ pub fn netplay_status_from(
             None,
             Some(vec![netplay_cancel()]),
         ),
-        NetplayPhase::Reconnecting => busy(format!("Reconnecting to {device}"), None, None, None),
         NetplayPhase::HolderLeft => SurfaceStatus::Paused {
             kicker: format!("Paused on {device}"),
             detail: None,
@@ -1294,11 +1293,6 @@ impl SharedPlayController {
                 "Leaving",
                 "Netplay unavailable",
             ));
-            return true;
-        }
-        // A drop is korrid's to retry; Back waits with it.
-        if matches!(&self.lock().model, SharedPlay::Observing { netplay, .. } if matches!(netplay.phase, NetplayPhase::Reconnecting))
-        {
             return true;
         }
         let Some(SurfaceStatus::Paused { actions, .. }) =

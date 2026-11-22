@@ -152,7 +152,6 @@ pub enum NetplayPhase {
     Connecting,
     Playing,
     HolderLeft,
-    Reconnecting,
 }
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]

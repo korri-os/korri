@@ -1,6 +1,6 @@
 //! Relay effects and their joined lifetime. The directory remains the only
 //! persistence owner; each cycle signs with the shared credentials' snapshot.
-use super::{peer_origin, FederationDirectory, FederationError};
+use super::{FederationDirectory, FederationError};
 use crate::{
     authorization::Authorization,
     config::snapshot::{ConfigSnapshotCoordinator, SnapshotAuthorization},
@@ -38,7 +38,7 @@ impl FederationResources {
     }
 }
 
-/// The one label producer used by endpoint publication and stream registration.
+/// The device name used by authenticated stream registration.
 pub(crate) fn device_label(
     snapshot: &crate::config::ConfigSnapshot,
     fallback: Option<String>,
@@ -54,9 +54,6 @@ pub(crate) fn device_label(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DiscoveryInputs {
     pub relays: Option<RelayList>,
-    pub advertised_endpoints: Vec<String>,
-    pub label: Option<String>,
-    pub moonlight_address: Option<String>,
 }
 impl DiscoveryInputs {
     /// Never consume the coordinator's initially empty or retained unauthorized
@@ -69,49 +66,7 @@ impl DiscoveryInputs {
         Ok(Self {
             relays: RelayList::from_device_settings(&state.snapshot)
                 .map_err(|_| FederationError::Bounds)?,
-            advertised_endpoints: Vec::new(),
-            // Query-only discovery has no endpoint metadata to validate/publish.
-            label: None,
-            moonlight_address: None,
         })
-    }
-    pub fn linux(
-        config: &ConfigSnapshotCoordinator,
-        initial: &Self,
-        advertised_endpoints: Vec<String>,
-    ) -> Result<Self, FederationError> {
-        let state = config.reload();
-        if state.authorization != SnapshotAuthorization::Authorized {
-            return Err(FederationError::Identity);
-        }
-        let mut inputs = initial.clone();
-        inputs.advertised_endpoints = advertised_endpoints;
-        if inputs.advertised_endpoints.is_empty() {
-            inputs.label = None;
-            inputs.moonlight_address = None;
-        } else {
-            inputs.label = device_label(&state.snapshot, inputs.label);
-        }
-        Ok(inputs)
-    }
-    pub fn validate(&self) -> Result<(), FederationError> {
-        // All adapters share this rule, including Linux's startup validation:
-        // query-only discovery has no endpoint metadata to validate or publish.
-        if self.advertised_endpoints.is_empty() {
-            return Ok(());
-        }
-        if self.advertised_endpoints.len() > 8 {
-            return Err(FederationError::Bounds);
-        }
-        for endpoint in &self.advertised_endpoints {
-            peer_origin(endpoint)?;
-        }
-        for value in [&self.label, &self.moonlight_address].into_iter().flatten() {
-            if value.trim().is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
-                return Err(FederationError::Bounds);
-            }
-        }
-        Ok(())
     }
 }
 
@@ -120,8 +75,6 @@ pub struct DiscoveryTiming {
     pub poll: Duration,
     pub failure_initial: Duration,
     pub failure_max: Duration,
-    pub lifetime: u64,
-    pub renew: u64,
 }
 impl Default for DiscoveryTiming {
     fn default() -> Self {
@@ -129,8 +82,6 @@ impl Default for DiscoveryTiming {
             poll: Duration::from_secs(60),
             failure_initial: Duration::from_secs(5),
             failure_max: Duration::from_secs(300),
-            lifetime: 24 * 3600,
-            renew: 6 * 3600,
         }
     }
 }
@@ -269,10 +220,8 @@ impl<T: RelayTransport + 'static> Discovery<T> {
     }
     async fn cycle(&mut self) -> Result<(), FederationError> {
         let inputs = (self.inputs)()?;
-        inputs.validate()?;
         if self.previous_inputs.as_ref() != Some(&inputs) {
             self.directory.invalidate_work()?;
-            self.publication = None;
             self.delivered.clear();
             self.previous_inputs = Some(inputs.clone());
         }
@@ -320,11 +269,7 @@ impl<T: RelayTransport + 'static> Discovery<T> {
                     .directory
                     .apply_endpoint_event(&token, &evidence.event_json)
                 {
-                    Err(
-                        FederationError::Identity
-                        | FederationError::Endpoint
-                        | FederationError::Bounds,
-                    ) => {}
+                    Err(FederationError::Identity | FederationError::Bounds) => {}
                     result => {
                         result?;
                     }
@@ -332,25 +277,23 @@ impl<T: RelayTransport + 'static> Discovery<T> {
             }
         }
         let mut publication_ok = owner_publication.is_ok_and(|state| state.accepted());
-        if !inputs.advertised_endpoints.is_empty() {
-            let renew = self.publication.as_ref().is_none_or(|record| {
-                record.owner_public_key != owner
-                    || now >= record.issued_at.saturating_add(self.timing.renew)
-            });
-            if renew {
+        {
+            let endpoint_id = crate::identity::iroh::load_or_create(&self.directory.root)
+                .map_err(|_| FederationError::Identity)?
+                .public()
+                .to_string();
+            if self
+                .publication
+                .as_ref()
+                .is_none_or(|record| record.endpoint_id != endpoint_id)
+            {
                 let reservation = self.directory.reserve_publication(&token)?;
                 self.publication = Some(EndpointRecord {
                     device_public_key: device,
                     owner_public_key: owner,
                     generation: reservation.generation,
-                    candidates: inputs.advertised_endpoints,
+                    endpoint_id,
                     issued_at: reservation.created_at,
-                    expires_at: reservation
-                        .created_at
-                        .checked_add(self.timing.lifetime)
-                        .ok_or(FederationError::Publication)?,
-                    label: inputs.label,
-                    moonlight_address: inputs.moonlight_address,
                 });
                 self.delivered.clear();
             }
@@ -358,8 +301,8 @@ impl<T: RelayTransport + 'static> Discovery<T> {
                 .publication
                 .as_ref()
                 .expect("reserved nonempty endpoints");
-            // The outer NIP timestamp is reserved, not a substitute for today's
-            // expiry/future-skew check when retrying a prior reservation.
+            // Retried record delivery keeps the reserved NIP timestamp.
+            // Binding publication is never renewed by a timer.
             record
                 .validate(now)
                 .map_err(|_| FederationError::Publication)?;

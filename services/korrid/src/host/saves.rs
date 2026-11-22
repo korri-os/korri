@@ -544,16 +544,8 @@ impl HostRuntime {
                 .map(|config| config.label.clone())
                 .unwrap_or_else(|_| "this device".into());
         }
-        peers
-            .iter()
-            .find(|peer| peer.device_public_key == device)
-            .and_then(|peer| {
-                peer.current_endpoint
-                    .as_ref()
-                    .or(peer.remembered_endpoint.as_ref())
-            })
-            .and_then(|endpoint| endpoint.label.clone())
-            .unwrap_or_else(|| "another device".into())
+        let _ = peers;
+        "another device".into()
     }
 
     fn save_check_preparation(&self, request: &SaveCheckRequest) -> SaveCheckPreparation {
@@ -1363,7 +1355,7 @@ mod tests {
         backend: Arc<super::super::systemd_unit::InMemoryLaunchUnitBackend>,
         service: Arc<SavePeerService>,
         federation: crate::federation::coordinator::FederationResources,
-        base: String,
+        endpoint: iroh::Endpoint,
         server: tokio::task::JoinHandle<()>,
     }
     impl Drop for MigratedDevice {
@@ -1467,22 +1459,20 @@ mod tests {
                     next.run(request).await
                 },
             ));
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let base = format!("http://{}", listener.local_addr().unwrap());
-            let server = tokio::spawn(async move {
-                axum::serve(listener, router).await.unwrap();
-            });
+            let (endpoint, server) =
+                crate::federation::reach::tests::listen(federation.directory.clone(), router).await;
             Self {
                 root,
                 host,
                 backend,
                 service,
                 federation,
-                base,
+                endpoint,
                 server,
             }
         }
         fn remember(&self, other: &Self) {
+            crate::federation::reach::tests::learn(&self.federation.directory, &other.endpoint);
             let identity = other.federation.credentials.identity_snapshot().unwrap();
             let device = identity.device_public_key().unwrap().to_owned();
             let own = self.federation.credentials.public_key().unwrap();
@@ -1498,11 +1488,8 @@ mod tests {
                 device_public_key: device,
                 owner_public_key: PERSON.into(),
                 generation: 1,
-                candidates: vec![other.base.clone()],
+                endpoint_id: other.endpoint.id().to_string(),
                 issued_at: now,
-                expires_at: now + 3600,
-                label: Some("Other handheld".into()),
-                moonlight_address: None,
             };
             let event = identity
                 .encrypt_tagged_event(
@@ -1511,7 +1498,6 @@ mod tests {
                     vec![
                         vec!["d".into(), format!("org.korri.endpoint:{own}")],
                         vec!["p".into(), own.clone()],
-                        vec!["expiration".into(), endpoint.expires_at.to_string()],
                     ],
                     &serde_json::to_string(&endpoint).unwrap(),
                     now,
@@ -1623,21 +1609,9 @@ mod tests {
     #[tokio::test]
     async fn prelaunch_check_returns_remembered_warning_before_shell_deadline() {
         let device = MigratedDevice::new(b"local").await;
-        let mut slow = MigratedDevice::new(b"peer").await;
-        slow.server.abort();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        slow.base = format!("http://{}", listener.local_addr().unwrap());
-        slow.server = tokio::spawn(async move {
-            axum::serve(
-                listener,
-                axum::Router::new().fallback(|| async {
-                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-                    StatusCode::SERVICE_UNAVAILABLE
-                }),
-            )
-            .await
-            .unwrap();
-        });
+        let slow =
+            MigratedDevice::with_peer_delay(b"peer", false, std::time::Duration::from_secs(10))
+                .await;
         device.remember(&slow);
         device
             .host
@@ -1882,7 +1856,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.status, SaveMark::Synced);
-        assert!(result.warnings.iter().any(|warning|warning == "These saves came from a different release of Wario Land 4, played on Other handheld."), "{:?}", result.warnings);
+        assert!(result.warnings.iter().any(|warning|warning == "These saves came from a different release of Wario Land 4, played on another device."), "{:?}", result.warnings);
         assert!(
             result.warnings.iter().any(|warning| warning
                 == "These savestates came from a different runner and may not load."),
@@ -1931,7 +1905,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert!(result.warnings.iter().any(|warning|warning=="These saves came from a different release of Wario Land 4, played on Other handheld."),"{:?}",result.warnings);
+        assert!(result.warnings.iter().any(|warning|warning=="These saves came from a different release of Wario Land 4, played on another device."),"{:?}",result.warnings);
         assert!(result.warnings.iter().all(|warning| !warning
             .contains(peer.host.save_device().unwrap())
             && !warning.contains("another-release")));

@@ -10,6 +10,7 @@ use std::io::{Read, Seek, SeekFrom};
 
 pub(super) async fn object_route(
     State(state): State<PeerRpcServer>,
+    binding: Option<axum::Extension<crate::federation::reach::Binding>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -24,6 +25,17 @@ pub(super) async fn object_route(
         Err(PeerRpcError::Time) => return StatusCode::UNAUTHORIZED.into_response(),
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
+    if let Some(binding) = binding {
+        if binding
+            .prove(
+                &authenticated.context,
+                authenticated.envelope.owner_statement.as_deref(),
+            )
+            .is_err()
+        {
+            return StatusCode::FORBIDDEN.into_response();
+        }
+    }
     let release = matches!(
         &authenticated.envelope.request,
         RpcRequest::ReleaseObject(_)

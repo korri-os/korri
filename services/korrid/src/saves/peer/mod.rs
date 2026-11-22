@@ -96,16 +96,11 @@ pub struct SavePeerService {
     credentials: PeerCredentials,
     directory: FederationDirectory,
     private_root: PathBuf,
-    http: reqwest::Client,
     in_use: InUse,
     /// Process memory of the last complete contact with each peer. Never
     /// persisted and never sent: a restart forgets it, so the first contact
     /// after a restart is a full one.
     contacts: Arc<std::sync::Mutex<sync::ContactMemory>>,
-    /// The HTTP origin that last answered each peer. The next request goes
-    /// there first on the client's pooled connection, without a new connect
-    /// probe. Process memory only; a failed request forgets it.
-    answering_origins: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
 }
 
 impl SavePeerService {
@@ -116,21 +111,13 @@ impl SavePeerService {
         private_root: PathBuf,
         in_use: InUse,
     ) -> Result<Self, PeerSaveError> {
-        let http = reqwest::Client::builder()
-            .connect_timeout(crate::federation::connect::CONNECT_TIMEOUT)
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|_| PeerSaveError::Network)?;
         Ok(Self {
             repository,
             credentials,
             directory,
             private_root,
-            http,
             in_use,
             contacts: Default::default(),
-            answering_origins: Default::default(),
         })
     }
 

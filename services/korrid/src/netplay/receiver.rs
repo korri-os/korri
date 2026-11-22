@@ -7,13 +7,7 @@ use std::{
 };
 use tokio::sync::watch;
 
-const RECONNECT_WINDOW: Duration = Duration::from_secs(10);
 const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
-// Odin, 2026-10-29: replacement-forward attempts preceded native deactivation
-// by 194 ms and 17 ms. TCP-close times were not logged; monitor sampling can
-// hide another 500 ms. Three seconds exceeds 3 * (194 + 500) ms, allowing
-// RetroArch's post-netplay save/driver teardown before we destroy that evidence.
-const CLIENT_EXIT_GRACE: Duration = Duration::from_secs(3);
 const STATUS_TIMEOUT: Duration = Duration::from_secs(3);
 #[derive(Clone, Default)]
 pub(crate) struct Receiver(Arc<Mutex<State>>);
@@ -25,6 +19,7 @@ enum State {
     Active {
         run: Run,
         session: Box<ActiveSession>,
+        error: Option<RpcFailure>,
     },
     Ended(StreamPlayEnded),
 }
@@ -84,11 +79,11 @@ impl Receiver {
             return Err(failure("NoNetplayRoute", "The launch was cancelled."));
         }
         let mut run = run.clone();
-        // The public receiving run survives replacement native clients.
         run.status.phase = NetplayPhase::Connecting;
         *local = State::Active {
             run,
             session: Box::new(session),
+            error: None,
         };
         Ok(())
     }
@@ -104,7 +99,7 @@ impl Receiver {
         }
     }
     fn owns_copy(&self, id: &str, launch: &str) -> bool {
-        matches!(&*self.0.lock().expect("netplay receiver"), State::Active { run, session } if run.id == id && session.launch_id == launch)
+        matches!(&*self.0.lock().expect("netplay receiver"), State::Active { run, session, .. } if run.id == id && session.launch_id == launch)
     }
     fn left(&self, id: &str) {
         let mut local = self.0.lock().expect("netplay receiver");
@@ -112,14 +107,6 @@ impl Receiver {
             if run.id == id {
                 let _ = run.cancel.send(true);
                 *local = State::Idle;
-            }
-        }
-    }
-    fn retarget(&self, id: &str, launch: &str) {
-        let mut local = self.0.lock().expect("netplay receiver");
-        if let State::Active { run, session } = &mut *local {
-            if run.id == id {
-                session.launch_id = launch.into();
             }
         }
     }
@@ -521,30 +508,22 @@ struct MonitoredCopy {
     launch_id: String,
     forward: federation::reach::NetplayForward,
 }
-enum ConnectionState {
-    Connecting { since: tokio::time::Instant },
-    Playing,
-    Reconnecting { since: tokio::time::Instant },
-}
-
 async fn monitor(
     state: AppState,
     invite: invites::Invite,
     peer: upstream_native::NativeClient,
-    mut copy: MonitoredCopy,
-    prepared: SessionNetplayPrepared,
+    copy: MonitoredCopy,
+    _prepared: SessionNetplayPrepared,
     mut cancelled: watch::Receiver<bool>,
 ) {
-    let mut connection = ConnectionState::Connecting {
-        since: tokio::time::Instant::now(),
-    };
     let ServerMode::Host(host) = &state.mode else {
         return;
     };
     let mut holder_left = invite.session.phase.as_deref() == Some("frozen");
+    let started = tokio::time::Instant::now();
     let mut native_exit_deadline = None;
     // Keep the in-flight poll across transport ticks. A loaded holder must not
-    // delay bridge-loss detection or consume the reconnect window.
+    // delay connection-loss detection.
     let observations = futures::stream::unfold(&peer, |peer| async move {
         tokio::time::sleep(MONITOR_INTERVAL).await;
         Some((
@@ -625,127 +604,51 @@ async fn monitor(
             // An unknown or stopping unit is not proof of a surviving client.
             _ => continue,
         }
-        let route_alive = state
-            .federation
-            .as_ref()
-            .is_some_and(|directory| directory.has_iroh_route(&invite.device_public_key));
-        if holder_left && route_alive {
+        if copy.forward.lost() {
+            // A local client can close TCP before its native teardown completes.
+            // Observe that bounded teardown; never redial or relaunch it.
+            if !copy.forward.connection_gone() {
+                let deadline = native_exit_deadline
+                    .get_or_insert_with(|| tokio::time::Instant::now() + Duration::from_secs(3));
+                if tokio::time::Instant::now() < *deadline {
+                    continue;
+                }
+            }
+            {
+                let mut local = state.netplay_receiver.0.lock().expect("netplay receiver");
+                if let State::Active { error, .. } = &mut *local {
+                    *error = Some(failure(
+                        "PeerConnectionGone",
+                        "Peer connection is gone. Leave or end this session.",
+                    ));
+                }
+            }
+            // Report once and stop. Never rebuild a forward or relaunch RetroArch.
+            let _ = finish(&state, &invite, &copy, true).await;
+            return;
+        }
+        if holder_left {
             let _ = host.session_freeze(&copy.launch_id).await;
             state
                 .netplay_receiver
                 .phase(&copy.attempt_id, NetplayPhase::HolderLeft);
-            // Waiting for the holder is not a connection-loss deadline.
-            if let ConnectionState::Connecting { since } | ConnectionState::Reconnecting { since } =
-                &mut connection
-            {
-                *since = tokio::time::Instant::now();
+            continue;
+        }
+        if !copy.forward.ready() {
+            // This bounds initial native-client startup, not connection recovery.
+            if !copy.forward.has_connected() && started.elapsed() >= Duration::from_secs(10) {
+                let _ = finish(&state, &invite, &copy, true).await;
+                return;
             }
             continue;
         }
-        if !route_alive || !copy.forward.ready() {
-            connection = match connection {
-                ConnectionState::Playing => ConnectionState::Reconnecting {
-                    since: tokio::time::Instant::now(),
-                },
-                waiting => waiting,
-            };
-            let (phase, since) = match connection {
-                ConnectionState::Connecting { since } => (NetplayPhase::Connecting, since),
-                ConnectionState::Reconnecting { since } => (NetplayPhase::Reconnecting, since),
-                ConnectionState::Playing => unreachable!(),
-            };
-            state.netplay_receiver.phase(&copy.attempt_id, phase);
-            if reconnect_expired(since, tokio::time::Instant::now()) {
-                if finish(&state, &invite, &copy, true).await {
-                    return;
-                }
-                continue;
-            }
-            if copy.forward.lost() {
-                let deadline = native_exit_deadline
-                    .get_or_insert_with(|| tokio::time::Instant::now() + CLIENT_EXIT_GRACE);
-                if tokio::time::Instant::now() < *deadline {
-                    // Keep observing native completion at each tick. Only a
-                    // client which stays alive pays this grace before reconnect.
-                    continue;
-                }
-            }
-            if route_alive && copy.forward.lost() {
-                // RetroArch has no reconnect command. Start its client again;
-                // it receives the holder's current state in a fresh private tmp.
-                if let Some(directory) = &state.federation {
-                    if let Ok(next) = tokio::time::timeout(
-                        Duration::from_secs(1),
-                        directory.netplay_forward(&invite.device_public_key),
-                    )
-                    .await
-                    .unwrap_or_else(|_| Err(std::io::Error::from(std::io::ErrorKind::TimedOut)))
-                    {
-                        if host.session_stop(&copy.launch_id).await.is_ok() {
-                            if let (Ok(context), Ok(source)) = (
-                                state.game_context(),
-                                password::create(
-                                    state.private_state_root(),
-                                    Some(prepared.seat),
-                                    Some(&prepared.password),
-                                ),
-                            ) {
-                                if let (Some(game), Some(runner)) = (
-                                    release_game(&context, &prepared.release_key),
-                                    core(
-                                        &context,
-                                        &NetplaySession {
-                                            release_key: prepared.release_key.clone(),
-                                            release_bytes: prepared.release_bytes,
-                                            runner: prepared.runner.clone(),
-                                        },
-                                    ),
-                                ) {
-                                    let input = PluginLaunchNetplay::Client {
-                                        address: next.address.ip().to_string(),
-                                        port: next.address.port(),
-                                        player: prepared.seat,
-                                        password_config: password::GAME_CONFIG.into(),
-                                    };
-                                    let runtime = host.clone();
-                                    let release = prepared.release_key.clone();
-                                    if let Ok(Ok(started)) =
-                                        tokio::task::spawn_blocking(move || {
-                                            runtime.prepare_netplay_client(
-                                                &game, &runner, &release, input, source,
-                                            )
-                                        })
-                                        .await
-                                    {
-                                        copy.launch_id = started.session.launch_id;
-                                        copy.forward = next;
-                                        native_exit_deadline = None;
-                                        if *cancelled.borrow() {
-                                            let _ = host.session_stop(&copy.launch_id).await;
-                                            return;
-                                        }
-                                        state
-                                            .netplay_receiver
-                                            .retarget(&copy.attempt_id, &copy.launch_id);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            continue;
-        }
-        connection = ConnectionState::Playing;
         let _ = host.session_thaw(&copy.launch_id).await;
         state
             .netplay_receiver
             .phase(&copy.attempt_id, NetplayPhase::Playing);
     }
 }
-fn reconnect_expired(since: tokio::time::Instant, now: tokio::time::Instant) -> bool {
-    now.duration_since(since) >= RECONNECT_WINDOW
-}
+
 async fn finish(
     state: &AppState,
     invite: &invites::Invite,
@@ -760,7 +663,7 @@ async fn finish(
     }
     let mut local = state.netplay_receiver.0.lock().expect("netplay receiver");
     let launch_id = match &*local {
-        State::Active { run, session }
+        State::Active { run, session, .. }
             if run.id == copy.attempt_id && session.launch_id == copy.launch_id =>
         {
             run.status.launch_id.clone()
@@ -836,7 +739,7 @@ pub(crate) async fn dispatch(
         match &*local {
             State::Idle => (None, None, None),
             State::Preparing(run) => (Some(run.status.clone()), None, None),
-            State::Active { run, session } => {
+            State::Active { run, session, .. } => {
                 let mut active = session.as_ref().clone();
                 active.launch_id = run.status.launch_id.clone();
                 (Some(run.status.clone()), Some(active), None)
@@ -844,6 +747,16 @@ pub(crate) async fn dispatch(
             State::Ended(ended) => (None, None, Some(ended.clone())),
         }
     };
+    if let RpcRequest::SessionStatus(_) = request {
+        if let State::Active {
+            error: Some(error), ..
+        } = &*state.netplay_receiver.0.lock().expect("netplay receiver")
+        {
+            return Some(RpcResponse::SessionStatus(SessionStatusOutcome::Err(
+                error.clone(),
+            )));
+        }
+    }
     if let RpcRequest::SessionStatus(_) = request {
         if status.is_some() || ended.is_some() {
             return Some(RpcResponse::SessionStatus(SessionStatusOutcome::Ok(
@@ -954,7 +867,7 @@ async fn leave(
     let active = {
         let local = state.netplay_receiver.0.lock().expect("netplay receiver");
         match &*local {
-            State::Active { run, session } if run.status.launch_id == status.launch_id => {
+            State::Active { run, session, .. } if run.status.launch_id == status.launch_id => {
                 session.as_ref().clone()
             }
             _ => {
@@ -1000,15 +913,6 @@ mod monitor_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn netplay_reconnect_window_is_ten_seconds() {
-        let since = tokio::time::Instant::now();
-        assert!(!reconnect_expired(
-            since,
-            since + Duration::from_millis(9999)
-        ));
-        assert!(reconnect_expired(since, since + Duration::from_secs(10)));
-    }
     #[tokio::test]
     async fn netplay_leave_ends_only_the_receiving_copy_and_clears_its_selection() {
         use crate::host::control::InMemoryLaunchUnitBackend;

@@ -1,9 +1,6 @@
 //! Verified peer memory and live state. Clone this aggregate, never open a
 //! second writer. Callers do network work between begin_work and commit methods.
-pub(crate) mod connect;
 pub mod coordinator;
-pub mod interfaces;
-pub mod local_discovery;
 pub mod reach;
 mod store;
 
@@ -39,39 +36,6 @@ pub enum FederationError {
     Bounds,
     #[error("endpoint publication progression exceeds the clock or counter bound")]
     Publication,
-    #[error("peer endpoint must be a bounded HTTP(S) origin")]
-    Endpoint,
-}
-
-/// One policy for static, relay and remembered peer endpoints. Check the raw
-/// authority/path too: URL parsing alone silently repairs credentials, dot paths,
-/// backslashes and whitespace. Relay WebSocket URLs use their separate policy.
-pub fn peer_origin(value: &str) -> Result<String, FederationError> {
-    if value.is_empty()
-        || value.len() > 2048
-        || value.chars().any(|c| c.is_control() || c.is_whitespace())
-        || value.contains('\\')
-    {
-        return Err(FederationError::Endpoint);
-    }
-    let (_, rest) = value.split_once("://").ok_or(FederationError::Endpoint)?;
-    let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
-    if !path.is_empty() || authority.contains(['@', '?', '#']) || authority.ends_with(':') {
-        return Err(FederationError::Endpoint);
-    }
-    let url = url::Url::parse(value).map_err(|_| FederationError::Endpoint)?;
-    if !matches!(url.scheme(), "http" | "https")
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-        || url.path() != "/"
-        || url.port_or_known_default().is_none_or(|port| port == 0)
-    {
-        return Err(FederationError::Endpoint);
-    }
-    Ok(url.origin().ascii_serialization())
 }
 
 /// In-memory only; this is not the future PeerList wire contract.
@@ -86,35 +50,11 @@ pub enum PeerState {
 pub struct PeerSnapshot {
     pub device_public_key: String,
     pub membership: VerifiedOwnerStatement,
-    pub current_endpoint: Option<EndpointRecord>,
     pub remembered_endpoint: Option<EndpointRecord>,
     pub first_seen: u64,
     pub last_seen: u64,
     pub state: PeerState,
     pub updated_at: u64,
-}
-
-impl PeerSnapshot {
-    /// ADR 0089 try order before the relays: fresh addresses first (the
-    /// nearby link, local discovery, a current endpoint record), then the
-    /// last-known addresses of the stored record after it expired. An
-    /// expired record is a dial candidate only, never proof of liveness: a
-    /// wrong address fails the device-key check. The relays come last, in
-    /// the reach controller.
-    pub(crate) fn dial_candidates(&self) -> Vec<String> {
-        let current = self.current_endpoint.as_ref();
-        let expired = self
-            .remembered_endpoint
-            .as_ref()
-            .filter(|_| current.is_none());
-        let mut candidates: Vec<String> = current
-            .into_iter()
-            .chain(expired)
-            .flat_map(|endpoint| endpoint.candidates.iter().cloned())
-            .collect();
-        reach::nearby_seam::prepend(&self.device_public_key, &mut candidates);
-        candidates
-    }
 }
 
 /// Must accompany results of asynchronous work. Identity and configuration
@@ -614,7 +554,7 @@ impl FederationDirectory {
     }
 
     /// Accept the original encrypted signed event, never a self-asserted record.
-    /// Expired receive events are rejected; already remembered evidence is retained.
+    /// A key binding has no expiry; generation and signed time order replacements.
     pub fn apply_endpoint_event(
         &self,
         token: &WorkToken,
@@ -744,7 +684,6 @@ impl FederationDirectory {
                 state.store.validate()?;
                 validate_authorization_paths(&self.root)?;
                 let authorization = &self.authorization;
-                let now = (self.clock)();
                 let device_public_key = identity.device_public_key().map(str::to_owned);
                 let owner_public_key = owner_key(identity).map(str::to_owned);
                 let peers_memory = &state.memory.peers;
@@ -789,7 +728,6 @@ impl FederationDirectory {
                     peers.push(PeerSnapshot {
                         device_public_key: key.clone(),
                         membership,
-                        current_endpoint: endpoint.clone().filter(|e| e.validate(now).is_ok()),
                         remembered_endpoint: endpoint,
                         first_seen: peer.first_seen,
                         last_seen: peer.last_seen,

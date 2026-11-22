@@ -237,6 +237,13 @@ impl std::fmt::Debug for DeviceIdentity {
 }
 
 impl DeviceIdentity {
+    #[cfg(test)]
+    pub(crate) fn transport_key(&self) -> ::iroh::EndpointId {
+        iroh::load_or_create(self.directory.parent().expect("identity parent"))
+            .unwrap()
+            .public()
+    }
+
     /// Remove all device identity state, then create one new unowned identity.
     pub fn reset(private_state_root: &Path) -> Result<Self, IdentityError> {
         {

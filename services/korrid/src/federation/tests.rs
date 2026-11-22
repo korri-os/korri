@@ -7,8 +7,6 @@ mod coordinator_effect_tests;
 mod coordinator_io_tests;
 #[path = "coordinator_tests.rs"]
 mod coordinator_tests;
-#[path = "routing_tests.rs"]
-mod routing;
 use crate::relay::ENDPOINT_EVENT_KIND;
 use nostr::{
     event::{EventBuilder, FinalizeEvent, Kind, Tag},
@@ -98,11 +96,8 @@ impl Fixture {
             device_public_key: self.key(),
             owner_public_key: self.owner.public_key().to_hex(),
             generation,
-            candidates: vec!["http://192.168.1.4:43117".into()],
+            endpoint_id: iroh::SecretKey::generate().public().to_string(),
             issued_at: at,
-            expires_at: at + 600,
-            label: Some("Living room".into()),
-            moonlight_address: Some("192.168.1.4:47989".into()),
         }
     }
     fn event(&self, endpoint: &EndpointRecord) -> String {
@@ -114,7 +109,6 @@ impl Fixture {
                 vec![
                     vec!["d".into(), format!("org.korri.endpoint:{recipient}")],
                     vec!["p".into(), recipient.clone()],
-                    vec!["expiration".into(), endpoint.expires_at.to_string()],
                 ],
                 &serde_json::to_string(endpoint).unwrap(),
                 endpoint.issued_at,
@@ -196,7 +190,7 @@ fn memory_rejects_corrupt_oversized_modes_links_and_special_files() {
 }
 
 #[test]
-fn membership_endpoint_expiry_restart_and_timestamp_high_water() {
+fn membership_endpoint_binding_persists_without_expiry_and_timestamp_high_water() {
     let f = Fixture::new();
     let d = f.directory().unwrap();
     f.roster(&d);
@@ -205,7 +199,6 @@ fn membership_endpoint_expiry_restart_and_timestamp_high_water() {
         .unwrap();
     f.clock.store(1700, Ordering::SeqCst);
     let p = d.snapshot().unwrap().remove(0);
-    assert!(p.current_endpoint.is_none());
     assert_eq!(p.remembered_endpoint, Some(endpoint.clone()));
     assert_eq!((p.first_seen, p.last_seen), (1000, 1000));
     drop(d);
@@ -503,7 +496,7 @@ fn equal_generation_uses_issued_at_and_equal_records_do_not_replace() {
         .apply_endpoint_event(&d.begin_work().unwrap(), &f.event(&first))
         .unwrap());
     let mut conflict = first.clone();
-    conflict.label = Some("conflict".into());
+    conflict.endpoint_id = iroh::SecretKey::generate().public().to_string();
     assert!(!d
         .apply_endpoint_event(&d.begin_work().unwrap(), &f.event(&conflict))
         .unwrap());
@@ -528,20 +521,6 @@ fn publication_overflow_and_disk_rollback_fail_without_success() {
     fs::write(&path, serde_json::to_vec(&json).unwrap()).unwrap();
     let d = f.directory().unwrap();
     assert!(d.reserve_publication(&d.begin_work().unwrap()).is_err());
-}
-
-#[test]
-fn optional_endpoint_metadata_is_bounded_and_empty_endpoints_are_invalid() {
-    let f = Fixture::new();
-    let mut endpoint = f.endpoint(1, 1000);
-    endpoint.label = Some("x".repeat(257));
-    assert!(endpoint.validate(1000).is_err());
-    endpoint.label = None;
-    endpoint.moonlight_address = Some("bad\naddress".into());
-    assert!(endpoint.validate(1000).is_err());
-    endpoint.moonlight_address = None;
-    endpoint.candidates.clear();
-    assert!(endpoint.validate(1000).is_err());
 }
 
 #[path = "stream_play_label_tests.rs"]
@@ -771,4 +750,14 @@ fn a_vouch_chain_never_replaces_a_person_signed_statement() {
         .unwrap();
     assert!(z_peer.membership.vouchers.is_empty());
     assert_eq!(z_peer.membership.created_at, 5);
+}
+
+#[test]
+fn endpoint_binding_rejects_invalid_ed25519_keys() {
+    let f = Fixture::new();
+    let mut endpoint = f.endpoint(1, 1000);
+    for key in ["", "not-a-key", "http://192.168.1.4", &"ff".repeat(64)] {
+        endpoint.endpoint_id = key.into();
+        assert!(endpoint.validate(1000).is_err());
+    }
 }

@@ -2864,12 +2864,6 @@ fn peer_list(state: &AppState) -> PeerListOutcome {
                 let label = labels
                     .get(&peer.device_public_key)
                     .cloned()
-                    .or_else(|| {
-                        peer.current_endpoint
-                            .as_ref()
-                            .or(peer.remembered_endpoint.as_ref())
-                            .and_then(|endpoint| endpoint.label.clone())
-                    })
                     .unwrap_or_else(|| peer.device_public_key.clone());
                 let (state, last_error) = match peer.state {
                     federation::PeerState::Loading => (PeerListState::Loading, None),
@@ -4075,7 +4069,6 @@ async fn dispatch(
                     // run under transition authority. Presentation enrichment
                     // may be slow, but cannot publish or reconcile an old fact.
                     let presentation_host = host.clone();
-                    let presentation_state = state.clone();
                     let outcome = tokio::task::spawn_blocking(move || {
                         let mut outcome = outcome;
                         if let SessionStatusOutcome::Ok(status) = &mut outcome {
@@ -4086,10 +4079,6 @@ async fn dispatch(
                                     {
                                         status.observation_failure = Some(failure);
                                     }
-                                    stream_play::registration::label_players(
-                                        &presentation_state,
-                                        active,
-                                    );
                                     if status.overlay.as_ref().is_some_and(|overlay| {
                                         overlay.launch_id == active.launch_id
                                     }) {
@@ -6088,11 +6077,17 @@ fn router_with_capability_local_root_provision_and_grants(
     resources: Option<FederationResources>,
     federation_wake: Option<DiscoveryControl>,
 ) -> Router {
+    let private_state_root = private_state_root.as_ref().to_owned();
+    #[cfg(not(test))]
+    let resources = resources.or_else(|| {
+        Some(FederationResources::open(&private_state_root).expect("open federation authority"))
+    });
+    let transport = resources.clone();
     let (state, _) = brain_app_state(
         rpc_capability,
         allowed_origin,
         local_storage_root,
-        private_state_root,
+        &private_state_root,
         registry_source,
         config_snapshot,
         folder_selection_grants,
@@ -6100,7 +6095,17 @@ fn router_with_capability_local_root_provision_and_grants(
         resources,
         federation_wake,
     );
-    surface_host_router_from_state(state)
+    let reach = transport.and_then(|resources| {
+        let peer = peer_rpc::PeerRpcServer::with_shared_authority(
+            state.clone(),
+            &private_state_root,
+            resources.credentials,
+            resources.authorization,
+        )
+        .expect("load brain peer authority");
+        federation::reach::start(&private_state_root, resources.directory, peer.iroh_router())
+    });
+    surface_host_router_from_state(state).layer(axum::Extension(reach))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6656,11 +6661,7 @@ fn secure_host_routers_with_federation(
     let reach = federation::reach::start(
         private_state_root,
         resources.directory,
-        resources.credentials,
-        runtime.route_root().ok(),
         peer.clone().iroh_router(),
-        if cfg!(test) { 0 } else { 443 },
-        federation::reach::Environment::linux(),
     );
     let local = Router::new().route("/rpc", post(rpc)).with_state(local);
     let local = match private_input {
@@ -6669,8 +6670,8 @@ fn secure_host_routers_with_federation(
     };
     (
         peer.router(shell).layer(axum::Extension(reach.clone())),
-        local.layer(axum::Extension(reach)),
-        cli,
+        local.layer(axum::Extension(reach.clone())),
+        cli.layer(axum::Extension(reach)),
     )
 }
 
@@ -6728,7 +6729,6 @@ pub struct EmbeddedPlatform {
     /// None retains the empty input baseline (including Android/JNI).
     pub native_input: Option<EmbeddedNativeInput>,
     pub owner_binding: Option<owner_binding::OwnerBindingCoordinator>,
-    pub(crate) reach: Option<federation::reach::Environment>,
     pub(crate) viewer: Option<Arc<dyn linux_viewer::LinuxStreamViewer>>,
 }
 
@@ -6819,7 +6819,6 @@ fn start_local_server_for_platform(
     let server_federation = federation.clone();
     let relay_config = moonlight_config_snapshot.clone();
     let product_relays = platform.relays;
-    let reach_environment = platform.reach;
     let native_input = platform.native_input;
     let owner_binding = platform.owner_binding;
     let server_owner_binding = owner_binding.clone();
@@ -6889,17 +6888,11 @@ fn start_local_server_for_platform(
                     peer_resources.authorization,
                 )
                 .expect("load embedded peer authority");
-                let reach = reach_environment.and_then(|environment| {
-                    federation::reach::start(
-                        Path::new(&private_state_root),
-                        peer_resources.directory,
-                        peer_resources.credentials,
-                        Some(Path::new(&local_storage_root)),
-                        peer.iroh_router(),
-                        0,
-                        environment,
-                    )
-                });
+                let reach = federation::reach::start(
+                    Path::new(&private_state_root),
+                    peer_resources.directory,
+                    peer.iroh_router(),
+                );
                 let watch_surfaces = Arc::clone(&surfaces);
                 let server = axum::serve(
                     surface_host_input::low_latency_listener(listener),
@@ -7091,8 +7084,7 @@ pub fn local_server_capability() -> Option<String> {
 }
 
 pub mod android_local;
-#[cfg(any(test, target_os = "android"))]
-mod android_network;
+
 pub mod android_plugin_admin;
 #[cfg(any(test, target_os = "android"))]
 mod android_storage;

@@ -7,7 +7,7 @@
 //! | The Artemis app's Java | Here |
 //! | --- | --- |
 //! | `KorriBrainService.ensureRunning`, `privateStateRoot` | [`start`], once per process; `android_storage` |
-//! | `KorridNetwork.snapshot` | `framework_network.rs`, JNI into Android's classes |
+//! | `KorridNetwork.snapshot` | removed; iroh observes network changes itself (ADR 0095) |
 //! | `KorriStreamViewer` (`viewer*` callbacks) | the app's own Rust viewer, which [`start`] takes (slice D10); it provisions its client certificate with [`provision_moonlight_certificate`] |
 //! | `KorriStreamViewer.leave` (`KorridServer.leaveViewer`) | [`leave_viewer`], when the person opens the gameplay overlay (slice D5b) |
 //! | `KorriAppLauncher` (local Android games, ADR 0054) | none until slice D13 |
@@ -21,7 +21,6 @@
 //! cannot load, the verifier gets the application's class loader, which has
 //! no such class: a certificate check is then refused with an error, never a
 //! panic.
-use super::framework_network;
 use crate::{
     linux_viewer::{LinuxStreamViewer, LinuxViewerError},
     local_server_port,
@@ -84,16 +83,10 @@ pub fn start(
         .ok()
         .and_then(|values| RelayList::configured(values).ok())
         .ok_or_else(|| failed("Android product relays are invalid"))?;
-    let reach = framework_network::environment(env, &context, relays.clone()).map_err(jni)?;
-    eprintln!(
-        "korrid: Android network observed: {}",
-        framework_network::summary(&reach)
-    );
     let platform = EmbeddedPlatform {
         native_input: None,
         relays: Some(relays),
         owner_binding: Some(crate::owner_binding::OwnerBindingCoordinator::default()),
-        reach: Some(reach),
         viewer: Some(viewer),
     };
     // ADR 0054: plugins live in app storage; korrid installs them itself.

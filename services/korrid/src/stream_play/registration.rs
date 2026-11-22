@@ -1,4 +1,4 @@
-//! Resolve registration labels from the same verified peer-list producer.
+//! Stream registration keeps the label supplied by its authenticated caller.
 use crate::*;
 
 pub(crate) async fn register(
@@ -23,10 +23,10 @@ pub(crate) async fn register(
         {
             return Err(RpcFailure {
                 code: "InvalidRequest".into(),
-                message: "Stream play requires this device's published label.".into(),
+                message: "Stream play requires this device's label.".into(),
             });
         }
-        let mut active = state
+        let active = state
             .netplay_holder
             .stream_play(
                 host,
@@ -37,37 +37,12 @@ pub(crate) async fn register(
                 },
             )
             .await?;
-        label_players(state, &mut active);
         Ok(active)
     }
     .await;
     result
         .map(SessionStreamPlayOutcome::Ok)
         .unwrap_or_else(SessionStreamPlayOutcome::Err)
-}
-
-/// A directory label wins. A device not known to the directory keeps the
-/// label supplied by its authenticated caller, including on later status reads.
-pub(crate) fn label_players(state: &AppState, active: &mut ActiveSession) {
-    let peers = state
-        .federation
-        .as_ref()
-        .and_then(|directory| directory.snapshot().ok())
-        .unwrap_or_default();
-    for player in &mut active.stream_players {
-        if let Some(label) = peers
-            .iter()
-            .find(|peer| peer.device_public_key == player.device_public_key)
-            .and_then(|peer| {
-                peer.current_endpoint
-                    .as_ref()
-                    .or(peer.remembered_endpoint.as_ref())
-            })
-            .and_then(|endpoint| endpoint.label.as_ref())
-        {
-            player.label = label.clone();
-        }
-    }
 }
 
 pub(crate) fn caller_label(state: &AppState) -> Result<String, RpcFailure> {
@@ -79,7 +54,7 @@ pub(crate) fn caller_label(state: &AppState) -> Result<String, RpcFailure> {
     };
     let unavailable = || RpcFailure {
         code: "DeviceLabelUnavailable".into(),
-        message: "This device needs a published label before stream play.".into(),
+        message: "This device needs a name before stream play.".into(),
     };
     if snapshot.authorization != crate::config::snapshot::SnapshotAuthorization::Authorized {
         return Err(unavailable());
@@ -180,7 +155,7 @@ mod tests {
         }
     }
     #[tokio::test]
-    async fn stream_play_caller_sends_the_label_from_the_endpoint_publication_producer() {
+    async fn stream_play_caller_sends_the_label_from_device_settings() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(
             root.path().join("device.yaml"),
@@ -188,13 +163,6 @@ mod tests {
         )
         .unwrap();
         let config = crate::config::snapshot::ConfigSnapshotCoordinator::new(root.path());
-        let initial = crate::federation::coordinator::DiscoveryInputs::query_only(&config).unwrap();
-        let published = crate::federation::coordinator::DiscoveryInputs::linux(
-            &config,
-            &initial,
-            vec!["http://127.0.0.1:1234".into()],
-        )
-        .unwrap();
         let (state, _) = crate::brain_app_state(
             "cap",
             "http://shell.local",
@@ -207,6 +175,6 @@ mod tests {
             None,
             None,
         );
-        assert_eq!(caller_label(&state).unwrap(), published.label.unwrap());
+        assert_eq!(caller_label(&state).unwrap(), "Pocket Mini");
     }
 }

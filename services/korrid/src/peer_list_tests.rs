@@ -96,20 +96,20 @@ impl PeerListFixture {
     }
 
     fn endpoint(&self, index: usize, label: &str) {
-        self.endpoint_at(index, label, "http://127.0.0.1:9");
+        self.endpoint_at(index, label, &self.peers[index].identity_snapshot().unwrap().transport_key().to_string());
     }
 
-    fn endpoint_at(&self, index: usize, label: &str, origin: &str) {
+    fn endpoint_at(&self, index: usize, _label: &str, endpoint_id: &str) {
         let recipient = self.resources.credentials.public_key().unwrap();
         let record = relay::EndpointRecord {
             device_public_key: self.peers[index].public_key().unwrap(),
             owner_public_key: self.owner.public_key().to_hex(),
             generation: 1,
-            candidates: vec![origin.into()],
+            endpoint_id: endpoint_id.into(),
             issued_at: NOW,
-            expires_at: NOW + 600,
-            label: Some(label.into()),
-            moonlight_address: None,
+
+
+
         };
         let event = self.peers[index]
             .identity_snapshot()
@@ -120,7 +120,7 @@ impl PeerListFixture {
                 vec![
                     vec!["d".into(), format!("org.korri.endpoint:{recipient}")],
                     vec!["p".into(), recipient.clone()],
-                    vec!["expiration".into(), record.expires_at.to_string()],
+
                 ],
                 &serde_json::to_string(&record).unwrap(),
                 NOW,
@@ -209,7 +209,7 @@ async fn peer_list_projects_one_sorted_snapshot_without_network_or_static_livene
     let (status, value) = list_local(app.clone(), Some(CAPABILITY)).await;
     assert_eq!(status, StatusCode::OK);
     let mut expected = vec![
-        serde_json::json!({"devicePublicKey":f.peers[0].public_key().unwrap(),"label":"Authenticated label","state":"loading","updatedAt":NOW}),
+        serde_json::json!({"devicePublicKey":f.peers[0].public_key().unwrap(),"label":f.peers[0].public_key().unwrap(),"state":"loading","updatedAt":NOW}),
         serde_json::json!({"devicePublicKey":f.peers[1].public_key().unwrap(),"label":"Static label","state":"ready","updatedAt":NOW+2}),
         serde_json::json!({"devicePublicKey":f.peers[2].public_key().unwrap(),"label":f.peers[2].public_key().unwrap(),"state":"failed","updatedAt":NOW+2,"lastError":"Authenticated peer operation failed"}),
     ];
@@ -411,7 +411,7 @@ async fn peer_list_unreachable_sentence_requires_no_answer_from_any_method() {
         key.clone(),
         f.resources.credentials.clone(),
     )
-    .with_directory(f.resources.directory.clone());
+    .with_directory(f.resources.directory.clone()).with_peer_label("Home PC".into());
     // Check both a refused dial and an already-expired aggregate deadline.
     // Neither path received headers, so neither may become a wire failure.
     for timeout in [
@@ -453,6 +453,8 @@ async fn peer_list_authenticated_rejection_keeps_sanitized_failure() {
     let root = f._peer_roots[0].path();
     let config = root.join("host.toml");
     fs::write(&config, "label = \"peer\"\n").unwrap();
+    fs::set_permissions(root, fs::Permissions::from_mode(0o700)).unwrap();
+    let remote = FederationResources::open(root).unwrap();
     let runtime = host::HostRuntime::from_paths_with_backend(
         &config,
         None,
@@ -468,18 +470,12 @@ async fn peer_list_authenticated_rejection_keeps_sanitized_failure() {
     )
     .unwrap()
     .router(None);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = tokio::spawn(async move {
-        axum::serve(listener, router).await.unwrap();
-    });
+    let (endpoint, server) = federation::reach::tests::listen(remote.directory, router).await;
+    let (_local_endpoint, local_server) = federation::reach::tests::listen(f.resources.directory.clone(), Router::new()).await;
+    federation::reach::tests::learn(&f.resources.directory, &endpoint);
+    f.endpoint_at(0, "peer", &endpoint.id().to_string());
     let key = f.peers[0].public_key().unwrap();
-    let client = upstream_native::NativeClient::new_secure(
-        format!("http://{address}"),
-        key.clone(),
-        f.resources.credentials.clone(),
-    )
-    .with_directory(f.resources.directory.clone());
+    let client = upstream_native::NativeClient::new_secure_candidates(Vec::new(), key.clone(), f.resources.credentials.clone()).with_directory(f.resources.directory.clone());
     let result = client
         .source_status(&f.resources.credentials.public_key().unwrap())
         .await;
@@ -487,6 +483,7 @@ async fn peer_list_authenticated_rejection_keeps_sanitized_failure() {
         matches!(result,Err(upstreams::UpstreamError::Tagged {code,..}) if code=="SourceDeviceMismatch")
     );
     server.abort();
+    local_server.abort();
     let state = f
         .resources
         .directory
@@ -502,51 +499,25 @@ async fn peer_list_authenticated_rejection_keeps_sanitized_failure() {
             error: "Authenticated peer operation failed".into()
         }
     );
-    assert!(!format!("{state:?}").contains(&address.to_string()));
+    assert!(!format!("{state:?}").contains("127.0.0.1"));
 }
 
 #[tokio::test]
 async fn peer_list_uses_sanitized_native_failure_and_clears_error_on_recovery() {
     let f = PeerListFixture::new();
     f.roster();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    let server = tokio::spawn(async move {
-        let router = Router::new().route(
-            "/peer-rpc",
-            post(|| async { "untrusted private path /private/token and peer-controlled error" }),
-        );
-        axum::serve(listener, router)
-            .with_graceful_shutdown(async {
-                let _ = stopped.await;
-            })
-            .await
-            .unwrap();
-    });
+    let root = f._peer_roots[0].path();
+    fs::set_permissions(root, fs::Permissions::from_mode(0o700)).unwrap();
+    let remote = FederationResources::open(root).unwrap();
+    let router = Router::new().route("/peer-rpc", post(|| async { "untrusted private path /private/token and peer-controlled error" }));
+    let (endpoint, server) = federation::reach::tests::listen(remote.directory, router).await;
+    let (_local_endpoint, local_server) = federation::reach::tests::listen(f.resources.directory.clone(), Router::new()).await;
+    federation::reach::tests::learn(&f.resources.directory, &endpoint);
+    f.endpoint_at(0, "peer", &endpoint.id().to_string());
     let key = f.peers[0].public_key().unwrap();
-    let client = upstream_native::NativeClient::new_secure(
-        format!("http://{address}"),
-        key.clone(),
-        f.resources.credentials.clone(),
-    )
-    .with_directory(f.resources.directory.clone());
+    let client = upstream_native::NativeClient::new_secure_candidates(Vec::new(), key.clone(), f.resources.credentials.clone()).with_directory(f.resources.directory.clone());
     assert!(client.catalog_snapshot().await.is_err());
-    // A later transport failure must not hide the earlier invalid reply.
-    let dead = held_refused_peer_socket();
-    let dead_address = dead.local_addr().unwrap();
-    assert!(client
-        .clone()
-        .with_candidates(vec![
-            format!("http://{address}"),
-            format!("http://{dead_address}")
-        ])
-        .unwrap()
-        .catalog_snapshot()
-        .await
-        .is_err());
-    stop.send(()).unwrap();
-    server.await.unwrap();
+    assert!(client.catalog_snapshot().await.is_err());
     let app = f.router();
     let (_, response) = list_local(app.clone(), Some(CAPABILITY)).await;
     let entry = response["outcome"]["payload"]["peers"]
@@ -558,7 +529,7 @@ async fn peer_list_uses_sanitized_native_failure_and_clears_error_on_recovery() 
     assert_eq!(entry["state"], "failed");
     assert_eq!(entry["lastError"], "Authenticated peer operation failed");
     assert!(!response.to_string().contains("/private/token"));
-    assert!(!response.to_string().contains(&address.to_string()));
+    assert!(!response.to_string().contains("127.0.0.1"));
     let d = &f.resources.directory;
     d.set_peer_state(&d.begin_peer_work(&key).unwrap(), &key, PeerState::Ready)
         .unwrap();
@@ -571,6 +542,9 @@ async fn peer_list_uses_sanitized_native_failure_and_clears_error_on_recovery() 
         .unwrap();
     assert_eq!(entry["state"], "ready");
     assert!(entry.get("lastError").is_none());
+    server.abort();
+    local_server.abort();
+
 }
 
 #[tokio::test]
@@ -657,11 +631,10 @@ async fn cli_forwarding_uses_signed_native_transport_and_revision_safe_owner_set
     )
     .0;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let origin = format!("http://{}", listener.local_addr().unwrap());
     let server = tokio::spawn(async move {
         axum::serve(listener, target).await.unwrap();
     });
-    f.endpoint_at(0, "Twin", &origin);
+    f.endpoint_at(0, "Twin", &f.peers[0].identity_snapshot().unwrap().transport_key().to_string());
     f.endpoint(1, "Twin");
     let local = secure_host_routers_with_federation(
         cli_fixture_runtime(f.readable.path(), f.root.path()),

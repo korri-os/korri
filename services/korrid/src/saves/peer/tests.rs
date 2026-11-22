@@ -65,6 +65,7 @@ struct TransferBehaviour {
     fail_first: bool,
     corrupt: bool,
     delay: Duration,
+    object_delay: Duration,
     records_delay: Duration,
     record_read_barrier: Option<Arc<tokio::sync::Barrier>>,
     rpc_started: Arc<tokio::sync::Notify>,
@@ -73,6 +74,7 @@ struct TransferBehaviour {
     measure: bool,
     requests: Arc<Mutex<Vec<(String, Duration)>>>,
     connections: Arc<std::sync::atomic::AtomicUsize>,
+    rpc_count: Arc<std::sync::atomic::AtomicUsize>,
     record_reads: Arc<Mutex<Vec<Vec<String>>>>,
 }
 async fn transfer_behaviour(
@@ -84,6 +86,9 @@ async fn transfer_behaviour(
     next: Next,
 ) -> Response {
     if request.uri().path() != "/peer-saves-object" {
+        behaviour
+            .rpc_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         behaviour.rpc_started.notify_one();
         if let Some(status) = behaviour.rpc_status {
             return status.into_response();
@@ -138,6 +143,7 @@ async fn transfer_behaviour(
         }
         return response;
     }
+    tokio::time::sleep(behaviour.object_delay).await;
     let first = {
         let mut ranges = behaviour.ranges.lock().unwrap();
         ranges.push(
@@ -174,11 +180,14 @@ struct Node {
     service: Arc<SavePeerService>,
     repository: Arc<NativeSaveStore>,
     base: String,
+    endpoint: iroh::Endpoint,
+    transport: tokio::task::JoinHandle<()>,
     task: tokio::task::JoinHandle<()>,
 }
 impl Drop for Node {
     fn drop(&mut self) {
         self.task.abort();
+        self.transport.abort();
     }
 }
 impl Node {
@@ -227,9 +236,18 @@ impl Node {
             credentials.clone(),
             authorization,
         )
-        .unwrap()
-        .router(None)
-        .layer(middleware::from_fn_with_state(
+        .unwrap();
+        let transport_router = server
+            .clone()
+            .iroh_router()
+            .layer(middleware::from_fn_with_state(
+                (behaviour.clone(), credentials.clone()),
+                transfer_behaviour,
+            ));
+        let (endpoint, transport) =
+            crate::federation::reach::tests::listen(service.directory.clone(), transport_router)
+                .await;
+        let server = server.router(None).layer(middleware::from_fn_with_state(
             (behaviour, credentials),
             transfer_behaviour,
         ));
@@ -251,6 +269,8 @@ impl Node {
             service,
             repository,
             base,
+            endpoint,
+            transport,
             task,
         }
     }
@@ -276,7 +296,8 @@ impl Node {
     fn remember(&self, peer: &Node) {
         self.remember_candidates(peer, vec![peer.base.clone()]);
     }
-    fn remember_candidates(&self, peer: &Node, candidates: Vec<String>) {
+    fn remember_candidates(&self, peer: &Node, _candidates: Vec<String>) {
+        crate::federation::reach::tests::learn(&self.service.directory, &peer.endpoint);
         let identity = peer.service.credentials.identity_snapshot().unwrap();
         let token = self.service.directory.begin_work().unwrap();
         self.service
@@ -288,11 +309,8 @@ impl Node {
             device_public_key: peer.device(),
             owner_public_key: peer.owner(),
             generation: 1,
-            candidates,
+            endpoint_id: peer.endpoint.id().to_string(),
             issued_at: now,
-            expires_at: now + 3600,
-            label: None,
-            moonlight_address: None,
         };
         let event = identity
             .encrypt_tagged_event(
@@ -301,7 +319,6 @@ impl Node {
                 vec![
                     vec!["d".into(), format!("org.korri.endpoint:{}", self.device())],
                     vec!["p".into(), self.device()],
-                    vec!["expiration".into(), endpoint.expires_at.to_string()],
                 ],
                 &serde_json::to_string(&endpoint).unwrap(),
                 now,
@@ -507,7 +524,7 @@ async fn regression_signed_save_error_outcome_is_not_ready() {
 }
 
 #[tokio::test]
-async fn save_request_without_endpoint_leaves_peer_state_and_work_unchanged() {
+async fn save_request_without_a_binding_does_not_claim_a_connection_failed() {
     let a = Node::new(5, 3, TransferBehaviour::default()).await;
     let b = Node::new(6, 3, TransferBehaviour::default()).await;
     let directory = &a.service.directory;
@@ -529,7 +546,6 @@ async fn save_request_without_endpoint_leaves_peer_state_and_work_unchanged() {
         Err(PeerSaveError::Network)
     ));
     assert_eq!(directory.snapshot().unwrap()[0].state, before);
-    // No request was sent, so even an older work token remains current.
     directory
         .set_peer_state(&token, &b.device(), PeerState::Loading)
         .unwrap();
@@ -555,15 +571,16 @@ async fn save_request_without_directory_row_leaves_directory_unchanged() {
 }
 
 #[tokio::test]
-async fn failed_save_connect_probe_marks_previously_ready_peer_failed() {
+async fn closed_iroh_connection_marks_previously_ready_peer_failed() {
     let a = Node::new(5, 3, TransferBehaviour::default()).await;
     let b = Node::new(6, 3, TransferBehaviour::default()).await;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    a.remember_candidates(
-        &b,
-        vec![format!("http://{}", listener.local_addr().unwrap())],
-    );
-    drop(listener);
+    a.remember(&b);
+    b.remember(&a);
+    a.service
+        .remote_heads(&a.owner(), &b.device(), RequestProvenance::Independent)
+        .await
+        .unwrap();
+    b.endpoint.close().await;
     let directory = &a.service.directory;
     directory
         .set_peer_state(
@@ -901,6 +918,7 @@ async fn object_nonces_share_replay_guard_and_known_warning_survives_transfer_de
         3,
         TransferBehaviour {
             corrupt: true,
+            object_delay: Duration::from_millis(500),
             ..Default::default()
         },
     )
@@ -1282,86 +1300,15 @@ async fn prelaunch_retains_peer_whose_signed_heads_arrive_but_records_time_out()
 }
 
 #[tokio::test]
-async fn stalled_connect_candidate_does_not_consume_the_prelaunch_budget() {
-    let a = Node::new(5, 3, TransferBehaviour::default()).await;
-    let b = Node::new(6, 3, TransferBehaviour::default()).await;
-    let socket = tokio::net::TcpSocket::new_v4().unwrap();
-    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
-    let blocked = socket.listen(0).unwrap();
-    let address = blocked.local_addr().unwrap();
-    let _queued = tokio::net::TcpStream::connect(address).await.unwrap();
-    a.remember_candidates(&b, vec![format!("http://{address}"), b.base.clone()]);
-    b.remember(&a);
-    b.seed(b"progress", vec![]);
-    let heads = tokio::time::timeout(
-        Duration::from_secs(2),
-        a.service
-            .remote_heads(&a.owner(), &b.device(), RequestProvenance::Independent),
-    )
-    .await
-    .unwrap()
-    .unwrap();
-    assert_eq!(heads.games.len(), 1);
-}
-
-#[tokio::test]
-async fn object_download_reaches_the_eighth_candidate() {
-    let a = Node::new(5, 3, TransferBehaviour::default()).await;
-    let b = Node::new(6, 3, TransferBehaviour::default()).await;
-    let record = a.seed(b"progress from the eighth route", vec![]);
-    let mut origins = Vec::new();
-    // Closed local ports fail deterministically without an external network.
-    let mut closed = Vec::new();
-    for _ in 0..7 {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        origins.push(format!("http://{}", listener.local_addr().unwrap()));
-        closed.push(listener);
-    }
-    drop(closed);
-    origins.push(a.base.clone());
-    b.remember_candidates(&a, origins);
-    a.remember(&b);
-    b.service
-        .import_record(&b.owner(), &a.device(), record.clone(), Some(&id(&record)))
-        .await
-        .unwrap();
-    b.service
-        .fetch_record_payload(&b.owner(), &a.device(), &record)
-        .await
-        .unwrap();
-    assert!(b
-        .repository
-        .object(&b.owner(), &record.locations[0].files[0].sha256)
-        .is_ok());
-}
-
-#[tokio::test]
 async fn metadata_mutation_is_not_sent_again_after_ambiguous_delivery() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    use std::sync::atomic::Ordering;
+    let behaviour = TransferBehaviour {
+        rpc_status: Some(StatusCode::SERVICE_UNAVAILABLE),
+        ..Default::default()
+    };
+    let a = Node::new(5, 3, behaviour.clone()).await;
     let b = Node::new(6, 3, TransferBehaviour::default()).await;
-    let received = Arc::new(AtomicUsize::new(0));
-    let mut origins = Vec::new();
-    let mut servers = Vec::new();
-    for _ in 0..2 {
-        let received = received.clone();
-        let app = axum::Router::new().route(
-            "/peer-rpc",
-            axum::routing::post(move |_: String| {
-                let received = received.clone();
-                async move {
-                    received.fetch_add(1, Ordering::SeqCst);
-                    StatusCode::SERVICE_UNAVAILABLE
-                }
-            }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        origins.push(format!("http://{}", listener.local_addr().unwrap()));
-        servers.push(tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        }));
-    }
-    b.remember_candidates(&a, origins);
+    b.remember(&a);
     let record = b.seed(b"metadata push", vec![]);
     let result = b
         .service
@@ -1376,11 +1323,8 @@ async fn metadata_mutation_is_not_sent_again_after_ambiguous_delivery() {
             RequestProvenance::Independent,
         )
         .await;
-    for server in servers {
-        server.abort();
-    }
     assert!(matches!(result, Err(PeerSaveError::Network)));
-    assert_eq!(received.load(Ordering::SeqCst), 1);
+    assert_eq!(behaviour.rpc_count.load(Ordering::SeqCst), 1);
 }
 
 #[test]
