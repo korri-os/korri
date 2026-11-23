@@ -263,6 +263,14 @@ _Avoid_: headless display, dummy display, virtual screen
 One image that a game or surface produces, such as the upper or lower picture of a Nintendo DS game. A game has one pane unless its system has more; each pane is shown on one display.
 _Avoid_: view, screen, picture, feed
 
+**Web screen**:
+A surface shown in a browser on another machine, served by the device it belongs to. It is a screen of that device like any other and can show any surface.
+_Avoid_: portal, web UI, web app, dashboard, admin page
+
+**Bonfire**:
+The surface that covers every capability plainly, so a person is never stuck in a surface that lacks one. A web screen shows it first.
+_Avoid_: management app, settings app, default surface, fallback surface
+
 ### Content and discovery
 
 **Library item**:

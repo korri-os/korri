@@ -152,8 +152,11 @@ repositories, and no Korri client ships an outside repository address.
 
 ## Standing decisions
 
-- The shell is the host and the only screen. Since 2026-11-01 no browser, web
-  server or second host runs on a Linux device; do not bring one back. The
+- The shell is the host and the only screen on a device. Since 2026-11-01 no
+  browser and no separate web service runs on a Linux device; do not bring one
+  back. ADR 0096 records one amendment: korrid itself serves a web screen to a
+  browser on another machine, on a second listener, and the loopback listener
+  and its guard do not change. The
   shell runs as its own unprivileged system user (`korri-shell`, in
   `korri-shell.service`), never as root, and never opens `/dev/input`.
 - Surfaces are hardware-blind: they receive semantic buttons (`up`, `confirm`,
