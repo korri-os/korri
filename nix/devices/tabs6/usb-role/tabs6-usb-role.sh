@@ -267,6 +267,8 @@ host|device)
 esac
 case "${1:-status}" in
 host|device|boot-vbus)
+	# boot-vbus can precede tmpfiles, which normally creates /run/lock.
+	mkdir -p "${LOCK%/*}"
 	exec 9>"$LOCK"
 	flock -x 9
 	;;

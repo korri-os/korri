@@ -223,6 +223,14 @@ class UsbRole(unittest.TestCase):
         # Boot never restarts the gadget: its unit runs after boot-role.
         self.assertEqual(self.systemctl(), [])
 
+    def test_early_boot_does_not_depend_on_tmpfiles_creating_the_lock_directory(self):
+        lock = self.tmp / "run/lock/tabs6-usb-role.lock"
+        self.reg(CNTL, 0xF7)
+        r = self.run_role("boot-vbus", TABS6_USB_ROLE_LOCK=lock)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.reg(CNTL) & 7, 5)
+        self.assertTrue(lock.exists())
+
     def test_boot_never_fails_on_missing_hardware(self):
         for d in (self.sys / "class/usb_role").iterdir():
             (d / "role").unlink()
