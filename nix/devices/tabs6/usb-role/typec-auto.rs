@@ -38,9 +38,10 @@ impl Sample {
             && matches!(self.charger, 0x21 | 0x22)
             && self.muic_vbus <= 1
             && (!self.sourcing || self.boost & 0x0f == 0x0b)
-            // MUIC DEVT1 bit7 = OTG. BC1.2/charger/PC or other unknown
-            // device signatures are not permission to source.
-            && matches!(self.muic_devices, [0 | 0x80, 0, 0])
+            // MUIC DEVT1 bit7 = OTG, bit3 = passive UART (also measured
+            // with the unplugged Kishi after reboot). Neither proves power
+            // direction. Charger/PC and unknown signatures still deny.
+            && matches!(self.muic_devices, [0 | 0x08 | 0x80, 0, 0])
     }
 
     fn source_attached(&self) -> bool {

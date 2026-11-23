@@ -59,7 +59,7 @@ case "$*" in
 '-y 6 w2@0x33 0x00 0x20 r4') cat "$TABS6_TEST_REGS/func" ;;
 '-y 7 w1@0x25 0x15 r1') printf '0x%02x\n' "$(cat "$TABS6_TEST_REGS/muic")" ;;
 '-y 7 w1@0x49 0x08 r1') printf '0x%02x\n' "$(cat "$TABS6_TEST_REGS/charger")" ;;
-'-y 7 w1@0x25 0x0a r3') echo '0x00 0x00 0x00' ;;
+'-y 7 w1@0x25 0x0a r3') cat "$TABS6_TEST_REGS/devices" ;;
 '-y 7 w1@0x49 0x20 r1') printf '0x%02x\n' "$(cat "$TABS6_TEST_REGS/0x20")" ;;
 '-y 7 w1@0x49 0x0c r1') printf '0x%02x\n' "$(cat "$TABS6_TEST_REGS/0x0c")" ;;
 *) echo 'forbidden transfer' >&2; exit 1 ;;
@@ -92,6 +92,7 @@ class UsbRole(unittest.TestCase):
         (self.regs / "func").write_text("0x0e 0x24 0xff 0x8f\n")
         self.reg("muic", 0)
         self.reg("charger", 0x22)
+        (self.regs / "devices").write_text("0x00 0x00 0x00\n")
         for bus, controller in ((6, "i2c@c94000"), (7, "i2c@890000")):
             node = self.sys / "firmware/devicetree/base/soc" / controller
             node.mkdir(parents=True)
@@ -302,6 +303,22 @@ class UsbRole(unittest.TestCase):
         self.assertNotEqual(self.run_role("host").returncode, 0)
         self.assertNotIn("0x0c 247", self.writes())
 
+    def test_manual_host_preserves_the_measured_passive_uart_classification(self):
+        # After the live reboot, the unplugged Kishi reports DEVT1_UART.
+        # This is not one of the charger's/PC's power signatures.
+        (self.regs / "devices").write_text("0x08 0x00 0x00\n")
+        r = self.run_role("host")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.role(), "host")
+        self.assertEqual(self.reg(CNTL) & 7, 7)
+
+    def test_muic_charger_and_pc_signatures_never_enable_boost(self):
+        for value in (0x04, 0x10, 0x20, 0x40):
+            with self.subTest(value=value):
+                (self.regs / "devices").write_text(f"0x{value:02x} 0x00 0x00\n")
+                self.assertNotEqual(self.run_role("host").returncode, 0)
+                self.assertNotIn("0x0c 247", self.writes())
+
     def test_incoming_power_denied_even_with_source_flags_and_discharging(self):
         for register, value in (("muic", 1), ("charger", 0x21)):
             with self.subTest(register=register):
@@ -400,6 +417,10 @@ class UsbRole(unittest.TestCase):
                 self.assertNotIn("0x0c 247", self.writes())
                 self.assertIn("mode=observe automatic_host=blocked", (self.tmp / "daemon.log").read_text())
                 self.assertIn("staying_device=true", (self.tmp / "daemon.log").read_text())
+                (self.regs / "devices").write_text("0x08 0x00 0x00\n")
+                time.sleep(1.0)
+                self.assertEqual(self.role(), "device")
+                self.assertNotIn("0x0c 247", self.writes())
                 for index in (5, 6, 7, 8, 9, 11, 12):
                     replay(index)
                     time.sleep(0.32)

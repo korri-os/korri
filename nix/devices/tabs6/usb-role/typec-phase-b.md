@@ -48,6 +48,15 @@ VBUS-first trial, kernel monotonic time 4668.688671 s at verified HOST:
 
 Throughout the powered portion, STATUS1=0x21, MUIC VBUS=01 and device types
 were 00/00/00. Gauge remained Discharging. After off, STATUS1 returned to 0x22.
+The first safe-mode reboot also exposed MUIC DEVT1=0x08 / DEVT2=00 / DEVT3=00
+with state 14/1/1, MUIC VBUS=00, STATUS1=0x22, CNTL=05, boost=05 and
+Discharging. Samsung names DEVT1 bit3 `UART`; it is not a charger/PC power
+signature. The checker accepts this measured passive classification so the
+existing manual interlock remains usable after reboot. This does not unblock
+automatic HOST. A regression test runs the actual manual helper with these
+readings, and observe-mode tests prove this classification still cannot enable
+HOST automatically.
+
 The Kishi disconnected when boost went off. Sustained HOST and inputd Ready
 were **not accepted**; transient input nodes alone do not satisfy acceptance.
 
@@ -72,6 +81,7 @@ Grounding: Samsung commit `37cf30da0578a6378a3e3ef5e17aede89233defe`,
 | STATUS1 0x15 (decimal 21), if reported | VBUSPOK + VBUSOVP + WPCINPOK; reject; not an OTG direction flag |
 | MUIC VBUS_VALID bit0 | Voltage present on the shared port; rises for our output too |
 | MUIC DEVT1 bit7 (USB_OTG) | Device classification, not proven independent direction; absent in these trials |
+| MUIC DEVT1 bit3 (UART) | Passive classification observed after the safe-mode reboot, with no VBUS; not power direction |
 
 There is no dedicated OTG-versus-external-input direction bit in the inspected
 STATUS1/MUIC definitions. VBUSOVP/LIMIT, wireless input and MUIC charger/PC
