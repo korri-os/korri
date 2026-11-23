@@ -69,6 +69,8 @@ fn socket(address: SocketAddr, tcp: bool) -> io::Result<socket2::Socket> {
     }
     if tcp {
         socket.set_reuse_address(true)?;
+    } else {
+        buffers(socket2::SockRef::from(&socket));
     }
     socket.set_nonblocking(true)?;
     socket.bind(&address.into()).map_err(|e| {
@@ -78,6 +80,17 @@ fn socket(address: SocketAddr, tcp: bool) -> io::Result<socket2::Socket> {
         )
     })?;
     Ok(socket)
+}
+/// Socket buffers for every local stream UDP socket. Sunshine sends a video
+/// frame of up to about 160 packets of 1,200 bytes in about 0.14 ms. The
+/// 212,992-byte Linux default holds about 90 of them, so the kernel dropped
+/// the rest of a large frame before korrid could read it (#600). Linux caps
+/// the request at `net.core.rmem_max`, 4 MiB on Korri devices; a lower cap
+/// gives a smaller buffer, not an error.
+const UDP_BUFFER: usize = 4 << 20;
+fn buffers(socket: socket2::SockRef<'_>) {
+    let _ = socket.set_recv_buffer_size(UDP_BUFFER);
+    let _ = socket.set_send_buffer_size(UDP_BUFFER);
 }
 impl Forwards {
     pub async fn open(
@@ -248,6 +261,7 @@ async fn serve_udp(
         let Ok(socket) = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await else {
             return;
         };
+        buffers(socket2::SockRef::from(&socket));
         if socket.connect((targets.address, target)).await.is_err() {
             return;
         }
@@ -363,6 +377,95 @@ mod tests {
         assert!(!UDP_PORTS.contains(&47990));
         forwards.shutdown().await;
         local.abort();
+        task.abort();
+        a.close().await;
+        b.close().await;
+    }
+    /// #600: every local stream UDP socket asks for the large buffer.
+    #[tokio::test]
+    async fn reach_stream_udp_sockets_get_large_buffers() {
+        let Some(limit) = std::fs::read_to_string("/proc/sys/net/core/rmem_max")
+            .ok()
+            .and_then(|s| s.trim().parse::<usize>().ok())
+        else {
+            return;
+        };
+        let socket = socket(SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0), false).unwrap();
+        // Linux grants at most rmem_max and reports twice what it granted.
+        assert_eq!(
+            socket.recv_buffer_size().unwrap(),
+            2 * UDP_BUFFER.min(limit)
+        );
+    }
+    /// Measurement probe for #600: Sunshine-sized frame bursts through the
+    /// real forwards over a loopback iroh pair. Timing-dependent, so ignored.
+    /// Run `nix run .#korrid-test -- --release --lib reach_burst_probe --
+    /// --ignored --nocapture`, optionally with `BURSTS=60,160`. On zao, 160-packet
+    /// bursts lost 179 of 16,000 packets with the default buffers, 0 with these.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore]
+    async fn reach_burst_probe() {
+        let (a, b, outgoing, incoming) = crate::federation::reach::tests::pair().await;
+        let sunshine = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut targets = Targets::default();
+        targets.udp[0] = sunshine.local_addr().unwrap().port();
+        let task = tokio::spawn(serve_on(incoming, axum::Router::new(), targets));
+        let forwards = Forwards::open(
+            outgoing,
+            Bindings {
+                address: Ipv4Addr::LOCALHOST.into(),
+                tcp: [0; 3],
+                udp: [0; 5],
+            },
+        )
+        .await
+        .unwrap();
+        let viewer = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        socket2::SockRef::from(&*viewer)
+            .set_recv_buffer_size(32 << 20)
+            .unwrap();
+        viewer.send_to(b"ping", forwards.udp[0]).await.unwrap();
+        let mut bytes = vec![0; 2048];
+        let (_, relay) = sunshine.recv_from(&mut bytes).await.unwrap();
+        let sizes: Vec<usize> = std::env::var("BURSTS")
+            .unwrap_or("40,60,80,100,120,160".into())
+            .split(',')
+            .map(|s| s.parse().unwrap())
+            .collect();
+        let counter = viewer.clone();
+        let got = tokio::spawn(async move {
+            let mut seen = std::collections::HashSet::new();
+            let mut bytes = vec![0; 2048];
+            while let Ok(Ok((_, _))) =
+                tokio::time::timeout(Duration::from_secs(2), counter.recv_from(&mut bytes)).await
+            {
+                seen.insert(u64::from_be_bytes(bytes[..8].try_into().unwrap()));
+            }
+            seen
+        });
+        let mut sent = Vec::new();
+        let mut tick = tokio::time::interval(Duration::from_micros(16_667));
+        for frame in 0..600usize {
+            tick.tick().await;
+            let size = sizes[frame % sizes.len()];
+            for packet in 0..size {
+                let mut bytes = vec![0u8; 1200];
+                let id = ((frame as u64) << 16) | packet as u64;
+                bytes[..8].copy_from_slice(&id.to_be_bytes());
+                sunshine.send_to(&bytes, relay).await.unwrap();
+                sent.push((size, id));
+            }
+        }
+        let seen = got.await.unwrap();
+        for size in &sizes {
+            let total = sent.iter().filter(|(s, _)| s == size).count();
+            let lost = sent
+                .iter()
+                .filter(|(s, id)| s == size && !seen.contains(id))
+                .count();
+            eprintln!("burst={size} lost={lost}/{total}");
+        }
+        forwards.shutdown().await;
         task.abort();
         a.close().await;
         b.close().await;
