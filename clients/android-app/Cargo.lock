@@ -3612,6 +3612,7 @@ dependencies = [
  "libc",
  "log",
  "lzma-rs",
+ "netlink-sys 0.9.0",
  "nostr",
  "notify",
  "oxc",
