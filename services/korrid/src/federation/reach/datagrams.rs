@@ -72,6 +72,8 @@ impl Counters {
     }
 }
 
+/// `response` marks a holder's reply, so the viewer side hands it to its
+/// local client rather than to a Sunshine socket.
 pub(super) fn send(
     connection: &Connection,
     counters: &Counters,

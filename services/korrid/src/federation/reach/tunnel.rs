@@ -158,11 +158,24 @@ impl Forwards {
             });
         }
         let clients = Arc::new(Mutex::new(BTreeMap::<u16, SocketAddr>::new()));
+        // This side's requests; the connection's serve task counts replies (#601).
         let counters = Arc::new(datagrams::Counters::default());
+        let report = Arc::new(datagrams::Report {
+            side: "viewer",
+            connection: connection.clone(),
+            counters: counters.clone(),
+        });
         for (port, socket) in &udp {
-            let (port, socket, c, clients, counters) =
-                (*port, socket.clone(), connection.clone(), clients.clone(), counters.clone());
+            let (port, socket, c, clients, counters, report) = (
+                *port,
+                socket.clone(),
+                connection.clone(),
+                clients.clone(),
+                counters.clone(),
+                report.clone(),
+            );
             tasks.spawn(async move {
+                let _report = report;
                 // Read the whole IPv6 packet before enforcing the transport's
                 // 65,507-byte bound. Never forward a truncated packet.
                 let mut bytes = vec![0; 65535];
@@ -327,7 +340,7 @@ async fn serve_udp(
         });
     }
     let _report = datagrams::Report {
-        side: "peer",
+        side: "serve",
         connection: connection.clone(),
         counters: counters.clone(),
     };
