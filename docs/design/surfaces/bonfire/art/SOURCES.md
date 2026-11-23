@@ -2,7 +2,7 @@
 
 Every picture here was made from a file on Wikimedia Commons. The licence is
 the one Commons stated on 2026-11-23. The cutting and grading commands are in
-`~/code/sandbox/korri-mockups/bonfire-deck/art/process.sh`, outside this
+`~/code/sandbox/korri-mockups/bonfire/art-work/process.sh`, outside this
 repository, with the untouched source files beside them.
 
 | File | Made from | Licence |

@@ -41,6 +41,7 @@ summarised at the end of this file.
 | `arcade-modern/` | Naomi-era cabinet attract and select screens, about 1998 to 2002 | Two states: an attract reel of tilted title cards, and a rotating ring with the focused game on a lit plinth, a ranking panel, linked-cabinet places, a test-mode service line | Under review. `shot-attract-1280x720.png` shows the attract state. Two deeper looks, Billboard and Neon, are under review outside the repo because they embed real box art that cannot be committed; their state and decisions are in `~/code/sandbox/korri-mockups/ARCADE-MODERN.md` |
 | `mania/` | Sonic Mania menus | Black zone cards on a mint ground, three mode tabs, action row | Under review; refined 2026-10-19 from the user's reference screenshots (mint ground with orbit rings, black parallelograms, pink focus, uncropped covers, HERE/ZAO tag row) |
 | `wallet/` | Digital passes | Vertical stack, one pass pulled forward, places as gates | Under review |
+| `bonfire/` | A FromSoftware-style menu made of photographed materials (2026-11-23) | A list and its item: one row per thing, the chosen one shown as an object in a niche with its facts | Kept as a concept. Drawn for the devices page of the web screen (ADR 0096), then set aside from that MVP: the owner sees it as a full surface for the person who plays. It does not draw the shared library screen yet |
 
 Built from a direction that was drawn outside this folder (its mockup holds
 real box art): Velvet, `velvet/DIRECTION.md`, the surface every product device

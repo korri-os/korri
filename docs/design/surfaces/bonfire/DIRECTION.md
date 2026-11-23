@@ -1,9 +1,16 @@
 # Bonfire
 
-The look of the surface that ADR 0096 names: a dark, quiet menu made of real
-materials, in the manner of the FromSoftware games. Bonfire is the name of the
-surface. It is not shown to the person and it is not the name of anything on
-screen. One page is drawn: the devices.
+A dark, quiet menu made of real materials, in the manner of the FromSoftware
+games. Bonfire is the name of the look. It is not shown to the person and it
+is not the name of anything on screen. One page is drawn: the devices.
+
+**Status (owner, 2026-11-23): kept as a concept, not used for the web screen
+MVP.** The owner likes the direction and sees it as a complete surface that
+faces the person who plays, not an administration screen. It was drawn for
+the management surface of ADR 0096 and is set aside from that work. To carry
+it on, it needs the library screen that every other direction in this folder
+draws. The working files, the art sources and the review deck are in
+`~/code/sandbox/korri-mockups/bonfire/`.
 
 **Owner notes that bind this drawing (2026-11-23).** The first drawing was
 "amateur SVG": a drawn campfire, drawn corner curls, fire words everywhere.
