@@ -166,7 +166,7 @@ pub(crate) async fn netplay_route() -> NetplayRoute {
         device.clone(),
         PeerConnection {
             connection: outgoing.clone(),
-            responses: tokio::sync::broadcast::channel(64).0,
+            responses: super::tunnel::responses(),
         },
     );
     let forward = devices.da.netplay_forward(&device).await.unwrap();
@@ -187,14 +187,14 @@ async fn key_only_connection_carries_signed_peer_rpc_and_rejects_local_authority
     let task = tokio::spawn(tunnel::serve(
         incoming,
         devices.router(),
-        tokio::sync::broadcast::channel(64).0,
+        super::tunnel::responses(),
         None,
     ));
     devices.da.reach.live.write().unwrap().insert(
         devices.cb.public_key().unwrap(),
         PeerConnection {
             connection: outgoing.clone(),
-            responses: tokio::sync::broadcast::channel(64).0,
+            responses: super::tunnel::responses(),
         },
     );
     devices.da.reach.endpoint.set(a.clone()).unwrap();

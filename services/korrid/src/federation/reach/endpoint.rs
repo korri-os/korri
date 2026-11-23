@@ -169,7 +169,7 @@ pub(super) fn admit(
         None
     };
     let proof_deadline = tokio::time::Instant::now() + directory.reach.admission.proof_timeout;
-    let responses = tokio::sync::broadcast::channel(64).0;
+    let responses = tunnel::responses();
     let binding = Binding {
         directory: directory.clone(),
         connection: connection.clone(),
