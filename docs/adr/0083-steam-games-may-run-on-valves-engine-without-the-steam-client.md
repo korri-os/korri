@@ -183,3 +183,20 @@ Owner decisions, 2026-11-23 (korri#518).
   A device whose `device.yaml` is older than that gets the modifier through a
   one-off operational migration. The engine runner gains no fallback for a
   device without it.
+- The Steam plugin must not fix the versions of FEX and Proton. A person
+  chooses a Proton and a FEX version apart from Steam's own releases. Today
+  `@korri:steam` requires the exact FEX and Proton packages, so the three can
+  move only together (korri#450). That requirement is the design fault; its
+  replacement is not decided yet.
+- Steam ships in the image of aka, ibuki, the OnePlus 6 and, when it
+  arrives, the Red Magic 11 Pro. No work goes into Steam on other devices.
+- Both runners stay. No client runner code is removed. The work goes into the
+  engine runner until it plays as close to every game as it can; the client
+  runner is the second choice, and comes back into focus later.
+- At the change of the default, a device's installed Steam games move once
+  from the client runner's folder into the engine's. They are not downloaded
+  again.
+- Later, not now: the pinned engine version follows Valve by itself, as a
+  nightly build does. Later, not now: the measure of the engine runner is the
+  person's whole Steam library, installed on aka and played game by game,
+  not a sample.
