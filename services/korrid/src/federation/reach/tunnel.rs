@@ -122,9 +122,10 @@ impl Forwards {
             });
         }
         let clients = Arc::new(Mutex::new(BTreeMap::<u16, SocketAddr>::new()));
+        let counters = Arc::new(datagrams::Counters::default());
         for (port, socket) in &udp {
-            let (port, socket, c, clients) =
-                (*port, socket.clone(), connection.clone(), clients.clone());
+            let (port, socket, c, clients, counters) =
+                (*port, socket.clone(), connection.clone(), clients.clone(), counters.clone());
             tasks.spawn(async move {
                 // Read the whole IPv6 packet before enforcing the transport's
                 // 65,507-byte bound. Never forward a truncated packet.
@@ -134,7 +135,7 @@ impl Forwards {
                         result = socket.recv_from(&mut bytes) => {
                             let Ok((n,src)) = result else {break};
                             clients.lock().expect("stream clients").insert(port,src);
-                            let _ = datagrams::send(&c,port,&bytes[..n], false);
+                            let _ = datagrams::send(&c,&counters,port,&bytes[..n], false);
                         }
                         _ = c.closed() => break,
                     }
@@ -142,6 +143,11 @@ impl Forwards {
             });
         }
         tasks.spawn(async move {
+            let _report = datagrams::Report {
+                side: "viewer",
+                connection: connection.clone(),
+                counters,
+            };
             loop {
                 let (port, payload) = tokio::select! {
                     packet = responses.recv() => match packet {
@@ -244,6 +250,7 @@ async fn serve_udp(
 ) {
     let mut tasks = JoinSet::new();
     let mut sockets = BTreeMap::new();
+    let counters = Arc::new(datagrams::Counters::default());
     for (port, target) in UDP_PORTS.into_iter().zip(targets.udp) {
         let Ok(socket) = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await else {
             return;
@@ -253,13 +260,13 @@ async fn serve_udp(
         }
         let socket = Arc::new(socket);
         sockets.insert(port, socket.clone());
-        let c = connection.clone();
+        let (c, counters) = (connection.clone(), counters.clone());
         tasks.spawn(async move {
             let mut bytes = vec![0; 65535];
             loop {
                 tokio::select! {
                     result = socket.recv(&mut bytes) => {
-                        if let Ok(n) = result {let _ = datagrams::send(&c,port,&bytes[..n], true);}
+                        if let Ok(n) = result {let _ = datagrams::send(&c,&counters,port,&bytes[..n], true);}
                         else {tokio::time::sleep(std::time::Duration::from_millis(50)).await;}
                     }
                     _ = c.closed() => break,
@@ -267,7 +274,12 @@ async fn serve_udp(
             }
         });
     }
-    let mut receiver = datagrams::Receiver::default();
+    let _report = datagrams::Report {
+        side: "peer",
+        connection: connection.clone(),
+        counters: counters.clone(),
+    };
+    let mut receiver = datagrams::Receiver::new(counters);
     while let Ok(bytes) = connection.read_datagram().await {
         if binding
             .as_ref()
