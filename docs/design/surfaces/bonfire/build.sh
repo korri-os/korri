@@ -1,7 +1,8 @@
 #!/usr/bin/env nix-shell
 #!nix-shell -i bash -p "python3.withPackages (p: [ p.fonttools p.brotli ])" coreutils gnused
 # Builds index.html from index.src.html: subsets EB Garamond to Latin and
-# inlines it, so the mockup opens from a checkout with no server.
+# inlines it and the pictures in art/, so the mockup opens from a checkout
+# with no server.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 fonts=$(nix build --no-link --print-out-paths nixpkgs#eb-garamond)/share/fonts/opentype
@@ -18,5 +19,11 @@ face() { # file, style
 
 html=$(<"$here/index.src.html")
 case $html in *'/*FONTS*/'*) ;; *) echo "no font marker in index.src.html" >&2; exit 1 ;; esac
-printf '%s\n' "${html/'/*FONTS*/'/$(<"$tmp/fonts.css")}" > "$here/index.html"
+html=${html/'/*FONTS*/'/$(<"$tmp/fonts.css")}
+for art in "$here"/art/*.webp; do # each @@art/NAME.webp@@ becomes the picture itself
+  token="@@art/$(basename "$art")@@"
+  html=${html//"$token"/data:image/webp;base64,$(base64 -w0 "$art")}
+done
+case $html in *'@@art/'*) echo "a picture named in index.src.html is missing from art/" >&2; exit 1 ;; esac
+printf '%s\n' "$html" > "$here/index.html"
 echo "built $here/index.html ($(stat -c %s "$here/index.html") bytes)"
