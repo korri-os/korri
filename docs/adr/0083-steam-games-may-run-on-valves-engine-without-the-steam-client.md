@@ -163,3 +163,23 @@ runner started the game anyway, without a word.
   session. Without it, Steam kept each engine session as an upload that
   is still pending, and refused later launch downloads. The host names the
   device to Steam with the device's Korri title.
+
+## The road to the default runner
+
+Owner decisions, 2026-11-23 (korri#518).
+
+- The goal is the engine runner as the default on every device, ARM and
+  x86_64. The parity rule above still decides it, on each architecture.
+- When the engine runner cannot play a game, Korri reports the failure and
+  names the client runner. It does not start the client runner by itself: the
+  person chooses a game's runner.
+- The engine runner has no switch for Steam Cloud. A game that uses Steam
+  Cloud syncs at launch and at exit, as it does in Steam.
+- A device with no shell signs in to Steam through a `korri` command that
+  shows Steam's QR code in the terminal (korri#603).
+- Every device runs games inside Korri's Gamescope. The product image
+  already seeds the Gamescope plugin and enables its modifier in a new
+  `device.yaml` (owner decision 2026-10-18, `nix/product/image-plugins.nix`).
+  A device whose `device.yaml` is older than that gets the modifier through a
+  one-off operational migration. The engine runner gains no fallback for a
+  device without it.
