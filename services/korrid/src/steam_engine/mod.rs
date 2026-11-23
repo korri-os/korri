@@ -30,7 +30,8 @@ pub use crate::plugin_discovery::is_steam_plugin;
 pub const ENGINE_KEY: &str = "engine";
 /// The client runner's key, the fallback.
 pub const CLIENT_KEY: &str = "steam";
-/// The key of Valve's pinned `bins_sdk_linuxarm64_linuxarm64` package.
+/// The key of Valve's pinned engine package: `bins_sdk_linuxarm64_linuxarm64`
+/// on aarch64-linux, `bins_sdk_ubuntu12` on x86_64-linux.
 pub const PACKAGE_KEY: &str = "engine-package";
 /// The system both Steam runners run.
 pub const SYSTEM_ID: &str = "steam";
@@ -122,8 +123,14 @@ pub fn steam_plugin(registry: &crate::plugin::PluginRegistry) -> Option<String> 
         .map(str::to_owned)
 }
 
-/// The one file of that package the runner uses.
+/// The one file of that package korrid hands to the host. Valve names the
+/// folder by platform: `linuxarm64` in the aarch64 package, `linux64` in the
+/// x86_64 one. The plugin's engine host is built for that same library and
+/// refuses any other file.
+#[cfg(target_arch = "aarch64")]
 pub const ENGINE_FILE: &str = "linuxarm64/steamclient.so";
+#[cfg(target_arch = "x86_64")]
+pub const ENGINE_FILE: &str = "linux64/steamclient.so";
 /// The refusal the shim reports when the launch sync finds a Steam Cloud
 /// conflict (`STATUS=plugin-launch: steam-cloud-conflict`): no game ran,
 /// and korrid has written the split.

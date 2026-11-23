@@ -154,7 +154,8 @@ pub fn valid_id(value: &str) -> bool {
 pub struct HostPlan {
     /// The `@korri:steam` package's `korri-steam-host` file.
     pub host_program: PathBuf,
-    /// The pinned engine artifact's `linuxarm64/steamclient.so`.
+    /// The pinned engine artifact's `steamclient.so` for this platform
+    /// (`ENGINE_FILE`).
     pub engine: PathBuf,
     /// korrid's Proton artifact, linked as the engine's compat tool.
     #[serde(default, skip_serializing_if = "Option::is_none")]
