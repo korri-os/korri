@@ -180,7 +180,7 @@ fn path_child() {
                 let serve = tokio::spawn(tunnel::serve(
                     connection,
                     router,
-                    tokio::sync::broadcast::channel(64).0,
+                    super::tunnel::responses(),
                     None,
                 ));
                 tokio::time::timeout(Duration::from_secs(90), async {

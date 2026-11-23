@@ -92,6 +92,29 @@ fn buffers(socket: socket2::SockRef<'_>) {
     let _ = socket.set_recv_buffer_size(UDP_BUFFER);
     let _ = socket.set_send_buffer_size(UDP_BUFFER);
 }
+/// Stream packets the viewer task lost because it fell behind the responses
+/// channel. Logged at most every 10 seconds, so a burst of loss is one line.
+#[derive(Default)]
+struct Lost {
+    unreported: u64,
+    reported: Option<std::time::Instant>,
+}
+impl Lost {
+    fn add(&mut self, packets: u64) {
+        self.unreported += packets;
+        if self
+            .reported
+            .is_none_or(|at| at.elapsed() >= std::time::Duration::from_secs(10))
+        {
+            eprintln!(
+                "korrid: reach: stream viewer fell behind; lost_packets={}",
+                self.unreported
+            );
+            self.unreported = 0;
+            self.reported = Some(std::time::Instant::now());
+        }
+    }
+}
 impl Forwards {
     pub async fn open(
         connection: Connection,
@@ -161,11 +184,15 @@ impl Forwards {
                 connection: connection.clone(),
                 counters,
             };
+            let mut lost = Lost::default();
             loop {
                 let (port, payload) = tokio::select! {
                     packet = responses.recv() => match packet {
                         Ok(packet) => packet,
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            lost.add(n);
+                            continue;
+                        }
                         Err(_) => break,
                     },
                     _ = connection.closed() => break,
@@ -196,6 +223,17 @@ impl Forwards {
 }
 
 pub(super) type Responses = tokio::sync::broadcast::Sender<(u16, Vec<u8>)>;
+/// Packets the responses channel holds for a viewer that has not read them.
+/// Sunshine sends a whole video frame, up to about 160 packets, in about
+/// 0.14 ms, faster than the viewer task writes them to its local socket. A
+/// full channel overwrites its oldest packets, so the old capacity of 64 cut
+/// the start off every frame of more than about 64 packets (#600). 4,096
+/// slots hold many frames; the channel allocates them once per connection.
+pub(super) const RESPONSES: usize = 4096;
+/// Make the channel that carries one connection's stream replies to its viewer.
+pub(super) fn responses() -> Responses {
+    tokio::sync::broadcast::channel(RESPONSES).0
+}
 /// Each side serves streams and demultiplexes UDP requests and replies exactly once.
 pub(super) async fn serve(
     connection: Connection,
@@ -343,10 +381,10 @@ mod tests {
             incoming,
             axum::Router::new(),
             targets,
-            tokio::sync::broadcast::channel(64).0,
+            responses(),
             None,
         ));
-        let responses = tokio::sync::broadcast::channel(64).0;
+        let responses = responses();
         let local = tokio::spawn(serve(
             outgoing.clone(),
             axum::Router::new(),
@@ -409,11 +447,29 @@ mod tests {
             2 * UDP_BUFFER.min(limit)
         );
     }
+    /// #600: a viewer that has read nothing yet still gets every packet of
+    /// the largest measured Sunshine frame, 158 packets, in order.
+    #[tokio::test]
+    async fn reach_responses_hold_a_whole_frame_burst() {
+        let sender = responses();
+        let mut viewer = sender.subscribe();
+        for packet in 0..160u16 {
+            sender.send((47998, packet.to_be_bytes().to_vec())).unwrap();
+        }
+        for packet in 0..160u16 {
+            assert_eq!(
+                viewer.recv().await.unwrap(),
+                (47998, packet.to_be_bytes().to_vec())
+            );
+        }
+    }
     /// Measurement probe for #600: Sunshine-sized frame bursts through the
     /// real forwards over a loopback iroh pair. Timing-dependent, so ignored.
     /// Run `nix run .#korrid-test -- --release --lib reach_burst_probe --
-    /// --ignored --nocapture`, optionally with `BURSTS=60,160`. On zao, 160-packet
-    /// bursts lost 179 of 16,000 packets with the default buffers, 0 with these.
+    /// --ignored --nocapture`, optionally with `BURSTS=60,160`. On zao, with
+    /// the 64-slot responses channel 160-packet bursts lost 7,962 of 16,000
+    /// packets and 80-packet bursts 967 of 8,000; with 4,096 slots, 0 and 0.
+    /// Default socket buffers alone cost 179 of 16,000 at 160 packets.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[ignore]
     async fn reach_burst_probe() {
@@ -421,7 +477,20 @@ mod tests {
         let sunshine = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let mut targets = Targets::default();
         targets.udp[0] = sunshine.local_addr().unwrap().port();
-        let task = tokio::spawn(serve_on(incoming, axum::Router::new(), targets));
+        let task = tokio::spawn(serve_on(
+            incoming,
+            axum::Router::new(),
+            targets,
+            responses(),
+            None,
+        ));
+        let responses = responses();
+        let local = tokio::spawn(serve(
+            outgoing.clone(),
+            axum::Router::new(),
+            responses.clone(),
+            None,
+        ));
         let forwards = Forwards::open(
             outgoing,
             Bindings {
@@ -429,6 +498,7 @@ mod tests {
                 tcp: [0; 3],
                 udp: [0; 5],
             },
+            responses.subscribe(),
         )
         .await
         .unwrap();
@@ -479,6 +549,7 @@ mod tests {
         }
         forwards.shutdown().await;
         task.abort();
+        local.abort();
         a.close().await;
         b.close().await;
     }
@@ -594,7 +665,7 @@ pub(super) async fn netplay_echo(connection: Connection) -> tokio::task::JoinHan
             }
         };
         tokio::select! {
-            _ = serve_on(connection, axum::Router::new(), targets, tokio::sync::broadcast::channel(64).0, None) => {},
+            _ = serve_on(connection, axum::Router::new(), targets, responses(), None) => {},
             _ = echo => {},
         }
     })
@@ -621,7 +692,7 @@ mod netplay_tests {
             incoming,
             axum::Router::new(),
             targets,
-            tokio::sync::broadcast::channel(64).0,
+            responses(),
             None,
         ));
         let forward = NetplayForward::open(outgoing).await.unwrap();
