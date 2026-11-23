@@ -9,9 +9,9 @@
 #
 # Ported from the reference port's tools/usb-role (docs/USB_HOST.md). The
 # port is dual-role in the device tree (dr_mode = "otg", usb-role-switch) and
-# dwc3 lets userspace drive the switch. Nothing on this board says what is
-# plugged in: there is no Type-C port manager (the s2mm005 PD controller has
-# no mainline driver) and no ID pin. A bus-powered device gets no power from
+# dwc3 lets userspace drive the switch. The fixed read-only s2mm005 checks
+# in tabs6-typec-auto provide permission; this helper owns every effect.
+# A bus-powered device gets no power from
 # the role switch alone: VBUS comes from the SM5705 charger's boost, which has
 # no kernel driver, so it is set over I2C here. Register map from the vendor
 # driver, cross-checked against the live part by the port (USB_HOST.md 2):
@@ -21,27 +21,28 @@
 #   0x20 FLEDCNTL6  bits 3:0   boost output: 5 = 4500 mV, 0xb = 5100 mV
 #
 # VBUS is never sourced while anything else may be powering the port. The
-# port refused only while the gauge said Charging; this refuses unless it says
-# Discharging (a host can feed less than the tablet draws, and Full or Not
-# charging still mean external power), unless the gauge is missing, and while
-# a USB host has the gadget configured.
+# manual host path still requires Discharging. Automatic host follows the
+# measured Phase B gauge != Charging policy plus the independent source and
+# incoming-power checks. Both require readable status and an unconfigured UDC.
 #
 # The test (usb-role.test.py) runs this file against a temporary sysfs tree.
 # Paths and timings therefore come from the environment:
 #   TABS6_SYSFS                    sysfs root (/sys)
 #   TABS6_USB_GADGET_UNIT          unit that binds the gadget; restarted after
 #                                  the port returns to device role
-#   TABS6_I2C_DEV                  the SM5705's I2C device node (/dev/i2c-1)
+#   TABS6_I2C_DEV                  test override for the resolved device node
 #   TABS6_USB_ROLE_WAIT_S          boot-*: how long to wait for the switch and
 #                                  the I2C bus (20)
 set -eu
 
 SYSFS=${TABS6_SYSFS:-/sys}
 GADGET_UNIT=${TABS6_USB_GADGET_UNIT:-}
-I2C_DEV=${TABS6_I2C_DEV:-/dev/i2c-1}
+I2C_DEV=${TABS6_I2C_DEV:-}
+CHECKER=${TABS6_TYPEC_AUTO:-tabs6-typec-auto}
+LOCK=${TABS6_USB_ROLE_LOCK:-/run/lock/tabs6-usb-role.lock}
 WAIT_S=${TABS6_USB_ROLE_WAIT_S:-20}
 
-CHG_BUS=1
+CHG_BUS=""
 CHG_ADDR=0x49
 REG_CNTL=0x0c
 REG_CHGCNTL6=0x14
@@ -61,15 +62,33 @@ die() {
 	exit 1
 }
 
+resolve_bus() {
+	if [ -z "$CHG_BUS" ]; then
+		CHG_BUS=$("$CHECKER" --sm-bus) || return 1
+		[[ "$CHG_BUS" =~ ^[0-9]+$ ]] || return 1
+	fi
+}
+
+get_reg() {
+	local value
+	resolve_bus || return 1
+	value=$(timeout --signal=KILL 0.2s i2cget -y "$CHG_BUS" $CHG_ADDR "$1" b) || return 1
+	[[ "$value" =~ ^0x[[:xdigit:]]{2}$ ]] || return 1
+	echo "$value"
+}
+
 rmw() { # register, mask, value
 	local old new
-	old=$(i2cget -y $CHG_BUS $CHG_ADDR "$1" b) || return 1
+	resolve_bus || return 1
+	old=$(get_reg "$1") || return 1
 	new=$(((old & ~$2) | $3))
-	i2cset -y $CHG_BUS $CHG_ADDR "$1" $new b
+	timeout --signal=KILL 0.2s i2cset -y "$CHG_BUS" $CHG_ADDR "$1" "$new" b || return 1
 }
 
 vbus_is_on() {
-	[ $(($(i2cget -y $CHG_BUS $CHG_ADDR $REG_CNTL b) & 7)) = "$OP_MODE_USB_OTG" ]
+	local mode
+	mode=$(get_reg $REG_CNTL) || return 1
+	[ "$((mode & 7))" = "$OP_MODE_USB_OTG" ]
 }
 
 # Why the port must not be powered now, or nothing.
@@ -79,8 +98,8 @@ power_refusal() {
 		echo "the fuel gauge is missing, so a charger cannot be ruled out"
 		return
 	fi
-	status=$(cat "$FUELGAUGE/status")
-	if [ "$status" != Discharging ]; then
+	status=$(cat "$FUELGAUGE/status") || { echo "fuel gauge read failed"; return; }
+	if [ "$status" = Charging ] || { [ "${TABS6_AUTOMATIC:-0}" != 1 ] && [ "$status" != Discharging ]; }; then
 		echo "the fuel gauge says $status: something is powering the port"
 		return
 	fi
@@ -124,39 +143,71 @@ role_file() {
 role() { cat "$(role_file)"; }
 
 vbus_on() {
-	local why
-	why=$(power_refusal)
+	local why mode
+	why=$(power_refusal) || return 1
 	[ -z "$why" ] || {
 		echo "tabs6-usb-role: not powering the port: $why" >&2
 		return 1
 	}
-	rmw $REG_FLEDCNTL6 0x0f $BST_OUT_5100MV
-	rmw $REG_CHGCNTL6 0x0c $((OTG_CURRENT_900MA << 2))
-	rmw $REG_CNTL 0x07 $OP_MODE_USB_OTG
+	# Automatic callers have already qualified three samples. Manual callers
+	# must qualify too, and can never bypass the fixed read-only checks.
+	if [ "${TABS6_AUTOMATIC:-0}" != 1 ]; then
+		for _ in 1 2; do
+			"$CHECKER" --check-host || return 1
+			sleep 0.3
+		done
+	fi
+	"$CHECKER" --check-host || return 1
+	rmw $REG_FLEDCNTL6 0x0f $BST_OUT_5100MV || return 1
+	rmw $REG_CHGCNTL6 0x0c $((OTG_CURRENT_900MA << 2)) || return 1
+	# Configuration is not permission: recheck immediately before CNTL.
+	"$CHECKER" --check-host || return 1
+	why=$(power_refusal) || return 1
+	[ -z "$why" ] || return 1
+	rmw $REG_CNTL 0x07 $OP_MODE_USB_OTG || return 1
+	mode=$(get_reg $REG_CNTL) || return 1
+	[ "$((mode & 7))" = "$OP_MODE_USB_OTG" ]
 }
 
 vbus_off() {
-	rmw $REG_CNTL 0x07 $OP_MODE_CHG_ON
-	rmw $REG_FLEDCNTL6 0x0f $BST_OUT_4500MV
+	local mode
+	for _ in 1 2 3; do
+		if rmw $REG_CNTL 0x07 $OP_MODE_CHG_ON; then
+			if mode=$(get_reg $REG_CNTL) && [ "$((mode & 7))" = "$OP_MODE_CHG_ON" ]; then
+				rmw $REG_FLEDCNTL6 0x0f $BST_OUT_4500MV || return 1
+				return 0
+			fi
+		fi
+	done
+	echo "tabs6-usb-role: ERROR: VBUS off not verified" >&2
+	return 1
 }
 
 to_host() {
-	vbus_on || return 1
-	echo host >"$(role_file)"
-	log "role host, VBUS on"
+	local r
+	if vbus_on && r=$(role_file) && echo host >"$r"; then
+		log "role host, VBUS on"
+	else
+		# No retry of a partially failed enable, even inside an if/function.
+		to_device || true
+		return 1
+	fi
 }
 
 to_device() {
-	local r
-	r=$(role_file)
-	[ "$(cat "$r")" = device ] || echo device >"$r"
-	vbus_off
-	log "role device, VBUS off"
-	# The UDC goes away in host role and the gadget is not bound again on
-	# its own when it returns. The unit binds it (or keeps a binding).
-	if [ -n "$GADGET_UNIT" ]; then
-		systemctl restart --no-block "$GADGET_UNIT"
+	local r failed=0
+	# Always request off first, but still select device if I2C is unavailable.
+	vbus_off || failed=1
+	if r=$(role_file); then
+		if [ "$(cat "$r")" != device ]; then echo device >"$r" || failed=1; fi
+	else
+		failed=1
 	fi
+	if [ "$failed" = 0 ]; then log "role device, VBUS off (readback verified)"; fi
+	if [ -n "$GADGET_UNIT" ]; then
+		systemctl restart --no-block "$GADGET_UNIT" || failed=1
+	fi
+	return "$failed"
 }
 
 # Every boot starts as the gadget with the boost off. The role switch
@@ -182,10 +233,13 @@ boot_role() {
 # runs beside the gadget, not before it.
 boot_vbus() {
 	for _ in $(seq 1 $((WAIT_S * 5))); do
-		[ -e "$I2C_DEV" ] && break
+		if resolve_bus; then
+			I2C_DEV=${TABS6_I2C_DEV:-/dev/i2c-$CHG_BUS}
+			[ -e "$I2C_DEV" ] && break
+		fi
 		sleep 0.2
 	done
-	if [ -e "$I2C_DEV" ] && vbus_off; then
+	if [ -n "$I2C_DEV" ] && [ -e "$I2C_DEV" ] && vbus_off; then
 		log "VBUS off"
 	else
 		log "could not reach the SM5705 on $I2C_DEV; VBUS left as it is"
@@ -194,11 +248,29 @@ boot_vbus() {
 
 status() {
 	local v=off
-	vbus_is_on && v=on
+	if vbus_is_on; then v=on; else
+		get_reg $REG_CNTL >/dev/null || return 1
+	fi
 	echo "role $(role), VBUS $v, USB devices $(usb_devices)"
 	if host_attached; then echo "a USB host has the gadget configured"; fi
 	[ ! -r "$FUELGAUGE/status" ] || echo "fuel gauge: $(cat "$FUELGAUGE/status")"
 }
+
+# A manual choice stops automatic policy until explicitly restarted. Stop
+# before locking: ExecStopPost uses the same serialized off/device path.
+case "${1:-status}" in
+host|device)
+	if [ "${TABS6_AUTOMATIC:-0}" != 1 ]; then
+		systemctl stop tabs6-typec-auto.service
+	fi
+	;;
+esac
+case "${1:-status}" in
+host|device|boot-vbus)
+	exec 9>"$LOCK"
+	flock -x 9
+	;;
+esac
 
 case "${1:-status}" in
 status) status ;;

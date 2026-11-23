@@ -66,7 +66,7 @@ The shell never opens `/dev/input` and gets input two ways:
 | --- | --- | --- |
 | Bluetooth controller | BlueZ → evdev → InputPlumber profile → inputd → korrid native input → shell buttons | Primary. Works for controllers InputPlumber adopts (below). Unverified on the tablet |
 | Touchscreen | fts1ba90a → libinput in the Korri compositor → Wayland touch → Slint | Surfaces get touch where their views take pointer input; the shell itself maps only "touch started" |
-| USB gamepad | USB-C in host role (`tabs6-usb-role host`) → same as Bluetooth | Manual switch only; cuts the USB lifeline while in host role |
+| USB gamepad | USB-C in host role (`tabs6-usb-role host`) → same as Bluetooth | Automatic with the permanently attached Kishi V2; cuts the USB lifeline in host role |
 | Volume keys | gpio-keys (up) / PMIC resin (down) → compositor bindings → the product's inputd volume commands (wpctl ±5 %) | Not through InputPlumber: inputd takes DBus actions only from the dbus0 composite while a gamepad exists, and a keys-only composite would take dbus0 from a paired controller (`hardware.nix`) |
 | Power key | logind | Powers the tablet off (product policy without a sleep state) |
 
@@ -92,30 +92,34 @@ connects. A trusted controller reconnects by itself when switched on.
 
 ## USB-C: lifeline or gamepad
 
-The one USB-C port is the gadget lifeline (device role) by default, on every
-boot. `tabs6-usb-role` changes it by hand:
+The permanent Kishi V2 is automatic (`tabs6-typec-auto.service`). Three
+consecutive 300 ms samples of the measured state 14 / attached / source pattern,
+no incoming VBUS and a non-Charging gauge permit host and boost (5.1 V,
+900 mA). Every read must succeed. The helper rechecks immediately before boost.
+While sourcing, the s2mm005 source role distinguishes our boost from incoming
+power. A changed role or any failed read revokes host on the first sample:
+boost off, verify readback, device, then rebind the gadget. Boot starts off/device.
 
 ```sh
-tabs6-usb-role            # role, VBUS, attached devices
-tabs6-usb-role host       # power the port (SM5705 boost, 5.1 V, 900 mA), then host
-tabs6-usb-role device     # gadget again, VBUS off, rebind the gadget unit
+tabs6-usb-role                 # role, VBUS, attached devices
+tabs6-usb-role device          # stop automatic policy; off/device, rebind gadget
+tabs6-usb-role host            # stop automatic policy; fresh checks, then host
+systemctl start tabs6-typec-auto  # resume automatic policy, starting off/device
 ```
 
-It refuses to power the port unless the fuel gauge says `Discharging` and no
-USB host has the gadget configured. Run `host` over Wi-Fi SSH: it ends a USB
-SSH session. Boot always returns to device role with the boost off
-(`tabs6-usb-role-boot*.service`). `usb-role/usb-role.test.py` exercises all of
-this against a temporary sysfs tree and register file; no hardware has run it.
+Manual host still requires `Discharging`, three source samples, no incoming
+VBUS and no configured gadget. It stops automatic monitoring: the operator
+must select device before changing cables. Run it only over Wi-Fi SSH.
+Automatic actuation failures stop the unit, request off/device and require an
+explicit restart. Suspend is blocked while automatic policy runs. This costs
+idle power but avoids leaving boost unmonitored during sleep.
 
-Proposed automatic policy (not built): hold device role for 60 s after boot;
-while a host has the gadget configured or anything powers the port, stay
-device; after 30 s of neither, power the port and become host for at most
-10 s; stay host while a USB device is attached; go back to device when it
-leaves or nothing enumerates. Its cost: with no Type-C port manager the tablet
-cannot see a gamepad before it powers the port, so it must probe, and a
-computer plugged in during a probe meets the tablet's own 5 V for up to 10 s.
-A driver for the s2mm005 PD controller (attach detection) would remove the
-probe.
+The read-only Phase A observer remains available in `tabs6-typec-status`.
+`usb-role/typec-phase-b.md` records the measured policy and its remaining
+hardware limits. `usb-role/usb-role.test.py` runs the actual helper and Rust
+daemon against temporary sysfs and register files, including charger transitions
+and failures. No s2mm005 commands, interrupt acknowledgements, firmware or flash
+writes are used.
 
 ## Build
 

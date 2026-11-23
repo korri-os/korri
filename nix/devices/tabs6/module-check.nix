@@ -70,8 +70,12 @@ let
     && config.networking.wireless.iwd.settings.DriverQuirks.DefaultInterface == "ath10k_snoc"
     && config.networking.wireless.iwd.settings.General.AddressRandomization == "disabled"
     && config.zramSwap.enable
-    # No automatic USB-C role policy: the port changes role only by hand.
-    && !(config.systemd.services ? tabs6-usb-role-auto);
+    # Automatic policy uses the manual helper; manual commands stop the unit.
+    && config.systemd.services.tabs6-typec-auto.serviceConfig.Restart == "no"
+    && config.systemd.services.tabs6-typec-auto.environment.TABS6_AUTOMATIC == "1"
+    && lib.hasSuffix "tabs6-usb-role device" config.systemd.services.tabs6-typec-auto.serviceConfig.ExecStopPost
+    && lib.hasInfix "--what=sleep --mode=block" config.systemd.services.tabs6-typec-auto.serviceConfig.ExecStart
+    && lib.elem "tabs6-usb-role-boot-vbus.service" config.systemd.services.tabs6-typec-auto.after;
   roleBoot = c.systemd.services.tabs6-usb-role-boot;
 in
 assert common c;

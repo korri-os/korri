@@ -1,7 +1,5 @@
-# The Tab S6 USB-C role: the manual switch between the gadget lifeline and a
-# powered USB host, on both systems. Every boot starts as the gadget with the
-# boost off. No automatic policy switches the port: README.md, "USB-C:
-# lifeline or gamepad", records the proposed one.
+# The measured Kishi/pass-through policy and the manual override share one
+# serialized effect path. Every boot starts device/boost-off.
 #
 # Korri's product USB gadget (nix/product/usb-gadget.nix) owns the gadget
 # itself. It has no notion of a role switch or of VBUS, because every other
@@ -20,9 +18,14 @@ let
     runtimeInputs = [
       pkgs.coreutils
       pkgs.i2c-tools
+      pkgs.util-linux
+      typecStatus
       config.systemd.package
     ];
-    text = builtins.readFile ./tabs6-usb-role.sh;
+    text = ''
+      export TABS6_USB_GADGET_UNIT="''${TABS6_USB_GADGET_UNIT:-${cfg.gadgetUnit}.service}"
+      ${builtins.readFile ./tabs6-usb-role.sh}
+    '';
   };
 in
 {
@@ -34,7 +37,7 @@ in
   };
 
   config = {
-    # The SM5705 sits on I2C bus 1; tabs6-charge loads i2c-dev for it too.
+    # Both adapters are resolved by their OF controller names, not numbering.
     boot.kernelModules = [ "i2c-dev" ];
     environment.systemPackages = [ usbRole ];
 
@@ -59,6 +62,40 @@ in
         NoNewPrivileges = true;
         CapabilityBoundingSet = "";
         RestrictAddressFamilies = [ "AF_UNIX" ];
+      };
+    };
+
+    systemd.services.tabs6-typec-auto = {
+      description = "Tab S6 automatic Kishi USB role and VBUS interlock";
+      wantedBy = [ "multi-user.target" ];
+      after = [
+        "tabs6-usb-role-boot.service"
+        "tabs6-usb-role-boot-vbus.service"
+        "${cfg.gadgetUnit}.service"
+      ];
+      path = [
+        pkgs.coreutils
+        pkgs.i2c-tools
+      ];
+      environment = {
+        TABS6_USB_ROLE_HELPER = lib.getExe usbRole;
+        TABS6_USB_GADGET_UNIT = "${cfg.gadgetUnit}.service";
+        TABS6_AUTOMATIC = "1";
+      };
+      serviceConfig = {
+        # Keep suspend from leaving boost on while sampling is stopped.
+        ExecStart = "${config.systemd.package}/bin/systemd-inhibit --what=sleep --mode=block --who=tabs6-typec-auto --why=USB-VBUS-safety ${typecStatus}/bin/tabs6-typec-auto";
+        ExecStopPost = "${lib.getExe usbRole} device";
+        # A failure requires an explicit restart, never another enable attempt.
+        Restart = "no";
+        TimeoutStopSec = 5;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        NoNewPrivileges = true;
+        ReadWritePaths = [
+          "/sys"
+          "/run/lock"
+        ];
       };
     };
 

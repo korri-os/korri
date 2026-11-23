@@ -1,4 +1,43 @@
-# Phase B design (not deployed; Phase A gate remains closed)
+# Phase B: permanent Kishi V2 with optional pass-through charger
+
+## Implemented policy (owner instruction, 2026-11-22)
+
+This measured policy supersedes the broader proposed policy below. Phase A's
+journal was collapsed on the actual tablet, not inferred from Samsung enums:
+
+| Signal | Kishi, no charger (61,666 samples) | Pass-through charger |
+| --- | --- | --- |
+| s2mm005 state / attached / source | 14 / 1 / 1 | 21 / 1 / 0 (transients 0, 20, 42) |
+| MUIC VBUS | 00 | 01 |
+| STATUS1 | 22 | 21 or 29 |
+| Gauge | Discharging | Charging (may lag the role transition) |
+
+`tabs6-typec-auto` samples fresh status every 300 ms. It enables only after
+three consecutive state=14, attached=1, source=1, MUIC VBUS=00, VBUSPOK=0,
+gauge!=Charging samples with every read successful. The helper takes two more
+fresh checks around its configuration writes. Read errors, state!=14,
+source=0, attached=0 or Charging revoke immediately. Incoming VBUS revokes
+while boost is off. While our boost is on, its own VBUS indicators are not
+incoming-power evidence: the MCU source role is authoritative. Boot/restart
+cannot inherit sourcing permission. No interrupts are acknowledged.
+
+The existing helper owns all writes, serialized with flock. It resolves the
+SM5705 adapter by OF name, preserves the existing boost/current settings,
+checks all I2C exits, verifies CNTL readback and retries disable three times.
+It requests boost-off before device, even if disable cannot be verified.
+Failed actuation stops automatic policy; systemd ExecStopPost also requests
+off/device on normal stop, failure or process death. A manual host/device
+command stops the daemon before taking its lock; `systemctl start
+tabs6-typec-auto` resumes it. Manual host retains the stricter Discharging
+check and now also needs three measured source samples. Manual host is an
+unmonitored operator override, not a second automatic policy.
+
+The daemon blocks logind suspend while running. Polling is the safety path;
+GPIO status remains in the separate observer. Each I2C subprocess has a 200 ms
+timeout. Total I2C loss can still prevent physical boost-off: a failure is
+reported, never represented as verified VBUS-off.
+
+## Earlier design and acceptance inventory (reference, not the active policy)
 
 ## What the source establishes
 
