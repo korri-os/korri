@@ -16,7 +16,7 @@ pkgs.runCommand "tabs6-usb-role-check"
   }
   ''
     shellcheck -s bash ${./tabs6-usb-role.sh} ${../bluetooth/tabs6-bt-pair.sh}
-    cp ${./.}/*.rs ${./.}/phase-a-transition.txt .
+    cp ${./.}/*.rs ${./.}/*.txt .
     rustfmt --edition 2021 --check typec-status.rs typec-auto.rs typec.rs
     rustc --edition=2021 -D warnings --test typec-status.rs -o typec-status-tests
     ./typec-status-tests

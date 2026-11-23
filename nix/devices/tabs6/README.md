@@ -92,25 +92,24 @@ connects. A trusted controller reconnects by itself when switched on.
 
 ## USB-C: lifeline or gamepad
 
-The permanent Kishi V2 is automatic (`tabs6-typec-auto.service`). Three
-consecutive 300 ms samples of the measured state 14 / attached / source pattern,
-no incoming VBUS and a non-Charging gauge permit host and boost (5.1 V,
-900 mA). Every read must succeed. The helper rechecks immediately before boost.
-While sourcing, the s2mm005 source role distinguishes our boost from incoming
-power. A changed role or any failed read revokes host on the first sample:
-boost off, verify readback, device, then rebind the gadget. Boot starts off/device.
+`tabs6-typec-auto.service` currently observes and keeps the port DEVICE with
+VBUS off. Automatic HOST is blocked: live tests did not recover the s2mm005
+source flag with our boost on, and STATUS1/MUIC cannot distinguish our output
+from incoming power. The daemon starts at boot and remains running. It never
+enables boost, even with a source-qualified Kishi. `usb-role/typec-phase-b.md`
+records the measurements and the evidence needed to unblock automatic HOST.
 
 ```sh
 tabs6-usb-role                 # role, VBUS, attached devices
 tabs6-usb-role device          # stop automatic policy; off/device, rebind gadget
 tabs6-usb-role host            # stop automatic policy; fresh checks, then host
-systemctl start tabs6-typec-auto  # resume automatic policy, starting off/device
+systemctl start tabs6-typec-auto  # resume safe observe mode, starting off/device
 ```
 
 Manual host still requires `Discharging`, three source samples, no incoming
 VBUS and no configured gadget. It stops automatic monitoring: the operator
 must select device before changing cables. Run it only over Wi-Fi SSH.
-Automatic actuation failures stop the unit, request off/device and require an
+Off/device actuation failures stop the unit, request off/device and require an
 explicit restart. Suspend is blocked while automatic policy runs. This costs
 idle power but avoids leaving boost unmonitored during sleep.
 

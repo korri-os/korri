@@ -1,5 +1,6 @@
-# The measured Kishi/pass-through policy and the manual override share one
-# serialized effect path. Every boot starts device/boost-off.
+# Automatic HOST is blocked pending independent power-direction evidence.
+# The running observer and manual override share one serialized effect path.
+# Every boot starts device/boost-off. See typec-phase-b.md.
 #
 # Korri's product USB gadget (nix/product/usb-gadget.nix) owns the gadget
 # itself. It has no notion of a role switch or of VBUS, because every other
@@ -66,7 +67,7 @@ in
     };
 
     systemd.services.tabs6-typec-auto = {
-      description = "Tab S6 automatic Kishi USB role and VBUS interlock";
+      description = "Tab S6 USB-C safety observer (automatic HOST blocked)";
       wantedBy = [ "multi-user.target" ];
       after = [
         "tabs6-usb-role-boot.service"

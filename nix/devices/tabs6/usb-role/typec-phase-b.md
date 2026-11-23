@@ -1,6 +1,121 @@
 # Phase B: permanent Kishi V2 with optional pass-through charger
 
-## Implemented policy (owner instruction, 2026-11-22)
+## Current policy: observe and stay DEVICE (2026-11-22 live safety block)
+
+Automatic HOST is **blocked**. `tabs6-typec-auto` runs at boot and remains
+running, but never invokes the helper's `host` command. It starts off/device,
+logs fresh status every 300 ms, and requests off/device on read failure,
+unexpected boost, or a late dwc3 host-role completion. Its journal says
+`mode=observe automatic_host=blocked reason=no_verified_power_direction`.
+There is no runtime opt-in to automatic HOST.
+
+This is the parent-approved safe outcome of the flapping investigation. The
+required recovery to state 14 / attached 1 / source 1 did **not** occur while
+boost was on. USB enumeration does not establish safe power direction. A longer
+settle window, accepting source=0 indefinitely, or using successful enumeration
+as power permission would violate the owner's negligible-risk constraint.
+The charger plug/unplug acceptance test was therefore **not performed**.
+
+Manual `tabs6-usb-role host` remains available with its existing fresh interlock
+and effect ordering. It stops the daemon and requires Discharging, three source
+checks, no incoming VBUS, and no configured gadget. The new checker also rejects
+charger faults, unknown STATUS1 values and MUIC charger/PC device signatures.
+This remains an **unmonitored operator override**, not proof of safe pass-through
+operation. Select `device` before changing cables, then restart the daemon.
+
+### Measured sequence, charger unplugged, Kishi taped on
+
+`phase-b-host-transition.txt` contains all 51 raw policy samples, including the
+three qualification samples and the first 5 s after HOST. It uses the actual
+journal producer's format, including elapsed time, dwc3 role, CNTL, boost,
+MUIC device types and sample duration. The target period was 100 ms; subprocess
+reads and actuation added scheduling jitter. No interrupts or firmware commands
+were sent. `phase-b-flap.txt` preserves the original daemon's premature shutdown.
+
+VBUS-first trial, kernel monotonic time 4668.688671 s at verified HOST:
+
+| Time after HOST | Observed event |
+| --- | --- |
+| 95 ms | state 0 / attached 0 / source 0; CNTL=07, boost=0b, MUIC VBUS=01, STATUS1=21; dwc3 still reports device |
+| 174 ms | Same power/CC status; dwc3 reports host |
+| 267–585 ms | state 0 / attached 1 / source 0 |
+| 379 ms | `usb 1-1: new full-speed USB device number 2 using xhci-hcd` |
+| 535 ms | First `Razer Razer Kishi V2` input node appears; HID interfaces follow |
+| 686 ms | state 0 / attached 0 / source 0 |
+| 794 ms onward | state 14 / attached 0 / source 0; no source=1 recovery |
+| 3103 ms | Settle deadline expires; DEVICE requested, retry delayed 3 s |
+| 3225 ms | `role device, VBUS off (readback verified)` |
+
+Throughout the powered portion, STATUS1=0x21, MUIC VBUS=01 and device types
+were 00/00/00. Gauge remained Discharging. After off, STATUS1 returned to 0x22.
+The Kishi disconnected when boost went off. Sustained HOST and inputd Ready
+were **not accepted**; transient input nodes alone do not satisfy acceptance.
+
+A second experiment requested dwc3 host first and waited for host readback
+before enabling boost. Host readback was at 4760.614866 s; verified boost-on
+was at 4760.920779 s. It produced the **same** 0/0/0 → 0/1/0 → 14/0/0 sequence,
+with 14/0/0 first sampled at 787 ms. It timed out at 3104 ms and verified off
+at 3239 ms. Changing order did not restore the source flag. The experimental
+helper change was removed; the shipped manual helper still powers VBUS first.
+
+### STATUS1/MUIC do not prove direction
+
+Grounding: Samsung commit `37cf30da0578a6378a3e3ef5e17aede89233defe`,
+`include/linux/mfd/sm5705/sm5705.h` (`SM5705_INT_STATUS1_*`) and
+`drivers/muic/universal/muic_regmap_sm5705.c` (`DEVT1_*`, `RSVDID1_VBUS_VALID`).
+
+| Register value | Meaning, not a power-direction claim |
+| --- | --- |
+| STATUS1 0x22 (decimal 34) | VBUSUVLO + WPCINUVLO; measured boost-off baseline |
+| STATUS1 0x21 (decimal 33) | VBUSPOK + WPCINUVLO; measured **both** for our OTG output and charger input |
+| STATUS1 0x29 (decimal 41) | 0x21 plus VBUSLIMIT; revoke as a fault, not as an OTG/input discriminator |
+| STATUS1 0x15 (decimal 21), if reported | VBUSPOK + VBUSOVP + WPCINPOK; reject; not an OTG direction flag |
+| MUIC VBUS_VALID bit0 | Voltage present on the shared port; rises for our output too |
+| MUIC DEVT1 bit7 (USB_OTG) | Device classification, not proven independent direction; absent in these trials |
+
+There is no dedicated OTG-versus-external-input direction bit in the inspected
+STATUS1/MUIC definitions. VBUSOVP/LIMIT, wireless input and MUIC charger/PC
+signatures can revoke permission, but their absence cannot prove power direction.
+
+### Bounded candidate policy retained for regression tests
+
+The pure policy implements a fixed 3 s settle window after verified actuation.
+Only measured redetection states (0 with source=0, then 14 with both flags
+clear) may wait while our boost is verified on. Read failures, Charging,
+sink attachment (including 17/20/21), charger faults, MUIC charger signatures,
+unknown states or lost boost revoke immediately. The window never extends on
+another sample. A start that does not recover state 14 / attached 1 / source 1
+requests DEVICE and waits 3, 6, 12, 24, 48, then at most 60 s before another
+qualification. Read errors cannot erase backoff. Only 60 s of confirmed HOST
+resets backoff. This candidate is **not permission to actuate**: the daemon
+blocks every candidate HOST action and stays DEVICE.
+
+Tests replay both live fixtures and Phase A, cover the exact deadline and
+backoff cap, and exercise the real daemon with file-backed I2C commands. They
+prove that the shipped daemon never enables HOST even with permanent source
+qualification, but removes unexpected boost or host role. All manual helper
+interlock, failure-cleanup and write-order tests remain.
+
+### What would unblock automatic HOST
+
+Either of these needs evidence before automatic HOST can return:
+
+- A validated, independent s2mm005 power-direction signal that remains usable
+  with our boost on and changes promptly on pass-through charger insertion.
+  Inspect Samsung's power-role/PD-contract handling, source/VBUS status and
+  PD/DFP sourcing indications. The source contains `Port_Power_Role`,
+  `FUNC_STATE.IS_SOURCE`, `FUNC_STATE.IS_DFP` and source-status handling;
+  these are investigation candidates, **not** permission. DFP alone is a data
+  role and must never substitute for power direction. Do not send PD requests,
+  swaps, firmware commands or new configuration writes to obtain evidence.
+- Evidence for how the Kishi V2 pass-through electrically isolates an attached
+  charger from the phone port while the phone sources VBUS. Enumeration and
+  a Discharging gauge do not prove this isolation.
+
+Keep the daemon running in observe mode until that evidence exists. Do not run
+the charger acceptance test against the unproven powered-host signature.
+
+## Earlier implemented policy (superseded by the live safety block above, 2026-11-22)
 
 This measured policy supersedes the broader proposed policy below. Phase A's
 journal was collapsed on the actual tablet, not inferred from Samsung enums:

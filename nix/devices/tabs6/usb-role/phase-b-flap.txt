@@ -1,0 +1,8 @@
+[ 3942.856554] tabs6 systemd-inhibit[270768]: elapsed_ms=104752 sample=Ok(Sample { state: 14, attached: true, source: true, muic_vbus: 0, charger: 34, gauge: "Discharging", sourcing: false }) action=Wait
+[ 3943.151873] tabs6 systemd-inhibit[270768]: elapsed_ms=105047 sample=Ok(Sample { state: 14, attached: true, source: true, muic_vbus: 0, charger: 34, gauge: "Discharging", sourcing: false }) action=Wait
+[ 3943.455103] tabs6 systemd-inhibit[270768]: elapsed_ms=105348 sample=Ok(Sample { state: 14, attached: true, source: true, muic_vbus: 0, charger: 34, gauge: "Discharging", sourcing: false }) action=Host
+[ 3943.791219] tabs6 systemd-inhibit[285743]: tabs6-usb-role: role host, VBUS on
+[ 3943.857195] tabs6 systemd-inhibit[270768]: elapsed_ms=105752 sample=Ok(Sample { state: 0, attached: false, source: false, muic_vbus: 1, charger: 33, gauge: "Discharging", sourcing: true }) action=Device
+[ 3943.968177] tabs6 systemd-inhibit[285832]: tabs6-usb-role: role device, VBUS off (readback verified)
+[ 3944.136211] tabs6 systemd-inhibit[270768]: elapsed_ms=106031 sample=Ok(Sample { state: 0, attached: false, source: false, muic_vbus: 0, charger: 34, gauge: "Discharging", sourcing: false }) action=Device
+[ 3944.464438] tabs6 systemd-inhibit[270768]: elapsed_ms=106360 sample=Ok(Sample { state: 14, attached: false, source: false, muic_vbus: 0, charger: 34, gauge: "Discharging", sourcing: false }) action=Device

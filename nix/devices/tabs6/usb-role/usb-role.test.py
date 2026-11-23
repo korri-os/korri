@@ -59,6 +59,8 @@ case "$*" in
 '-y 6 w2@0x33 0x00 0x20 r4') cat "$TABS6_TEST_REGS/func" ;;
 '-y 7 w1@0x25 0x15 r1') printf '0x%02x\n' "$(cat "$TABS6_TEST_REGS/muic")" ;;
 '-y 7 w1@0x49 0x08 r1') printf '0x%02x\n' "$(cat "$TABS6_TEST_REGS/charger")" ;;
+'-y 7 w1@0x25 0x0a r3') echo '0x00 0x00 0x00' ;;
+'-y 7 w1@0x49 0x20 r1') printf '0x%02x\n' "$(cat "$TABS6_TEST_REGS/0x20")" ;;
 '-y 7 w1@0x49 0x0c r1') printf '0x%02x\n' "$(cat "$TABS6_TEST_REGS/0x0c")" ;;
 *) echo 'forbidden transfer' >&2; exit 1 ;;
 esac
@@ -287,7 +289,8 @@ class UsbRole(unittest.TestCase):
 
     def test_each_policy_read_failure_or_short_read_denies_host(self):
         for name in ("w2@0x33-0x00-0x08", "w2@0x33-0x00-0x20",
-                     "w1@0x25-0x15-r1", "w1@0x49-0x08-r1", "w1@0x49-0x0c-r1"):
+                     "w1@0x25-0x15-r1", "w1@0x49-0x08-r1", "w1@0x49-0x0c-r1",
+                     "w1@0x49-0x20-r1", "w1@0x25-0x0a-r3"):
             with self.subTest(name=name):
                 failure = self.regs / f"fail-transfer-{name}"
                 failure.touch()
@@ -380,37 +383,39 @@ class UsbRole(unittest.TestCase):
         with (self.tmp / "daemon.log").open("w+") as log:
             proc = subprocess.Popen([os.environ["TABS6_TEST_AUTO"]], env=env,
                                     stdout=log, stderr=subprocess.STDOUT)
-            def wait_role(role, limit=2):
+            def wait_off(limit=1):
                 start = time.monotonic()
-                while self.role() != role and time.monotonic() - start < limit:
+                while (self.role() != "device" or self.reg(CNTL) & 7 != 5) and time.monotonic() - start < limit:
                     self.assertIsNone(proc.poll(), (self.tmp / "daemon.log").read_text())
                     time.sleep(0.01)
-                self.assertEqual(self.role(), role, (self.tmp / "daemon.log").read_text())
+                self.assertEqual(self.role(), "device", (self.tmp / "daemon.log").read_text())
+                self.assertEqual(self.reg(CNTL) & 7, 5)
                 return time.monotonic() - start
             try:
-                host_time = wait_role("host")
-                self.assertGreaterEqual(host_time, 0.6)
-                # Locally generated VBUS must not make the daemon oscillate.
-                self.reg("muic", 1)
-                self.reg("charger", 0x21)
-                time.sleep(0.7)
-                self.assertEqual(self.role(), "host")
-                replay(5)  # Real charger-plug detach, before gauge changes.
-                self.assertLess(wait_role("device"), 1.0)
-                self.assertEqual(self.reg(CNTL) & 7, 5)
-                for index in (6, 7, 8, 9):
+                # Even a permanently attached source-qualified Kishi must
+                # not grant automatic HOST until direction is proven.
+                time.sleep(1.3)
+                self.assertIsNone(proc.poll())
+                self.assertEqual(self.role(), "device")
+                self.assertNotIn("0x0c 247", self.writes())
+                self.assertIn("mode=observe automatic_host=blocked", (self.tmp / "daemon.log").read_text())
+                self.assertIn("staying_device=true", (self.tmp / "daemon.log").read_text())
+                for index in (5, 6, 7, 8, 9, 11, 12):
                     replay(index)
                     time.sleep(0.32)
                     self.assertEqual(self.role(), "device")
-                replay(11)  # Role is source again; gauge still says Charging.
-                time.sleep(0.65)
-                self.assertEqual(self.role(), "device")
-                replay(12)
-                self.assertLess(wait_role("host"), 2)
+                    self.assertNotIn("0x0c 247", self.writes())
+                # Unexpected boost or a late role completion must be undone,
+                # never inherited as permission by observe mode.
+                self.set_role("host")
+                self.reg(CNTL, 0xF7)
+                off_time = wait_off()
+                self.assertLess(off_time, 1.0)
                 (self.regs / "fail-transfer-w2@0x33-0x00-0x20").touch()
-                fault_time = wait_role("device")
-                self.assertLess(fault_time, 1.0)
-                print(f"daemon: initial host={host_time:.3f}s, read-fault off/device={fault_time:.3f}s")
+                self.set_role("host")
+                self.assertLess(wait_off(), 1.0)
+                self.assertNotIn("0x0c 247", self.writes())
+                print(f"daemon observe: unexpected boost off/device={off_time:.3f}s; never enabled HOST")
             finally:
                 proc.terminate()
                 proc.wait(timeout=5)
