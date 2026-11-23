@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bonfire: the devices</title>
+<style>
+/*FONTS*/
+:root {
+  --pitch: #070605;   /* the ground */
+  --soot: #13100c;    /* panels */
+  --iron: #2b251c;    /* quiet rules */
+  --bone: #dcd3bd;    /* words */
+  --ash: #91876f;     /* quiet words */
+  --tarnish: #b59555; /* ornament and titles */
+  --ember: #ec7a2b;   /* focus, a lit fire, the one action */
+  --cold: #66707a;    /* a fire that is out */
+  --blood: #c4523e;   /* what went wrong */
+  --u: clamp(13px, 0.55vw + 0.9vh + 5px, 22px); /* one unit of type, from both axes */
+  --gap: calc(var(--u) * 1);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { background: var(--pitch); }
+body {
+  min-height: 100vh; color: var(--bone);
+  font: 400 var(--u)/1.45 "EB Garamond", "Garamond", serif;
+  font-feature-settings: "kern", "liga", "onum";
+  background:
+    radial-gradient(120% 90% at 78% 62%, rgba(236,122,43,.13), transparent 55%),
+    radial-gradient(140% 120% at 50% 40%, transparent 45%, rgba(0,0,0,.85) 100%),
+    var(--pitch);
+  background-attachment: fixed;
+}
+/* Grain: the ground is stone, not a flat fill. */
+body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .5; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 .6 0 0 0 0 .55 0 0 0 0 .45 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; text-align: inherit; }
+:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+
+/* ---------- the frame ---------- */
+.frame {
+  position: relative; min-height: 100vh;
+  padding: calc(var(--u) * var(--pad)) calc(var(--u) * var(--pad)) 0;
+  display: flex; flex-direction: column;
+}
+[data-chrome="full"] { --pad: 2.2; --clear: 2.6; } /* --clear: room the corner pieces need on the first and last lines */
+[data-chrome="lean"] { --pad: 0.8; --clear: 0; }
+.edge { position: fixed; z-index: 4; inset: calc(var(--u) * .7); pointer-events: none; border: 1px solid rgba(181,149,85,.38); outline: 1px solid rgba(181,149,85,.14); outline-offset: 4px; }
+.edge svg { position: absolute; width: calc(var(--u) * 4.2); height: calc(var(--u) * 4.2); color: var(--tarnish); }
+.edge .tl { top: -1px; left: -1px; } .edge .tr { top: -1px; right: -1px; transform: scaleX(-1); }
+.edge .bl { bottom: -1px; left: -1px; transform: scaleY(-1); } .edge .br { bottom: -1px; right: -1px; transform: scale(-1); }
+[data-chrome="lean"] .edge { inset: 3px; outline: 0; }
+[data-chrome="lean"] .edge svg { display: none; }
+
+/* ---------- the head ---------- */
+.head { display: flex; align-items: center; gap: var(--gap); padding: 0 calc(var(--u) * var(--clear)) calc(var(--u) * .9); }
+.head h1 {
+  font-weight: 400; font-size: calc(var(--u) * 2.1); line-height: 1; letter-spacing: .09em;
+  font-variant-caps: small-caps; color: var(--tarnish);
+  text-shadow: 0 0 calc(var(--u) * 1.2) rgba(236,122,43,.35);
+  white-space: nowrap;
+}
+.head .rule { flex: 1; height: 1px; min-width: 1ch; background: linear-gradient(90deg, transparent, var(--tarnish)); opacity: .8; position: relative; }
+.head .rule:not(.left) { background: linear-gradient(90deg, var(--tarnish), rgba(181,149,85,.25)); }
+.head .rule::after { /* the lozenge that ends a rule beside the title */
+  content: ""; position: absolute; top: 50%; right: 0; width: .45em; height: .45em; background: var(--tarnish); transform: translate(50%, -50%) rotate(45deg);
+}
+.head .rule:not(.left)::after { right: auto; left: 0; transform: translate(-50%, -50%) rotate(45deg); }
+.head .tally { color: var(--ash); white-space: nowrap; font-style: italic; }
+[data-chrome="lean"] .head h1 { font-size: calc(var(--u) * 1.5); }
+[data-chrome="lean"] .head { padding-bottom: calc(var(--u) * .4); }
+[data-structure="stack"] .head .rule.left { display: none; }
+
+/* ---------- the body ---------- */
+.body { flex: 1; display: grid; gap: calc(var(--u) * 1.6); align-items: start; }
+[data-structure="split"] .body { grid-template-columns: minmax(15em, 5fr) 8fr; }
+[data-structure="stack"] .body { grid-template-columns: 1fr; gap: 0; }
+
+/* the list: one row per device */
+.fires { list-style: none; }
+.fire {
+  display: grid; grid-template-columns: 1lh 1fr auto; column-gap: .7em; align-items: center;
+  width: 100%; padding: .42em .9em .42em .7em; position: relative;
+  border-top: 1px solid transparent; border-bottom: 1px solid rgba(43,37,28,.9);
+}
+.fire .mark { width: 1lh; height: 1lh; }
+.fire .name { font-size: 1.18em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fire .word { color: var(--ash); white-space: nowrap; font-style: italic; }
+.fire[data-state="failed"] .word { color: var(--blood); }
+.fire[data-state="failed"] .name, .fire[data-state="loading"] .name { color: var(--ash); }
+.fire[aria-current="true"] {
+  border-top-color: rgba(181,149,85,.75); border-bottom-color: rgba(181,149,85,.75);
+  background: linear-gradient(90deg, rgba(236,122,43,.34), rgba(236,122,43,.12) 55%, transparent);
+}
+.fire[aria-current="true"] .name { color: #fff3dc; text-shadow: 0 0 .7em rgba(236,122,43,.7); }
+.fire[aria-current="true"] .word { color: var(--bone); }
+.fire[aria-current="true"]::before { /* the cursor: a small gold lozenge, as the games mark the row in hand */
+  content: ""; position: absolute; left: -.38em; top: 50%; width: .5em; height: .5em;
+  background: var(--tarnish); transform: translateY(-50%) rotate(45deg); box-shadow: 0 0 .5em var(--ember);
+}
+.mark { display: block; }
+.mark .flame { fill: var(--cold); } .mark .core { fill: none; } .mark .logs { stroke: var(--cold); }
+[data-state="ready"] .mark .flame { fill: var(--ember); filter: drop-shadow(0 0 3px rgba(236,122,43,.9)); }
+[data-state="ready"] .mark .core { fill: #ffd99a; }
+[data-state="ready"] .mark .logs { stroke: var(--tarnish); }
+[data-state="loading"] .mark .flame { fill: none; stroke: var(--tarnish); stroke-width: 1.4; }
+[data-state="loading"] .mark .logs { stroke: var(--tarnish); }
+[data-state="failed"] .mark .flame { display: none; }
+
+/* the detail: one device, as the games show one item */
+.detail {
+  position: relative; background: linear-gradient(180deg, rgba(19,16,12,.94), rgba(10,8,6,.9));
+  border: 1px solid rgba(181,149,85,.45); box-shadow: inset 0 0 0 4px var(--pitch), inset 0 0 0 5px rgba(181,149,85,.18), 0 calc(var(--u) * 1) calc(var(--u) * 3) rgba(0,0,0,.7);
+  padding: calc(var(--u) * 1.5);
+}
+[data-structure="split"] .detail { position: sticky; top: calc(var(--u) * var(--pad)); }
+[data-structure="stack"] .detail { margin: .5em 0 1em; padding: calc(var(--u) * 1); }
+.plate { display: grid; gap: calc(var(--u) * 1.4); align-items: center; }
+[data-plate="beside"] .plate { grid-template-columns: minmax(8em, 2fr) 3fr; }
+[data-plate="above"] .plate { grid-template-columns: 1fr; }
+[data-plate="none"] .hearth { display: none; }
+.hearth { width: 100%; max-height: 34vh; aspect-ratio: 1; display: block; margin: 0 auto; }
+[data-plate="above"] .hearth { max-height: 24vh; }
+.hearth .cold-only { display: none; }
+[data-state="failed"] .hearth .lit-only { display: none; }
+[data-state="failed"] .hearth .cold-only { display: block; }
+[data-state="loading"] .hearth .lit-only { opacity: .35; }
+.who h2 { font-weight: 400; font-size: calc(var(--u) * 2.4); line-height: 1.05; letter-spacing: .02em; color: #fff3dc; overflow-wrap: anywhere; }
+.who .kind { color: var(--tarnish); font-style: italic; margin-top: .15em; }
+.facts { margin-top: calc(var(--u) * .9); }
+.facts div { display: flex; justify-content: space-between; gap: 1.2em; padding: .2em 0; border-bottom: 1px solid var(--iron); }
+.facts dt { color: var(--ash); white-space: nowrap; }
+.facts dd { text-align: right; font-variant-numeric: tabular-nums lining-nums; overflow-wrap: anywhere; }
+.facts dd.bad { color: var(--blood); }
+.facts dd.warm { color: var(--ember); }
+.lore { margin-top: calc(var(--u) * 1.2); padding-top: calc(var(--u) * 1.1); position: relative; max-width: 62ch; }
+.lore::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, var(--tarnish), rgba(181,149,85,.15) 70%, transparent); }
+.lore p { font-style: italic; color: #c9bfa6; }
+.lore p + p { margin-top: .5em; font-style: normal; color: var(--bone); }
+.acts { margin-top: calc(var(--u) * 1.3); display: flex; flex-wrap: wrap; gap: .8em; }
+/* A short container cannot afford the walk down to the actions: they move up beside the name. */
+[data-acts="first"] .acts { margin: calc(var(--u) * .7) 0 0; }
+[data-acts="first"][data-structure="split"] .who { display: grid; grid-template-columns: 1fr auto; column-gap: 1.5em; align-items: center; }
+[data-acts="first"][data-structure="split"] .who .acts { grid-column: 2; grid-row: 1 / span 2; margin: 0; }
+[data-acts="first"][data-structure="split"] .who .facts { grid-column: 1 / -1; }
+[data-acts="first"] .who h2 { font-size: calc(var(--u) * 1.7); }
+[data-acts="first"] .detail { padding: calc(var(--u) * .9); }
+.act {
+  padding: .5em 1.5em .55em; border: 1px solid rgba(181,149,85,.55); letter-spacing: .03em;
+  background: rgba(19,16,12,.8); min-height: 44px; flex: 0 1 22em; text-align: center;
+}
+.act.prime {
+  color: #1a0d04; border-color: #ffcf8a;
+  background: linear-gradient(180deg, #ffb45c, var(--ember) 55%, #b9521a);
+  box-shadow: 0 0 calc(var(--u) * 1.4) rgba(236,122,43,.45), inset 0 1px 0 rgba(255,255,255,.45);
+  font-size: 1.1em;
+}
+
+/* ---------- the foot: what the focused thing does, and the keys ---------- */
+.foot {
+  position: sticky; bottom: 0; margin: calc(var(--u) * 1.2) calc(var(--u) * var(--pad) * -1) 0;
+  padding: .55em calc(var(--u) * (var(--pad) + var(--clear))) calc(.55em + var(--u) * .7);
+  background: var(--pitch); border-top: 1px solid rgba(181,149,85,.3); z-index: 3;
+  display: flex; align-items: center; justify-content: space-between; gap: .3em 1.6em;
+}
+/* The help line is a readout: it gives way to the keys, and its words stay in the detail's second line. */
+.foot .help { color: var(--ash); font-style: italic; flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-structure="stack"] .foot .help { display: none; }
+.keys { display: flex; flex: none; gap: .2em 1.3em; list-style: none; margin-left: auto; }
+.keys button { display: flex; align-items: center; gap: .45em; min-height: 44px; }
+.keys kbd {
+  font: inherit; font-size: .8em; line-height: 1; min-width: 1.9em; text-align: center; padding: .32em .45em .36em;
+  color: var(--tarnish); border: 1px solid rgba(181,149,85,.7); border-radius: 999px;
+}
+[data-chrome="lean"] .keys button { min-height: 36px; }
+
+/* ---------- the event line: one moment, for one event ---------- */
+.event { position: fixed; inset: 0; display: none; place-items: center; pointer-events: none; z-index: 5; }
+[data-banner="on"] .event { display: grid; }
+.event div {
+  width: 100%; padding: calc(var(--u) * 1.1) 1em calc(var(--u) * 1.3); text-align: center;
+  background: linear-gradient(90deg, transparent, rgba(0,0,0,.9) 22%, rgba(0,0,0,.9) 78%, transparent);
+  border-block: 1px solid transparent; border-image: linear-gradient(90deg, transparent, rgba(181,149,85,.8) 30%, rgba(181,149,85,.8) 70%, transparent) 1;
+}
+.event strong {
+  display: block; font-weight: 400; font-size: clamp(1.6em, 5.2vw, 4.2em); line-height: 1.05; letter-spacing: .14em;
+  font-variant-caps: small-caps; color: #ffc46e; text-shadow: 0 0 .5em rgba(236,122,43,.85), 0 0 1.4em rgba(236,122,43,.4);
+}
+.event span { color: var(--bone); font-style: italic; }
+[data-banner="on"] .frame { filter: brightness(.55) saturate(.8); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="corner" viewBox="0 0 60 60">
+      <g fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round">
+        <path d="M1 58V14C1 6 6 1 14 1h44"/>
+        <path d="M6 44V17C6 10 10 6 17 6h27" opacity=".55"/>
+        <path d="M14 1c0 9 4 13 13 13M1 14c9 0 13 4 13 13"/>
+        <path d="M14 14c6 0 9 3 9 9 0 5-3 8-7 8-3 0-5-2-5-5s2-4 4-4"/>
+        <path d="M27 14c5-4 11-4 15 0M14 27c-4 5-4 11 0 15" opacity=".7"/>
+      </g>
+      <path d="M14 10l4 4-4 4-4-4z" fill="currentColor"/>
+    </symbol>
+    <symbol id="rule" viewBox="0 0 300 14" preserveAspectRatio="none">
+      <path d="M0 7h300" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke"/>
+    </symbol>
+    <symbol id="mark" viewBox="0 0 24 24">
+      <path class="flame" d="M12 2.5c.8 3.6 5.2 5.600 5.200 10.300 0 3.200-2.300 5.400-5.200 5.400s-5.200-2.200-5.200-5.400c0-2 .9-3.500 2.100-4.700.2 1.600.9 2.500 1.800 2.900C10.300 8.200 10.800 5 12 2.500z"/>
+      <path class="core" d="M12 10.500c.5 1.700 2.200 2.500 2.200 4.400 0 1.300-1 2.300-2.200 2.300s-2.200-1-2.200-2.300c0-1.900 1.700-2.700 2.200-4.400z"/>
+      <g class="logs" fill="none" stroke-width="1.6" stroke-linecap="round"><path d="M4.500 21.500l15-3.500M19.500 21.500l-15-3.500"/></g>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="edge" aria-hidden="true">
+  <svg class="tl"><use href="#corner"/></svg><svg class="tr"><use href="#corner"/></svg>
+  <svg class="bl"><use href="#corner"/></svg><svg class="br"><use href="#corner"/></svg>
+</div>
+
+<main class="frame" id="frame">
+  <header class="head">
+    <span class="rule left" aria-hidden="true"></span>
+    <h1>Bonfires</h1>
+    <span class="rule" aria-hidden="true"></span>
+    <p class="tally" id="tally"></p>
+  </header>
+  <div class="body">
+    <ul class="fires" id="fires" aria-label="Devices"></ul>
+  </div>
+  <footer class="foot">
+    <p class="help" id="help"></p>
+    <ul class="keys" aria-label="Keys">
+      <li><button><kbd>↑↓</kbd>Choose</button></li>
+      <li><button><kbd>↵</kbd>Confirm</button></li>
+      <li><button><kbd>Esc</kbd>Back</button></li>
+    </ul>
+  </footer>
+</main>
+
+<div class="event" role="status"><div><strong>Fire Kindled</strong><span id="eventline"></span></div></div>
+
+<template id="hearth">
+  <svg class="hearth" viewBox="0 0 200 200" aria-hidden="true">
+    <defs>
+      <radialGradient id="glow" cx="50%" cy="62%" r="50%"><stop offset="0" stop-color="#ec7a2b" stop-opacity=".55"/><stop offset=".5" stop-color="#ec7a2b" stop-opacity=".12"/><stop offset="1" stop-color="#ec7a2b" stop-opacity="0"/></radialGradient>
+      <linearGradient id="fl" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#b9521a"/><stop offset=".45" stop-color="#ec7a2b"/><stop offset="1" stop-color="#ffcf8a"/></linearGradient>
+      <linearGradient id="fc" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffb45c"/><stop offset="1" stop-color="#fff6dd"/></linearGradient>
+    </defs>
+    <circle class="lit-only" cx="100" cy="108" r="90" fill="url(#glow)"/>
+    <!-- the ring of the fire: an engraved circle, as a seal -->
+    <g fill="none" stroke="#b59555" stroke-width=".8" opacity=".55">
+      <circle cx="100" cy="104" r="86"/><circle cx="100" cy="104" r="80" stroke-dasharray="1 5"/>
+    </g>
+    <ellipse cx="100" cy="166" rx="62" ry="11" fill="#000" opacity=".7"/>
+    <g class="lit-only">
+      <path fill="url(#fl)" d="M100 22c6 26 38 42 38 80 0 27-17 46-38 46s-38-19-38-46c0-16 7-29 16-39 2 13 7 21 14 25-3-22 0-46 8-66z"/>
+      <path fill="url(#fc)" d="M100 82c4 15 18 22 18 40 0 13-8 22-18 22s-18-9-18-22c0-18 14-25 18-40z"/>
+      <g fill="#ffcf8a"><circle cx="58" cy="60" r="1.6"/><circle cx="146" cy="44" r="1.2"/><circle cx="132" cy="20" r="1"/><circle cx="74" cy="30" r="1.1"/><circle cx="160" cy="78" r="1.4"/><circle cx="44" cy="92" r="1"/><circle cx="116" cy="8" r=".8"/></g>
+    </g>
+    <g class="cold-only" fill="none" stroke="#66707a" stroke-width="1.2" stroke-linecap="round" opacity=".8">
+      <path d="M92 132c-6-12 6-16 0-28M108 128c6-10-6-16 2-28M100 120c-3-8 4-12 0-20"/>
+    </g>
+    <g stroke-linecap="round" fill="none">
+      <path d="M48 170l104-22" stroke="#3a2c1c" stroke-width="11"/><path d="M152 170L48 148" stroke="#4a3925" stroke-width="11"/>
+      <path d="M48 170l104-22M152 170L48 148" stroke="#b59555" stroke-width=".8" opacity=".5"/>
+    </g>
+    <g fill="#2b251c" stroke="#b59555" stroke-width=".7" stroke-opacity=".5">
+      <ellipse cx="42" cy="172" rx="14" ry="8"/><ellipse cx="158" cy="172" rx="14" ry="8"/><ellipse cx="72" cy="181" rx="15" ry="7"/><ellipse cx="128" cy="181" rx="15" ry="7"/><ellipse cx="100" cy="184" rx="13" ry="6"/>
+    </g>
+  </svg>
+</template>
+
+<script>
+// Mock content. The field names come from korrid as it is today: a peer's
+// label, state (loading, ready, failed), last error and observation time
+// (PeerListEntry), this device's settings facts, and its account sign-ins.
+const HERE = { id: "aka", label: "aka", here: true, state: "ready", runs: "Server part only", system: "x86_64 Linux", network: "Wired", seen: "now",
+  accounts: [["Steam", "Not signed in", "warm"]],
+  lore: ["A fire with no hearth. It has no screen of its own, and burns so that others may play from far off.", "You are at this device. What you do here, you do to it."] };
+const PEERS = [
+  { id: "zao", label: "zao", state: "ready", runs: "Client and server parts", system: "x86_64 Linux", network: "Home network", seen: "now",
+    lore: ["A workshop fire, seldom let go out.", "To tend this device, open its own web screen."] },
+  { id: "mini", label: "Retroid Pocket Mini", state: "ready", runs: "Client and server parts", system: "aarch64 Linux", network: "Home network", seen: "now",
+    lore: ["A fire small enough to carry in one hand.", "To tend this device, open its own web screen."] },
+  { id: "portal", label: "Odin 2 Portal", state: "loading", runs: "Client and server parts", system: "aarch64 Linux", network: "Looking for it", seen: "4 minutes ago",
+    lore: ["Its embers were warm a moment ago.", "Korri is looking for this device."] },
+  { id: "oneplus", label: "OnePlus 6", state: "failed", runs: "Client and server parts", system: "aarch64 Linux", network: "Not reachable", seen: "3 days ago", error: "No path to the device",
+    lore: ["Cold ash. Someone will have to walk there and light it again.", "This device did not answer. It may be off, or on a network Korri cannot reach."] },
+];
+const MANY = ["Living room cabinet", "Bedroom television", "Workshop bench", "Loft server", "Kitchen tablet", "Garage arcade, the one with the sticky second player button",
+  "Travel handheld", "Pneumonoultramicroscopicsilicovolcanoconiosis", "Guest room", "Old laptop"].map((label, i) => ({
+  id: "m" + i, label, state: ["ready", "ready", "failed", "ready", "loading"][i % 5], runs: "Client and server parts", system: "aarch64 Linux",
+  network: i % 5 === 2 ? "Not reachable" : "Home network", seen: i % 5 === 2 ? "9 days ago" : "now", error: i % 5 === 2 ? "No path to the device" : undefined,
+  lore: ["One fire among many.", "To tend this device, open its own web screen."] }));
+const WORD = { ready: "Lit", loading: "Kindling", failed: "Cold" };
+const MARK = '<svg class="mark" viewBox="0 0 24 24" aria-hidden="true">' + document.getElementById("mark").innerHTML + "</svg>";
+
+// The layout decision, once. Width decides content, height decides structure.
+const SPLIT_MIN_W = 860;   // below this a list and a detail cannot share a row
+const FULL_CHROME_MIN = 560; // either axis below this: corner pieces and wide margins yield first
+const PLATE_BESIDE_MIN_W = 1180; // detail pane wide enough for the hearth beside the name
+const PLATE_MIN_H = 620;   // below this the hearth is the first thing the height cannot afford
+function plan(w, h) {
+  const structure = w >= SPLIT_MIN_W ? "split" : "stack";
+  const chrome = Math.min(w, h) >= FULL_CHROME_MIN ? "full" : "lean";
+  const plate = h < PLATE_MIN_H ? "none" : (structure === "split" && w >= PLATE_BESIDE_MIN_W ? "beside" : "above");
+  const acts = h < PLATE_MIN_H ? "first" : "last"; // the primary action stays on the surface
+  return { structure, chrome, plate, acts };
+}
+
+const q = new URLSearchParams(location.search);
+const state = q.get("state") || "ideal";
+const devices = state === "alone" ? [HERE] : state === "many" ? [HERE, ...PEERS, ...MANY] : [HERE, ...PEERS];
+let sel = Math.max(0, devices.findIndex(d => d.id === (q.get("sel") || "aka")));
+const frame = document.getElementById("frame"), fires = document.getElementById("fires");
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+
+function detail(d, p) {
+  const box = el("section", "detail"); box.dataset.state = d.state; box.setAttribute("aria-label", d.label);
+  const plate = el("div", "plate"); plate.append(document.getElementById("hearth").content.cloneNode(true));
+  const who = el("div", "who");
+  who.append(el("h2", "", d.label), el("p", "kind", d.here ? "This device" : "A device of your federation"));
+  const facts = el("dl", "facts");
+  const rows = [["State", WORD[d.state] + (d.error ? ". " + d.error : ""), d.state === "failed" ? "bad" : ""], ["Runs", d.runs], ["System", d.system], ["Network", d.network], ["Last seen", d.seen],
+    ...(d.accounts || []).map(([n, v, c]) => [n + " account", v, c])];
+  for (const [k, v, c] of rows) { const r = el("div"); r.append(el("dt", "", k), el("dd", c || "", v)); facts.append(r); }
+  let acts = null;
+  if (d.here) { acts = el("div", "acts"); acts.append(el("button", "act prime", "Sign in to Steam")); }
+  if (acts && p.acts === "first") who.append(acts);
+  who.append(facts); plate.append(who); box.append(plate);
+  const lore = el("div", "lore"); d.lore.forEach(t => lore.append(el("p", "", t))); box.append(lore);
+  if (acts && p.acts === "last") box.append(acts);
+  return box;
+}
+function render() {
+  const p = plan(innerWidth, innerHeight);
+  Object.assign(document.documentElement.dataset, p);
+  document.documentElement.dataset.banner = q.get("banner") === "on" ? "on" : "off";
+  fires.textContent = ""; document.querySelector(".body > .detail")?.remove();
+  devices.forEach((d, i) => {
+    const li = el("li"), row = el("button", "fire");
+    row.dataset.state = d.state; if (i === sel) row.setAttribute("aria-current", "true");
+    row.innerHTML = MARK;
+    row.append(el("span", "name", d.label), el("span", "word", d.here ? "You are here" : WORD[d.state]));
+    row.title = d.label; row.onclick = () => { sel = i; render(); };
+    li.append(row); if (i === sel && p.structure === "stack") li.append(detail(d, p));
+    fires.append(li);
+  });
+  if (p.structure === "split") document.querySelector(".body").append(detail(devices[sel], p));
+  const lit = devices.filter(d => d.state === "ready").length;
+  document.getElementById("tally").textContent = devices.length === 1 ? "One fire, and it is yours" : lit + " of " + devices.length + " lit";
+  const d = devices[sel];
+  document.getElementById("help").textContent = d.here ? "This is the device you opened. Its actions are below its name." : d.state === "failed" ? "This device did not answer when Korri last looked." : "Another device of your federation. You can look, not act.";
+  document.getElementById("eventline").textContent = "Retroid Pocket Mini has joined your federation";
+}
+addEventListener("resize", render);
+addEventListener("keydown", e => { const s = { ArrowDown: 1, ArrowUp: -1 }[e.key]; if (s) { sel = (sel + s + devices.length) % devices.length; render(); document.querySelector('.fire[aria-current]').scrollIntoView({ block: "nearest" }); e.preventDefault(); } });
+render();
+</script>
+</body>
+</html>
