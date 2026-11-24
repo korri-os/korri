@@ -34,7 +34,7 @@ OpenSteamClient and Aurelia. The risk falls on the person's Steam account.
 - The engine runner is opt-in. It becomes the default only when it passes as
   many games as the client runner on the same random sample of the person's
   library. A game passes when a screenshot shows gameplay, not only a live
-  process.
+  process. (Replaced on 2026-11-23: see "The road to the default runner".)
 - The end state is a device with no Steam client installed. The engine also
   installs and updates games.
 - The device downloads only the engine package, from Valve's own update
@@ -200,3 +200,13 @@ Owner decisions, 2026-11-23 (korri#518).
   nightly build does. Later, not now: the measure of the engine runner is the
   person's whole Steam library, installed on aka and played game by game,
   not a sample.
+- The engine runner is the default now on the OnePlus 6, the Tab S6, aka and
+  ibuki, and on the Red Magic 11 Pro when it arrives. This replaces the
+  parity rule above: the owner chose the default without a parity run, and
+  the whole-library run (korri#607) measures the runner from then on.
+- Proton and FEX are a choice per game, from a list that can hold any number
+  of versions. Korri offers one version in that list today. The design must
+  leave room for more without a second change of shape.
+- The move of installed games takes each game's files and its Wine prefix,
+  with the saves in it. aka moves first, before the default changes there.
+- Every device runs the current published Gamescope plugin release.
