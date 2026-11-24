@@ -232,7 +232,7 @@ fn release(bytes: usize) -> (Vec<u8>, String) {
 /// of it; the other serves the rest. The finished install is checked
 /// against its release key, published and recorded, and the holders were
 /// asked with no prompt because they share the receiver's owner.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_install_takes_pieces_from_two_holders_and_survives_losing_one() {
     let (rom, key) = release(12 * PIECE_BYTES as usize + 4321);
     let first = Device::new(1, true).await;
@@ -292,7 +292,7 @@ async fn an_install_takes_pieces_from_two_holders_and_survives_losing_one() {
 }
 
 /// A disc set is one collection: a cue and its tracks install together.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_cue_with_its_tracks_installs_as_one_collection() {
     let first = Device::new(4, true).await;
     let receiver = Device::new(5, false).await;
@@ -350,7 +350,7 @@ async fn a_cue_with_its_tracks_installs_as_one_collection() {
 
 /// A holder that sends bytes that are not the release: every piece fails
 /// its check, the holder leaves, and nothing is installed.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_holder_whose_bytes_are_not_the_release_installs_nothing() {
     let (rom, key) = release(2 * PIECE_BYTES as usize);
     let holder = Device::new(6, true).await;
@@ -402,7 +402,7 @@ fn peer(principal: Principal) -> AuthorizationContext {
 /// ADR 0077: the owner's devices and family members' devices install from
 /// a holder with no prompt; a guest is refused, at the peer policy and at
 /// the piece route, even with a pass that may stream.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_guest_is_refused_and_family_and_owner_devices_may_install() {
     let owner = peer(Principal::OwnerDevice {
         device_public_key: "peer".into(),
@@ -481,7 +481,7 @@ async fn a_guest_is_refused_and_family_and_owner_devices_may_install() {
 
 /// The holder keeps the BLAKE3 tree: a second manifest does not hash again,
 /// and a file that changed is hashed again.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_holder_hashes_once_and_again_after_the_file_changes() {
     let (rom, key) = release(3 * PIECE_BYTES as usize);
     let holder = Device::new(9, false).await;
@@ -522,7 +522,7 @@ fn walk_size(path: &PathBuf) -> u64 {
 /// ADR 0092 measurement: the size of the BLAKE3 tree (outboard) that a
 /// holder keeps for one file, hashed in place with the real store.
 /// `KORRI_OUTBOARD_FILE=<path> cargo test --lib outboard_size -- --ignored --nocapture`
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs KORRI_OUTBOARD_FILE, a large file"]
 async fn outboard_size_of_a_release_hashed_in_place() {
     let path = PathBuf::from(std::env::var("KORRI_OUTBOARD_FILE").expect("KORRI_OUTBOARD_FILE"));
@@ -603,7 +603,7 @@ async fn installing_past(pieces: &super::pieces::Pieces, job: &str, bytes: u64) 
 /// M2: an install from devices is in the line under its job id, the order
 /// file never names it, and cancel during a piece fetch stops it: no ready
 /// folder, no receive store, no place in the line.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_install_from_devices_shows_in_the_line_and_cancel_stops_a_piece_fetch() {
     let (rom, key) = release(8 * PIECE_BYTES as usize);
     let holder = Device::new(10, true).await;
@@ -660,7 +660,7 @@ async fn an_install_from_devices_shows_in_the_line_and_cancel_stops_a_piece_fetc
 
 /// N2: a second install of a release that is already in the line joins the
 /// first: one job, one transfer, the same result for both callers.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_second_install_of_the_same_release_joins_the_first() {
     let (rom, key) = release(3 * PIECE_BYTES as usize);
     let holder = Device::new(12, true).await;
@@ -699,7 +699,7 @@ async fn a_second_install_of_the_same_release_joins_the_first() {
 
 /// N1: publication fails after the files left the receive store. The store
 /// goes, so the next try installs the release instead of failing forever.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_failed_publication_does_not_leave_the_release_stuck() {
     let (rom, key) = release(2 * PIECE_BYTES as usize + 99);
     let holder = Device::new(14, true).await;
@@ -732,7 +732,7 @@ async fn a_failed_publication_does_not_leave_the_release_stuck() {
 /// N1: korrid stops during publication. The work folder goes, but the
 /// receive store still reports the file complete. The next try finds that
 /// the data cannot be read, starts again and installs the release.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_stop_during_publication_does_not_leave_the_release_stuck() {
     let (rom, key) = release(2 * PIECE_BYTES as usize + 99);
     let holder = Device::new(16, true).await;

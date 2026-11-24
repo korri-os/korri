@@ -1965,6 +1965,7 @@ fn resumable_site() -> (HttpFixture, Vec<u8>) {
 
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
         .enable_all()
         .build()
         .unwrap()
@@ -2099,7 +2100,7 @@ fn a_korrid_restart_interrupts_an_install_and_the_next_korrid_resumes_its_bytes(
 
 /// ADR 0092: play-here goes to the front of the line. The provider download
 /// that runs pauses with its bytes, and resumes with a range after it.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_front_install_pauses_a_provider_download_which_resumes_with_a_range() {
     let (server, body) = resumable_site();
     let world = world_with(server, None);
@@ -2131,7 +2132,7 @@ async fn a_front_install_pauses_a_provider_download_which_resumes_with_a_range()
 
 /// ADR 0092: the person reorders the line; the running install keeps
 /// running, and the order file keeps the new order for a restart.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_line_can_be_reordered_and_the_order_is_kept() {
     let (server, _) = resumable_site();
     let world = world_with(server, None);
@@ -2161,7 +2162,7 @@ async fn the_line_can_be_reordered_and_the_order_is_kept() {
 /// ADR 0092: an install resumes when its source returns. A connection that
 /// breaks keeps the bytes and the record; the next Get of the claim takes
 /// the same job and asks only for the rest.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_broken_download_keeps_its_bytes_and_the_next_get_resumes_it() {
     let (server, body) = resumable_site();
     let half = RESUMABLE / 2;
@@ -2266,7 +2267,7 @@ fn a_stop_keeps_the_order_of_three_queued_installs() {
 /// N3: a failed install that kept its bytes can be thrown away: cancel of
 /// the failed job deletes its record and its bytes, and the next Get starts
 /// from byte 0.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cancel_throws_away_a_failed_install_that_kept_its_bytes() {
     let (server, body) = resumable_site();
     let half = RESUMABLE / 2;

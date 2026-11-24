@@ -47,7 +47,9 @@ use std::{
 };
 
 /// One piece: 1 MiB, a whole number of iroh-blobs chunk groups (16 KiB).
-pub(crate) const PIECE_BYTES: u64 = 1 << 20;
+/// Tests use 64 KiB pieces, the same rule at a size that keeps the debug
+/// build's hashing light beside the other tests of the lib suite.
+pub(crate) const PIECE_BYTES: u64 = if cfg!(test) { 64 * 1024 } else { 1 << 20 };
 /// A holder that sends this many bad or failed pieces leaves the install.
 const HOLDER_STRIKES: u32 = 3;
 const PIECE_TIMEOUT: Duration = Duration::from_secs(60);
