@@ -315,10 +315,12 @@ fn platform_from_path(
         }
     };
     let mut values = compatible.split(|byte| *byte == 0);
-    if values
-        .clone()
-        .any(|value| value == b"qcom,sm8550" || value == b"qcom,sm8250")
-    {
+    if values.clone().any(|value| {
+        matches!(
+            value,
+            b"qcom,sm8550" | b"qcom,sm8250" | b"qcom,sm8150" | b"qcom,sdm845"
+        )
+    }) {
         // Qualcomm Iris/Venus: stateful V4L2 M2M decoders.
         "v4l2m2m"
     } else if values.any(|value| value == b"rockchip,rk3566" || value == b"allwinner,sun50i-h700") {

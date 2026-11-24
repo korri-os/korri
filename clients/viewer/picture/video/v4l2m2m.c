@@ -111,6 +111,9 @@ static int direct_quad_visible_h = 0;
 static SDL_Window    *window    = NULL;
 static SDL_GLContext  gl_ctx    = NULL;   /* DRM_PRIME path only (inactive on iris/FFmpeg v4l2m2m) */
 static SDL_Renderer  *sdl_renderer = NULL;
+static SDL_Texture   *sdl_nv12_texture = NULL;
+static int            sdl_tex_w = 0;
+static int            sdl_tex_h = 0;
 static SDL_Rect       sdl_dst_rect = {0, 0, 0, 0};
 static EGLDisplay     egl_dpy   = EGL_NO_DISPLAY;
 
@@ -203,6 +206,47 @@ static int             disp_setup_rc = 0;     /* propagated to setup() return */
 /* ------------------------------------------------------------------ */
 /* FFmpeg integration                                                 */
 /* ------------------------------------------------------------------ */
+
+static enum AVPixelFormat get_drm_prime_fmt(AVCodecContext *ctx,
+                                            const enum AVPixelFormat *fmts) {
+  (void)ctx;
+  /* Diagnostic: log every format the decoder offers. The hevc_v4l2m2m
+   * wrapper without an attached hw_device_ctx of type DRM falls back
+   * to NV12 / YUV420P (software-readable). Seeing only NV12 in this
+   * list is the canonical signature of "need hw_device_ctx". */
+  char dbg[256] = {0};
+  size_t off = 0;
+  for (const enum AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE; p++)
+    off += snprintf(dbg + off, sizeof(dbg) - off,
+                    "%s%s", off ? "," : "", av_get_pix_fmt_name(*p));
+  LOG("get_format: offered=[%s]", dbg);
+  for (const enum AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE; p++) {
+    if (*p == AV_PIX_FMT_DRM_PRIME)
+      return *p;
+  }
+  /* Decoder did not offer DRM_PRIME -- the wrapper is built without
+   * dma-buf export, or the kernel V4L2 path doesn't expose
+   * V4L2_MEMORY_DMABUF. Returning NONE aborts decode-open rather than
+   * silently engaging a software path that the rest of this platform
+   * cannot consume. */
+  LOG("get_format: decoder did not offer AV_PIX_FMT_DRM_PRIME");
+  return AV_PIX_FMT_NONE;
+}
+
+static const AVCodec *find_v4l2m2m_decoder(int videoFormat) {
+  const char *name = NULL;
+  if (videoFormat & VIDEO_FORMAT_MASK_H264)
+    name = "h264_v4l2m2m";
+  else if (videoFormat & VIDEO_FORMAT_MASK_H265)
+    name = "hevc_v4l2m2m";
+  else
+    return NULL;
+  const AVCodec *c = avcodec_find_decoder_by_name(name);
+  if (!c)
+    LOG("avcodec_find_decoder_by_name(%s) returned NULL "
+        "-- FFmpeg built without --enable-v4l2-m2m?", name);
+  return c;
+}
 
 static enum AVPixelFormat get_request_fmt(AVCodecContext *ctx,
                                           const enum AVPixelFormat *fmts) {
@@ -648,6 +692,7 @@ static void direct_update_dmabuf_quad_if_needed(AVFrame *frame, int import_h) {
 
 /* Forward decls for the dispatching draw_frame(). */
 static void draw_frame_drm_prime(AVFrame *frame);
+static void draw_frame_nv12(AVFrame *frame);
 
 static int stream_width, stream_height;
 static int create_window(int width, int height);
@@ -691,6 +736,8 @@ static void draw_frame(AVFrame *frame) {
   update_render_geometry(visible_w, visible_h);
   if (frame->format == AV_PIX_FMT_DRM_PRIME) {
     draw_frame_drm_prime(frame);
+  } else if (frame->format == AV_PIX_FMT_NV12) {
+    draw_frame_nv12(frame);
   } else {
     static bool warned = false;
     if (!warned) {
@@ -701,6 +748,41 @@ static void draw_frame(AVFrame *frame) {
   }
 }
 
+static void draw_frame_nv12(AVFrame *frame) {
+  if (!sdl_renderer)
+    return;
+
+  if (!sdl_nv12_texture || sdl_tex_w != frame->width || sdl_tex_h != frame->height) {
+    if (sdl_nv12_texture) {
+      SDL_DestroyTexture(sdl_nv12_texture);
+      sdl_nv12_texture = NULL;
+    }
+    sdl_nv12_texture = SDL_CreateTexture(sdl_renderer,
+                                         SDL_PIXELFORMAT_NV12,
+                                         SDL_TEXTUREACCESS_STREAMING,
+                                         frame->width, frame->height);
+    if (!sdl_nv12_texture) {
+      LOG("SDL_CreateTexture(NV12 %dx%d) failed: %s",
+          frame->width, frame->height, SDL_GetError());
+      return;
+    }
+    sdl_tex_w = frame->width;
+    sdl_tex_h = frame->height;
+    LOG("SDL renderer: created NV12 texture %dx%d", sdl_tex_w, sdl_tex_h);
+  }
+
+  if (SDL_UpdateNVTexture(sdl_nv12_texture, NULL,
+                          frame->data[0], frame->linesize[0],
+                          frame->data[1], frame->linesize[1]) != 0) {
+    LOG("SDL_UpdateNVTexture failed: %s", SDL_GetError());
+    return;
+  }
+
+  SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 255);
+  SDL_RenderClear(sdl_renderer);
+  SDL_RenderCopy(sdl_renderer, sdl_nv12_texture, &(SDL_Rect){(int)frame->crop_left, (int)frame->crop_top, frame_visible_width(frame), frame_visible_height(frame)}, &sdl_dst_rect);
+  SDL_RenderPresent(sdl_renderer);
+}
 static void prime_cache_clear(void) {
   for (int i = 0; i < prime_cache_count; i++) {
     PrimeCacheEntry *e = &prime_cache[i];
@@ -946,6 +1028,27 @@ static void *display_loop(void *arg) {
         out_w, out_h, SDL_GetWindowDisplayIndex(window),
         SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "unknown",
         (void *) egl_dpy);
+  } else {
+    sdl_renderer = SDL_CreateRenderer(window, -1,
+                                      SDL_RENDERER_ACCELERATED |
+                                      SDL_RENDERER_PRESENTVSYNC);
+    if (!sdl_renderer) {
+      LOG("SDL_CreateRenderer failed: %s", SDL_GetError());
+      pthread_mutex_lock(&disp_mtx);
+      disp_setup_rc = -1;
+      disp_ready = true;
+      pthread_cond_signal(&disp_cond);
+      pthread_mutex_unlock(&disp_mtx);
+      return NULL;
+    }
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+
+    SDL_GetRendererOutputSize(sdl_renderer, &out_w, &out_h);
+    if (out_w <= 0 || out_h <= 0)
+      SDL_GetWindowSize(window, &out_w, &out_h);
+    LOG("display thread: SDL renderer output=%dx%d display=%d driver=%s",
+        out_w, out_h, SDL_GetWindowDisplayIndex(window),
+        SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "unknown");
   }
 
   pthread_mutex_lock(&disp_mtx);
@@ -1063,6 +1166,7 @@ static int v4l2m2m_setup(int videoFormat, int width, int height,
   stream_height = height;
   (void) redrawRate; (void) context; (void) drFlags;
 
+  direct_dmabuf_present = false;
   if (request_mode) {
     /* Request-mode frames are dma-bufs: present them through the GLES
      * context, never through the SDL renderer. */
@@ -1081,6 +1185,62 @@ static int v4l2m2m_setup(int videoFormat, int width, int height,
   if (request_mode) {
     if (request_decoder_setup(videoFormat, width, height) != 0)
       return -1;
+  } else {
+  codec = (AVCodec *) find_v4l2m2m_decoder(videoFormat);
+  if (!codec)
+    return -1;
+
+  codec_ctx = avcodec_alloc_context3(codec);
+  if (!codec_ctx)
+    return -1;
+  codec_ctx->flags       |= AV_CODEC_FLAG_LOW_DELAY | AV_CODEC_FLAG_OUTPUT_CORRUPT;
+  codec_ctx->flags2      |= AV_CODEC_FLAG2_SHOW_ALL;
+  codec_ctx->thread_count = 1;
+  codec_ctx->width        = width;
+  codec_ctx->height       = height;
+  /* Critical: set pix_fmt to DRM_PRIME *before* avcodec_open2.
+   * The v4l2m2m wrapper reads avctx->pix_fmt at init time and copies
+   * it into capture->av_pix_fmt; only then does it offer DRM_PRIME
+   * via ff_get_format() during the eventual format negotiation. With
+   * AV_PIX_FMT_NONE here (the default), the wrapper bypasses
+   * get_format() entirely and emits the V4L2 native format (NV12 for
+   * iris), and our display thread starves waiting for frames it will
+   * never receive. */
+  codec_ctx->pix_fmt      = AV_PIX_FMT_DRM_PRIME;
+  codec_ctx->get_format   = get_drm_prime_fmt;
+  /* Attach an AV_HWDEVICE_TYPE_DRM device ctx so the v4l2m2m wrapper
+   * negotiates the V4L2 capture queue with V4L2_MEMORY_DMABUF + DRM
+   * PRIME export, and offers AV_PIX_FMT_DRM_PRIME via get_format().
+   * Without this, the wrapper falls back to NV12 software output and
+   * our zero-copy import path never sees a frame -- the display thread
+   * sleeps forever on disp_cond and the SDL window is never committed.
+   *
+   * Open the DRM render node (renderD128) rather than the primary node
+   * (card0) so we don't need DRM master; gamescope still owns
+   * master via the kiosk path. Render nodes are sufficient for the
+   * dma-buf import we need here. */
+  AVBufferRef *hw_dev = NULL;
+  if (av_hwdevice_ctx_create(&hw_dev, AV_HWDEVICE_TYPE_DRM,
+                             "/dev/dri/renderD128", NULL, 0) >= 0) {
+    codec_ctx->hw_device_ctx = av_buffer_ref(hw_dev);
+    av_buffer_unref(&hw_dev);
+    LOG("setup: attached AV_HWDEVICE_TYPE_DRM render node");
+  } else {
+    LOG("setup: av_hwdevice_ctx_create(DRM) failed -- v4l2m2m will"
+        " fall back to NV12 software output and our import path will not run");
+  }
+
+  if (avcodec_open2(codec_ctx, codec, NULL) < 0) {
+    LOG("avcodec_open2 failed for %s", codec->name);
+    avcodec_free_context(&codec_ctx);
+    return -1;
+  }
+
+  pkt = av_packet_alloc();
+  if (!pkt) {
+    avcodec_free_context(&codec_ctx);
+    return -1;
+  }
   }
 
   disp_eos    = false;
@@ -1097,6 +1257,27 @@ static int v4l2m2m_setup(int videoFormat, int width, int height,
         width, height);
     return 0;
   }
+  if (create_window(width, height) != 0)
+    return -1;
+  pthread_create(&disp_thread, NULL, display_loop, NULL);
+
+  /* Block setup() until the display thread has either finished GL
+   * bring-up or failed. This keeps the contract simple: a non-zero
+   * return from setup means the platform genuinely cannot run. */
+  pthread_mutex_lock(&disp_mtx);
+  while (!disp_ready)
+    pthread_cond_wait(&disp_cond, &disp_mtx);
+  int rc = disp_setup_rc;
+  pthread_mutex_unlock(&disp_mtx);
+
+  if (rc != 0) {
+    LOG("display thread failed to initialise GL");
+    return -1;
+  }
+
+  LOG("setup: decoder=%s presenter=%s %dx%d",
+      codec->name, "sdl-nv12",
+      width, height);
   return 0;
 }
 
@@ -1112,6 +1293,7 @@ static void v4l2m2m_cleanup(void) {
    * GL failure) and left a submitted frame behind. */
   if (disp_pending) av_frame_free(&disp_pending);
 
+  if (sdl_nv12_texture) { SDL_DestroyTexture(sdl_nv12_texture); sdl_nv12_texture = NULL; sdl_tex_w = sdl_tex_h = 0; }
   if (sdl_renderer)     { SDL_DestroyRenderer(sdl_renderer); sdl_renderer = NULL; }
   if (gl_program)      { glDeleteProgram(gl_program); gl_program = 0; }
   if (gl_texture)      { glDeleteTextures(1, &gl_texture); gl_texture = 0; }
@@ -1194,11 +1376,24 @@ static int v4l2m2m_submit(PDECODE_UNIT du) {
   return (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) ? DR_OK : DR_NEED_IDR;
 }
 
+static int v4l2m2m_setup_stateful(int videoFormat, int width, int height,
+                                  int redrawRate, void *context, int drFlags) {
+  request_mode = false;
+  return v4l2m2m_setup(videoFormat, width, height, redrawRate, context, drFlags);
+}
+
 static int v4l2request_setup(int videoFormat, int width, int height,
                              int redrawRate, void *context, int drFlags) {
   request_mode = true;
   return v4l2m2m_setup(videoFormat, width, height, redrawRate, context, drFlags);
 }
+
+DECODER_RENDERER_CALLBACKS decoder_callbacks_v4l2m2m = {
+  .setup            = v4l2m2m_setup_stateful,
+  .cleanup          = v4l2m2m_cleanup,
+  .submitDecodeUnit = v4l2m2m_submit,
+  .capabilities     = CAPABILITY_DIRECT_SUBMIT,
+};
 
 DECODER_RENDERER_CALLBACKS decoder_callbacks_v4l2request = {
   .setup            = v4l2request_setup,

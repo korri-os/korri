@@ -27,21 +27,22 @@ pkgs.runCommand "korri-viewer-aarch64-check" { } ''
   cat hwaccels.txt
   grep -qx 'v4l2request' hwaccels.txt
 
-  # korrid's handheld arguments parse; the run stops at the missing pin.
-  if ${qemu} -U KORRI_MOONLIGHT_SERVER_CERTIFICATE "$viewer" stream -app 'Korri Stream' \
-      -platform v4l2request -mapping /unused -keydir /unused -windowed \
-      -autowindowresize -input /dev/input/event3 -input /dev/input/event7 \
-      -port 47989 192.0.2.1 2> request.txt; then
-    exit 1
-  fi
-  cat request.txt
-  grep -q 'KORRI_MOONLIGHT_SERVER_CERTIFICATE is required' request.txt
-  # The Qualcomm path is not carried (ADR 0063).
-  if ${qemu} "$viewer" stream -platform v4l2m2m -keydir /unused 192.0.2.1 2> m2m.txt; then
-    exit 1
-  fi
-  grep -q 'unsupported platform v4l2m2m' m2m.txt
+  ${qemu} ${pkgs.lib.getBin ffmpeg}/bin/ffmpeg -hide_banner -decoders > decoders.txt
+  grep -E '^[[:space:]]*V[^ ]* +h264_v4l2m2m ' decoders.txt
+  grep -E '^[[:space:]]*V[^ ]* +hevc_v4l2m2m ' decoders.txt
+
+  # korrid's handheld arguments parse; each run stops at the missing pin.
+  for platform in v4l2request v4l2m2m; do
+    if ${qemu} -U KORRI_MOONLIGHT_SERVER_CERTIFICATE "$viewer" stream -app 'Korri Stream' \
+        -platform "$platform" -mapping /unused -keydir /unused -windowed \
+        -autowindowresize -input /dev/input/event3 -input /dev/input/event7 \
+        -port 47989 192.0.2.1 2> "$platform.txt"; then
+      exit 1
+    fi
+    cat "$platform.txt"
+    grep -q 'KORRI_MOONLIGHT_SERVER_CERTIFICATE is required' "$platform.txt"
+  done
 
   mkdir -p "$out"
-  cp help.txt libraries.txt hwaccels.txt request.txt m2m.txt "$out/"
+  cp help.txt libraries.txt hwaccels.txt decoders.txt v4l2request.txt v4l2m2m.txt "$out/"
 ''

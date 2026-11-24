@@ -148,7 +148,9 @@ pub(crate) fn run_with_lifecycle(
     config.supportedVideoFormats = match o.codec.as_str() {
         "h265" => ffi::VIDEO_FORMAT_H264 | ffi::VIDEO_FORMAT_H265,
         "av1" => ffi::VIDEO_FORMAT_H264 | ffi::VIDEO_FORMAT_AV1_MAIN8,
-        "auto" if o.platform == "x11_vaapi" => ffi::VIDEO_FORMAT_H264 | ffi::VIDEO_FORMAT_H265,
+        "auto" if matches!(o.platform.as_str(), "x11_vaapi" | "v4l2m2m") => {
+            ffi::VIDEO_FORMAT_H264 | ffi::VIDEO_FORMAT_H265
+        }
         _ => ffi::VIDEO_FORMAT_H264,
     } as i32;
     if o.hdr {

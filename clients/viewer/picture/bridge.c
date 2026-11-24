@@ -12,11 +12,9 @@
 
 static int using_vaapi;
 #ifdef HAVE_V4L2M2M
-// The handheld path. Moonlight declares the v4l2request decoder under
-// HAVE_V4L2M2M; this build carries only that decoder from v4l2m2m.c.
-static int using_request;
+static PDECODER_RENDERER_CALLBACKS handheld_callbacks;
 #else
-enum { using_request = 0 };
+enum { handheld_callbacks = 0 };
 #endif
 static struct pollfd* fds;
 static FdHandler* handlers;
@@ -52,26 +50,25 @@ int picture_init(int vaapi, int width, int height, int fullscreen) {
   return using_vaapi;
 }
 #ifdef HAVE_V4L2M2M
-// Moonlight's main.c with -platform v4l2request: no SDL or X11 setup here,
-// because the decoder's display thread makes its own window. main.c sets
-// this variable for every platform; only the v4l2request presenter reads it.
-void picture_init_request(int auto_window_resize) {
+// Both handheld decoders own the SDL window. Set Moonlight's resize flag
+// before decoder setup starts.
+void picture_init_handheld(int request, int auto_window_resize) {
   picture_shown_reset();
-  using_request = 1;
+  handheld_callbacks = request ? &decoder_callbacks_v4l2request : &decoder_callbacks_v4l2m2m;
   setenv("MOONLIGHT_AUTO_WINDOW_RESIZE", auto_window_resize ? "1" : "0", 1);
-  puts("Platform V4L2 Request (stateless) + DRM PRIME GL");
+  puts(request ? "Platform V4L2 Request (stateless) + DRM PRIME GL" : "Platform V4L2 M2M + SDL NV12");
 }
 #endif
 PDECODER_RENDERER_CALLBACKS picture_callbacks(void) {
 #ifdef HAVE_V4L2M2M
-  if (using_request) return &decoder_callbacks_v4l2request;
+  if (handheld_callbacks) return handheld_callbacks;
 #endif
   return using_vaapi ? &decoder_callbacks_x11_vaapi : &decoder_callbacks_sdl;
 }
-// X11 VA-API and v4l2request are Moonlight's embedded platforms: they run
+// X11 VA-API and the handheld decoders are Moonlight's embedded platforms: they run
 // its descriptor loop. Only the SDL platform runs the SDL event loop.
 int picture_poll(int timeout) {
-  if (!using_vaapi && !using_request) return sdl_poll(timeout);
+  if (!using_vaapi && !handheld_callbacks) return sdl_poll(timeout);
   return picture_poll_descriptors(timeout);
 }
 int picture_poll_descriptors(int timeout) {
@@ -87,9 +84,9 @@ int picture_poll_descriptors(int timeout) {
   return 0;
 }
 void picture_destroy(void) {
-  if (!using_vaapi && !using_request) sdl_destroy();
+  if (!using_vaapi && !handheld_callbacks) sdl_destroy();
 #ifdef HAVE_V4L2M2M
-  using_request = 0;
+  handheld_callbacks = NULL;
 #endif
   free(fds);
   free(handlers);
