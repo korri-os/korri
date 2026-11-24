@@ -3,11 +3,29 @@
 //! release object routes do.
 use super::*;
 
-pub(super) async fn piece_route(State(state): State<PeerRpcServer>, body: Bytes) -> Response {
+pub(super) async fn piece_route(
+    State(state): State<PeerRpcServer>,
+    binding: Option<axum::Extension<crate::federation::reach::Binding>>,
+    headers: axum::http::HeaderMap,
+    body: Bytes,
+) -> Response {
     let Ok(event) = std::str::from_utf8(&body) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
-    let authenticated = match state.authenticate(event, (state.clock)(), true).await {
+    // On the iroh route the caller proves its endpoint, as for the other
+    // object routes.
+    let proof = binding.as_ref().map(|binding| {
+        (
+            &binding.0,
+            headers
+                .get(crate::federation::reach::http::ENDPOINT_HEADER)
+                .and_then(|value| value.to_str().ok()),
+        )
+    });
+    let authenticated = match state
+        .authenticate(event, (state.clock)(), true, proof)
+        .await
+    {
         Ok(authenticated) => authenticated,
         Err(PeerRpcError::Replay) => return StatusCode::CONFLICT.into_response(),
         Err(PeerRpcError::Unauthorized) => return StatusCode::FORBIDDEN.into_response(),

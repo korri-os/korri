@@ -63,6 +63,7 @@ export const systems = {
         requires: vec![],
         hosts: vec![],
         credential_host: None,
+        credential_token_url: None,
     }])
     .unwrap()
 }
@@ -194,7 +195,6 @@ impl Device {
         Arc::new(PeerHolder {
             route: PeerRoute::Origin(self.base.clone().unwrap()),
             credentials: receiver.credentials.clone(),
-            http: reqwest::Client::new(),
             device: self.key(),
         })
     }

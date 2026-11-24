@@ -719,51 +719,25 @@ struct Shared {
     done: u64,
 }
 
-/// A federation device as an install source, over signed peer HTTP: its
-/// advertised HTTP origins first, then its iroh route, as save transfers do.
+/// A federation device as an install source, over signed peer HTTP on its
+/// iroh route, with this device's endpoint proof, as save transfers do.
 pub(crate) struct PeerHolder {
     pub route: PeerRoute,
     pub credentials: crate::peer_rpc::PeerCredentials,
-    pub http: reqwest::Client,
     pub device: String,
 }
 
 /// How a receiver reaches a holder.
 pub(crate) enum PeerRoute {
-    /// The federation: the device's advertised origins, then its iroh route.
+    /// The federation's iroh route to the device.
     #[cfg_attr(test, allow(dead_code))] // Tests use `Origin`.
     Federation(crate::federation::FederationDirectory),
-    /// One fixed loopback origin, for two korrids in one test process.
+    /// One fixed loopback origin, for korrids in one test process.
     #[cfg(test)]
     Origin(String),
 }
 
 impl PeerHolder {
-    fn origins(&self) -> Vec<String> {
-        let directory = match &self.route {
-            PeerRoute::Federation(directory) => directory,
-            #[cfg(test)]
-            PeerRoute::Origin(origin) => return vec![origin.clone()],
-        };
-        let mut candidates = Vec::new();
-        if let Some(peer) = directory.snapshot().ok().and_then(|peers| {
-            peers
-                .into_iter()
-                .find(|peer| peer.device_public_key == self.device)
-        }) {
-            if let Some(endpoint) = peer.current_endpoint.or(peer.remembered_endpoint) {
-                candidates.extend(
-                    endpoint
-                        .candidates
-                        .iter()
-                        .filter_map(|origin| crate::federation::peer_origin(origin).ok()),
-                );
-            }
-        }
-        crate::federation::reach::nearby_seam::prepend(&self.device, &mut candidates);
-        candidates
-    }
-
     async fn post(
         &self,
         path: &str,
@@ -779,36 +753,35 @@ impl PeerHolder {
             .credentials
             .encode_request(&self.device, request, crate::peer_rpc::unix_time())
             .map_err(|_| unreachable())?;
-        let origins = self.origins();
-        let mut response = match crate::federation::connect::select_origin(&origins).await {
-            Ok(index) => crate::federation::reach::http::Response::Tcp(
-                self.http
-                    .post(format!("{}{path}", origins[index]))
-                    .header(reqwest::header::CONTENT_TYPE, "application/json")
-                    .body(encoded.event_json.clone())
-                    .send()
-                    .await
-                    .map_err(|_| unreachable())?,
-            ),
-            Err(_) => {
-                let directory = match &self.route {
-                    PeerRoute::Federation(directory) => directory,
-                    #[cfg(test)]
-                    PeerRoute::Origin(_) => return Err(unreachable()),
-                };
+        let mut response = match &self.route {
+            PeerRoute::Federation(directory) => {
                 let connection = directory
                     .reach_connection(&self.device)
                     .await
+                    .map_err(|_| unreachable())?;
+                let proof = directory
+                    .own_endpoint_event(&self.device)
                     .map_err(|_| unreachable())?;
                 crate::federation::reach::http::post(
                     &connection,
                     path,
                     encoded.event_json.clone(),
                     None,
+                    Some(&proof),
                 )
                 .await
                 .map_err(|_| unreachable())?
             }
+            #[cfg(test)]
+            PeerRoute::Origin(origin) => crate::federation::reach::http::Response::Tcp(
+                reqwest::Client::new()
+                    .post(format!("{origin}{path}"))
+                    .header(reqwest::header::CONTENT_TYPE, "application/json")
+                    .body(encoded.event_json.clone())
+                    .send()
+                    .await
+                    .map_err(|_| unreachable())?,
+            ),
         };
         if response.status() == reqwest::StatusCode::FORBIDDEN {
             return Err(refused());
