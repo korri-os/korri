@@ -198,7 +198,8 @@ const line = [
   { id: "dev:clockmaker", title: "The Long Winter of the Clockmaker's Apprentice", gameId: "clockmaker", state: { _tag: "Waiting" } },
   { id: "dev:anti", title: "Antidisestablishmentarianism", gameId: "antidisestablishmentarianism", state: { _tag: "Failed", reason: "The devices that hold this release stopped answering before it was complete. What was installed is kept for a new try." } },
 ]
-const many = [...line, ...["Salt Road", "Winter Kiln", "Low Tide Radio", "Paper Moon", "Brass Owl", "Hollow Pine", "Copper Sky"].map((title, index) => ({ id: `dev:more-${index}`, title, state: { _tag: "Waiting", bytes: (index + 1) * 700_000_000 } }))]
+/** Korri's order: the one that runs, those that wait, then those that failed. */
+const many = [...line.slice(0, 4), ...["Salt Road", "Winter Kiln", "Low Tide Radio", "Paper Moon", "Brass Owl", "Hollow Pine", "Copper Sky"].map((title, index) => ({ id: `dev:more-${index}`, title, state: { _tag: "Waiting", bytes: (index + 1) * 700_000_000 } })), line[4]!]
 const toPeer = ["down", "down", "down", "down", "confirm"]
 const toInstalls = ["menu", "down", "confirm"]
 const pluginReview = {
