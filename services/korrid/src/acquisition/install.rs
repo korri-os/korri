@@ -221,7 +221,6 @@ impl Queue {
 
     /// Move a waiting install to `index` in the line (0 is next). The running
     /// install keeps running. False when the install does not wait.
-    #[cfg_attr(not(test), allow(dead_code))] // #553: Velvet's list of installs.
     pub(super) fn reorder(&mut self, member: &Member, index: usize) -> bool {
         let Some(key) = self
             .members

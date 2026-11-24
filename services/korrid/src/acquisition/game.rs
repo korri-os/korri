@@ -200,7 +200,6 @@ impl GameAcquisition {
         self.engine.gate.yield_to(source);
     }
 
-    #[cfg_attr(not(test), allow(dead_code))] // #553: Velvet's list of installs.
     pub(super) fn taking_now(&self) -> Option<super::InstallYield> {
         self.engine.gate.taking_now()
     }

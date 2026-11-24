@@ -22,7 +22,6 @@
 //!
 //! Netplay installs the release it needs from the holding device here
 //! (#554, `netplay.rs`); play-here (#553) installs from every holder.
-#![cfg_attr(not(test), allow(dead_code))]
 use super::{game::GameContext, placement, space::Floor, Failure, Place};
 use crate::{
     authorization::{AuthorizationContext, Principal},
@@ -619,6 +618,7 @@ impl Pieces {
     /// Receiver: install the file release `key` from these holders at once,
     /// as one install in the line (ADR 0092), and wait for its end. Returns
     /// the library game id.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn install<H: Holder + 'static>(
         &self,
@@ -800,6 +800,7 @@ impl Pieces {
 
     /// Forget the imported and cancelled installs that ended
     /// `ENDED_JOB_KEEP` before `now`.
+    #[cfg(test)]
     pub(super) fn prune(&self, now: std::time::Instant) {
         prune(
             &mut self.jobs.lock().expect("device installs mutex poisoned"),

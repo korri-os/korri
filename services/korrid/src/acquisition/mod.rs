@@ -103,7 +103,6 @@ impl AcquisitionCoordinator {
 
     /// How the installs of this device yield to play now: none while they
     /// run at full pace or nothing installs.
-    #[cfg_attr(not(test), allow(dead_code))] // #553: Velvet's list of installs.
     pub(crate) fn install_yield(&self) -> Option<InstallYield> {
         [
             self.pieces.gate().taking_now(),
@@ -476,14 +475,12 @@ impl AcquisitionCoordinator {
 
     /// Move a waiting install to `index` in the line (0 is next). False
     /// when it does not wait.
-    #[cfg_attr(not(test), allow(dead_code))] // #553: Velvet's list of installs.
     pub(crate) fn reorder(&self, member: &Member, index: usize) -> bool {
         self.lock().reorder(member, index)
     }
 
     /// The person's line: the running install first, then those that wait.
     /// Only installs that a restart keeps are named.
-    #[cfg_attr(not(test), allow(dead_code))] // #553: Velvet's list of installs.
     pub(crate) fn line(&self) -> Vec<Member> {
         let queue = self.lock();
         queue
@@ -802,7 +799,7 @@ impl AcquisitionCoordinator {
     }
     /// ADR 0092: an install at a chosen place in the line; play-here goes
     /// to the front.
-    #[cfg_attr(not(test), allow(dead_code))] // #553: play-here.
+    #[cfg_attr(not(test), allow(dead_code))] // #575: a provider install at the front of the line.
     pub(crate) async fn acquire_at(
         &self,
         context: &GameContext,

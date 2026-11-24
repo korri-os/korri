@@ -42,6 +42,7 @@ impl Configured {
                 job_id: job.into(),
                 release_key: KEY.into(),
                 state,
+                yielding: None,
             },
         );
     }

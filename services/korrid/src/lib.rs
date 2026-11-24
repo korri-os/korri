@@ -5568,7 +5568,30 @@ impl InstallFacts {
     }
 }
 
-fn line_state(state: &acquisition::ArtifactState) -> Option<surface::installs::LineState> {
+/// An install's yield to play in the treaty's words (ADR 0092, #556).
+fn treaty_yield(yielding: acquisition::InstallYield) -> korri_surface_treaty::SurfaceInstallYield {
+    use acquisition::{YieldPace, YieldReason};
+    use korri_surface_treaty::{SurfaceInstallPace, SurfaceInstallYieldReason};
+    korri_surface_treaty::SurfaceInstallYield {
+        pace: match yielding.pace {
+            YieldPace::Slowed => SurfaceInstallPace::Slowed,
+            YieldPace::Paused => SurfaceInstallPace::Paused,
+        },
+        reason: match yielding.reason {
+            YieldReason::Game => SurfaceInstallYieldReason::Game,
+            YieldReason::Netplay => SurfaceInstallYieldReason::Netplay,
+            YieldReason::Stream => SurfaceInstallYieldReason::Stream,
+            YieldReason::SourcesBusy => SurfaceInstallYieldReason::SourcesBusy,
+        },
+    }
+}
+
+/// An artifact's place in the line. An artifact's state carries no yield of
+/// its own, so a running one takes this device's pace for installs.
+fn line_state(
+    state: &acquisition::ArtifactState,
+    yielding: Option<korri_surface_treaty::SurfaceInstallYield>,
+) -> Option<surface::installs::LineState> {
     use acquisition::ArtifactState as A;
     use surface::installs::LineState as L;
     Some(match state {
@@ -5582,15 +5605,13 @@ fn line_state(state: &acquisition::ArtifactState) -> Option<surface::installs::L
             done: *bytes_done,
             total: *bytes_total,
             bytes_per_second: *bytes_per_second,
-            // #556: the artifact download's yield once it lands.
-            yielding: None,
+            yielding,
         },
         A::Unpacking => L::Running {
             done: 0,
             total: None,
             bytes_per_second: None,
-            // #556: the artifact download's yield once it lands.
-            yielding: None,
+            yielding,
         },
         A::Failed { reason } => L::Failed {
             reason: reason.message.clone(),
@@ -5612,12 +5633,13 @@ impl surface::installs::InstallsAccess for InstallFacts {
             .map(|snapshot| snapshot.artifacts)
             .unwrap_or_default();
         let line = coordinator.line();
+        let pace = coordinator.install_yield().map(treaty_yield);
         let mut entries: Vec<LineEntry> = line
             .iter()
             .filter_map(|member| match member {
                 Member::Artifact(id) => {
                     let artifact = artifacts.iter().find(|artifact| artifact.id == *id)?;
-                    let state = match line_state(&artifact.state)? {
+                    let state = match line_state(&artifact.state, pace)? {
                         L::Waiting { .. } => L::Waiting {
                             bytes: artifact.bytes_total,
                         },
@@ -5642,8 +5664,7 @@ impl surface::installs::InstallsAccess for InstallFacts {
                                 done: bytes_done,
                                 total: Some(bytes_total),
                                 bytes_per_second: None,
-                                // #556: `status.yielding` once it lands.
-                                yielding: None,
+                                yielding: status.yielding.map(treaty_yield),
                             },
                             _ => return None,
                         };
@@ -5660,8 +5681,7 @@ impl surface::installs::InstallsAccess for InstallFacts {
                             done: 0,
                             total: None,
                             bytes_per_second: None,
-                            // #556: the provider job's yield once it lands.
-                            yielding: None,
+                            yielding: job.yielding.map(treaty_yield),
                         },
                         J::Downloading {
                             bytes_done,
@@ -5671,8 +5691,7 @@ impl surface::installs::InstallsAccess for InstallFacts {
                             done: bytes_done,
                             total: bytes_total,
                             bytes_per_second,
-                            // #556: the provider job's yield once it lands.
-                            yielding: None,
+                            yielding: job.yielding.map(treaty_yield),
                         },
                         J::Imported { .. } | J::Failed { .. } | J::Cancelled => return None,
                     };

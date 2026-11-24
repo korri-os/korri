@@ -241,7 +241,6 @@ impl Gate {
 
     /// The pace that a running install last met. None while no install
     /// asked lately: no install yields then.
-    #[cfg_attr(not(test), allow(dead_code))] // #553: Velvet's list of installs.
     pub(crate) fn taking_now(&self) -> Option<InstallYield> {
         self.0
             .last
