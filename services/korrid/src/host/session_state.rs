@@ -4931,6 +4931,16 @@ mod tests {
             Instant::now(),
         );
         assert!(shell.frozen());
+        assert!(
+            compositor
+                .commands
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|command| command
+                    .contains("[con_id=3] floating disable; [con_id=3] fullscreen enable")),
+            "the first frame must leave scratchpad floating geometry"
+        );
         assert_eq!(
             backend.state.lock().unwrap().audio_released.as_slice(),
             std::slice::from_ref(&id)
@@ -8093,7 +8103,7 @@ printf '[{{"success":true}}]'
         compositor.commands.lock().unwrap().clear();
         compositor.focused.lock().unwrap().clear();
         let fullscreen = |node: i64| {
-            format!("[con_id={node}] move container to workspace current; [con_id={node}] fullscreen enable")
+            format!("[con_id={node}] move container to workspace current; [con_id={node}] floating disable; [con_id={node}] fullscreen enable")
         };
 
         assert!(matches!(

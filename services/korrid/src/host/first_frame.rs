@@ -137,7 +137,9 @@ impl HostSessionControl {
         let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
         let displays = super::super::display_placement::configured_displays()?;
         if displays.is_empty() {
-            compositor.command(&format!("[con_id={node}] move container to workspace current; [con_id={node}] fullscreen enable"))?;
+            // Moving out of scratchpad shows the window but leaves it floating.
+            // Tiling it removes scratchpad membership before fullscreen sizing.
+            compositor.command(&format!("[con_id={node}] move container to workspace current; [con_id={node}] floating disable; [con_id={node}] fullscreen enable"))?;
             return compositor.focus_game(node);
         }
         let placement = self.launch_placement(launch_id, &displays)?;

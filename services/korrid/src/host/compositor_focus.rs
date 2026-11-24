@@ -83,7 +83,7 @@ impl SwayCompositorControl {
     /// RG353M's screen for a stream. Focusing the shell later leaves
     /// fullscreen again, so each return to the viewer requests it anew.
     pub(crate) fn focus_fullscreen(&self, node_id: i64) -> Result<(), String> {
-        self.command(&format!("[con_id={node_id}] move container to workspace current; [con_id={node_id}] fullscreen enable; [con_id={node_id}] focus"))
+        self.command(&format!("[con_id={node_id}] move container to workspace current; [con_id={node_id}] floating disable; [con_id={node_id}] fullscreen enable; [con_id={node_id}] focus"))
     }
 }
 
@@ -380,7 +380,7 @@ pub(crate) fn present_shell_window(
     // A refused fullscreen leaves the two windows side by side, but input
     // still reaches the shell: report it, and let the proven focus decide.
     if let Err(reason) = control.command(&format!(
-        "[con_id={id}] move container to workspace current; [con_id={id}] fullscreen enable"
+        "[con_id={id}] move container to workspace current; [con_id={id}] floating disable; [con_id={id}] fullscreen enable"
     )) {
         eprintln!("korrid: ShellFullscreenFailed {{ node: {id}, reason: {reason} }}");
     }
@@ -456,7 +456,7 @@ fn front_launch_window(
             let node = candidate.node_id;
             // As in `present_shell_window`: only the proven focus decides.
             if fullscreen {
-                if let Err(reason) = control.command(&format!("[con_id={node}] move container to workspace current; [con_id={node}] fullscreen enable"))
+                if let Err(reason) = control.command(&format!("[con_id={node}] move container to workspace current; [con_id={node}] floating disable; [con_id={node}] fullscreen enable"))
                 {
                     eprintln!("korrid: GameFullscreenFailed {{ node: {node}, reason: {reason} }}");
                 }
