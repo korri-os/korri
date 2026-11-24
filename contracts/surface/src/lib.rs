@@ -2594,7 +2594,10 @@ mod tests {
             "state": {"_tag": "Installing", "progress": {"done": 1.0, "total": 4.0}, "secondsLeft": 300.0},
             "playWhenReady": true, "streamMeanwhile": true});
         assert_eq!(serde_json::to_value(&install).unwrap(), wire);
-        assert_eq!(serde_json::from_value::<SurfaceInstall>(wire).unwrap(), install);
+        assert_eq!(
+            serde_json::from_value::<SurfaceInstall>(wire).unwrap(),
+            install
+        );
         assert_eq!(
             serde_json::to_value(SurfaceInstallState::Waiting { bytes: None }).unwrap(),
             json!({"_tag": "Waiting"})
@@ -2634,7 +2637,10 @@ mod tests {
             ),
         ] {
             assert_eq!(serde_json::to_value(&request).unwrap(), wire);
-            assert_eq!(serde_json::from_value::<SurfaceRequest>(wire).unwrap(), request);
+            assert_eq!(
+                serde_json::from_value::<SurfaceRequest>(wire).unwrap(),
+                request
+            );
         }
     }
 
