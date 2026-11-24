@@ -784,8 +784,12 @@ pub(crate) fn choose_runner(
             return (None, notices);
         }
     }
-    (
-        (candidates.len() == 1).then(|| candidates[0].runner_id.clone()),
-        notices,
-    )
+    // No place chooses. One route is the choice; between the Steam plugin's
+    // two runners the engine runner is the default (ADR 0083).
+    let default = match candidates {
+        [only] => Some(only.runner_id.clone()),
+        _ => crate::steam_engine::default_runner(candidates.iter().map(|v| v.runner_id.as_str()))
+            .map(str::to_owned),
+    };
+    (default, notices)
 }

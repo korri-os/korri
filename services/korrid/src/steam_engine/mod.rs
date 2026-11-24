@@ -25,10 +25,11 @@ pub mod store;
 
 pub use crate::plugin_discovery::is_steam_plugin;
 
-/// The engine runner's key. The client runner `P/steam` stays the default;
-/// this one is chosen per game or for the system.
+/// The engine runner's key. It is the default of the Steam plugin's two
+/// runners (ADR 0083, owner decision 2026-11-23).
 pub const ENGINE_KEY: &str = "engine";
-/// The client runner's key, the fallback.
+/// The client runner's key: the second choice, picked per game or for the
+/// system.
 pub const CLIENT_KEY: &str = "steam";
 /// The key of Valve's pinned engine package: `bins_sdk_linuxarm64_linuxarm64`
 /// on aarch64-linux, `bins_sdk_ubuntu12` on x86_64-linux.
@@ -102,6 +103,28 @@ pub fn runner_title(runner_id: &str) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+/// The runner a Steam game uses when no launch setting chooses one: the
+/// engine runner, when the game's only routes are the two runners of one
+/// Steam plugin (ADR 0083, owner decision 2026-11-23). Any other set of
+/// routes has no default here.
+pub fn default_runner<'a>(runners: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    let mut plugin = None;
+    let mut engine = None;
+    let mut client = false;
+    for id in runners {
+        let (owner, key) = steam_parts(id)?;
+        if *plugin.get_or_insert(owner) != owner {
+            return None;
+        }
+        match key {
+            ENGINE_KEY if engine.is_none() => engine = Some(id),
+            CLIENT_KEY if !client => client = true,
+            _ => return None,
+        }
+    }
+    engine.filter(|_| client)
 }
 
 /// True for `P/steam` of a Steam plugin `P`.
@@ -242,6 +265,29 @@ mod tests {
             assert_eq!(engine_artifact(plugin), format!("{plugin}/engine-package"));
         }
         assert_eq!(engine_runner("@other:steam"), "@other:steam/engine");
+        // The engine runner is the default of one plugin's two runners only.
+        assert_eq!(
+            default_runner(["@korri:steam/steam", "@korri:steam/engine"]),
+            Some("@korri:steam/engine")
+        );
+        assert_eq!(
+            default_runner(["@other:steam/engine", "@other:steam/steam"]),
+            Some("@other:steam/engine")
+        );
+        for none in [
+            vec!["@korri:steam/engine"],
+            vec!["@korri:steam/steam"],
+            vec!["@korri:steam/steam", "@other:steam/engine"],
+            vec![
+                "@korri:steam/steam",
+                "@korri:steam/engine",
+                "@korri:retroarch/mgba",
+            ],
+            vec!["@korri:steam/engine", "@korri:steam/engine"],
+            vec![],
+        ] {
+            assert_eq!(default_runner(none.clone()), None, "{none:?}");
+        }
         for not in [
             "@korri:steamgriddb",
             "@other:steamy",
