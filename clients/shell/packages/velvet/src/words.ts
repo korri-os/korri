@@ -123,3 +123,67 @@ export function caps(text: string): string {
   if (text.indexOf("µ") < 0) return text.toUpperCase()
   return text.split("µ").map(part => part.toUpperCase()).join("µ")
 }
+
+// ---- Installs (ADR 0092) ----
+//
+// The words for putting a game that another device holds on this one. They
+// say a copy is made, with the domain's word, "install" (CONTEXT.md), and
+// they cannot be read as "Play" (where the game is), "Resume", "Play on
+// <place>" (a place that holds it) or Zone's "Play here" (this device holds
+// it already).
+
+/** The detail's choice beside Play: install the game here, then it starts here. */
+export const INSTALL_AND_PLAY = "Install and play"
+/** The same install with no start at its end: a row of the game's More. */
+export const INSTALL_FOR_LATER = "Install for later"
+/** The list of installs: its page, its row in the menu and in Settings, the detail's way to it. */
+export const INSTALLS = "Installs"
+/** The detail's choice while Korri asks the devices that hold the game how large it is. */
+export const CHECKING = "Checking"
+
+/** Time left, in a sentence: "about 7 min left", "under a minute left", "about 1 h 20 min left". */
+export function left(seconds: number): string {
+  if (seconds < 60) return "under a minute left"
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `about ${minutes} min left`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest === 0 ? `about ${hours} h left` : `about ${hours} h ${rest} min left`
+}
+
+/** How long an install takes, as a heading: "About 7 minutes to install". */
+export function takes(seconds: number | undefined): string {
+  if (seconds === undefined) return "This takes a while to install"
+  const minutes = Math.max(1, Math.round(seconds / 60))
+  if (minutes < 60) return `About ${minutes} ${minutes === 1 ? "minute" : "minutes"} to install`
+  const hours = Math.round(minutes / 6) / 10
+  return `About ${String(hours).replace(/\.0$/, "")} ${hours === 1 ? "hour" : "hours"} to install`
+}
+
+/** Progress of a running install: "1.2 GB of 4.7 GB, about 7 min left". */
+export function installed(done: number, total: number | undefined, secondsLeft: number | undefined): string {
+  const amount = total === undefined ? `${bytes(done)} so far` : `${bytes(done)} of ${bytes(total)}`
+  return secondsLeft === undefined ? amount : `${amount}, ${left(secondsLeft)}`
+}
+
+/** Why this device cannot install a game now, as Korri gives it (`SurfaceInstallBlock`). */
+export function blocked(reason: "noRunner" | "notEnoughSpace" | "noSource" | "notAllowed", size: number | undefined): string {
+  switch (reason) {
+    case "noRunner":
+      return "Nothing on this device can run this game, so it cannot be installed here."
+    case "notEnoughSpace":
+      return size === undefined ? "This device does not have the space to install it. Free some space, then try again." : `Installing it needs ${bytes(size)} free on this device. Free some space, then try again.`
+    case "noSource":
+      return "No device that holds this game answers. Wake one, then try again."
+    case "notAllowed":
+      return "The devices that hold this game do not let this device install it."
+  }
+}
+
+/** A place in the line of installs, for the one that waits: "Next in line", "2nd in line". */
+export function inLine(place: number): string {
+  if (place <= 1) return "Next in line"
+  const tens = place % 100
+  const suffix = tens >= 11 && tens <= 13 ? "th" : place % 10 === 1 ? "st" : place % 10 === 2 ? "nd" : place % 10 === 3 ? "rd" : "th"
+  return `${place}${suffix} in line`
+}

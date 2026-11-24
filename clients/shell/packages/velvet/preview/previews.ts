@@ -222,9 +222,9 @@ const one = (component: string, props: string) => `${component} { ${props} }`
   }
   const cinema = (name: string, scene: string) => {
     const v = view(scene)
-    return { name, body: one("VelvetPick", `${FILL} hero: ${v.detail.hero}; cards: ${l(v.detailCards)}; mark: ${l(v.detail.mark)}; buttons: ${l(v.detailButtons)}; stack: ${v.detail.stack}; cinema: true; foot-facts: ${l(v.detail.facts)}; foot-badge: ${JSON.stringify(v.detail.badge)}; note: ${JSON.stringify(v.detail.note)};`) }
+    return { name, body: one("VelvetPick", `${FILL} hero: ${v.detail.hero}; cards: ${l(v.detailCards)}; mark: ${l(v.detail.mark)}; buttons: ${l(v.detailButtons)}; stack: ${v.detail.stack}; cinema: true; foot-facts: ${l(v.detail.facts)}; foot-badge: ${JSON.stringify(v.detail.badge)}; note: ${JSON.stringify(v.detail.note)}; progress: ${v.detail.progress}; share: ${v.detail.share};`) }
   }
-  add("organisms", "VelvetPick", [pick("Hero", "home"), pick("NoArt", "home-no-art"), cinema("Cinema", "detail"), cinema("CinemaNoArt", "detail-no-art"), cinema("TwoPlaces", "detail-two-places")])
+  add("organisms", "VelvetPick", [pick("Hero", "home"), pick("NoArt", "home-no-art"), cinema("Cinema", "detail"), cinema("CinemaNoArt", "detail-no-art"), cinema("TwoPlaces", "detail-two-places"), cinema("Installing", "install-running"), cinema("NoRunner", "install-no-runner")])
   const programme = (component: string, layer: Layer) => (name: string, scene: string) => {
     const v = view(scene)
     const ll = lit(layer)
@@ -239,7 +239,7 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     const v = view(scene)
     return { name, body: one("VelvetSheet", `${FILL} sheet: ${l(v.sheet)}; rows: ${l(v.sheetRows)};`) }
   }
-  add("organisms", "VelvetSheet", [sheet("Sort", "set-sort"), sheet("Menu", "menu"), sheet("Actions", "detail-actions")])
+  add("organisms", "VelvetSheet", [sheet("Sort", "set-sort"), sheet("Menu", "menu"), sheet("Actions", "detail-actions"), sheet("InstallLater", "install-later"), sheet("Install", "installs-sheet"), sheet("InstallFailed", "installs-sheet-failed")])
   const stage = (name: string, scene: string) => ({ name, body: one("VelvetStage", `${FILL} stage: ${l(view(scene).stage)};`) })
   add("organisms", "VelvetStage", [stage("Background", "home"), stage("WideHero", "row"), stage("Cinema", "detail"), stage("LightOnly", "home-no-art"), stage("Library", "lobby"), stage("House", "empty")])
 
@@ -254,13 +254,13 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     const v = view(scene)
     return { name, body: one("VelvetDetail", `${FILL} detail: ${p(v.detail)}; cluster: ${p(v.cluster)}; cards: ${p(v.detailCards)}; buttons: ${p(v.detailButtons)};`) }
   }
-  add("pages", "VelvetDetail", [detail("Cinema", "detail"), detail("NoArt", "detail-no-art"), detail("LongTitle", "detail-long-title"), detail("TwoPlaces", "detail-two-places"), detail("Poster", "detail-poster")])
+  add("pages", "VelvetDetail", [detail("Cinema", "detail"), detail("NoArt", "detail-no-art"), detail("LongTitle", "detail-long-title"), detail("TwoPlaces", "detail-two-places"), detail("Poster", "detail-poster"), detail("InstallOffered", "install-offered"), detail("Installing", "install-running"), detail("NoSpace", "install-no-space")])
   const house = (name: string, scene: string) => {
     const v = view(scene)
     return { name, body: one("VelvetHouse", `${FILL} empty: ${p(v.empty)}; cluster: ${p(v.cluster)}; title: ${p(v.emptyTitle)}; lines: ${p(v.emptyLines)}; buttons: ${p(v.emptyButtons)};`) }
   }
   add("pages", "VelvetHouse", [house("Invitation", "empty"), house("Error", "error")])
-  add("pages", "VelvetList", [["Settings", "settings"], ["Wifi", "wifi"], ["Identity", "identity"], ["Saves", "saves"], ["Runner", "runner"], ["LaunchSettings", "launch-settings"], ["LaunchChanges", "launch-keep"], ["LaunchUnreachable", "launch-unreachable"], ["Invites", "invites"], ["Store", "store"], ["AccountSignedOut", "account-signed-out"], ["AccountExpired", "account-expired"], ["AccountCode", "account-code"], ["AccountCodeTailscale", "account-code-tailscale"], ["AccountForGame", "account-for-game"], ["AccountWorking", "account-working"], ["AccountSignedIn", "account-signed-in"], ["AccountProblem", "account-problem"], ["AccountRefused", "account-refused"], ["FirstBootAccount", "first-boot-account"], ["FirstBootAccountCode", "first-boot-account-code"]].map(([name, scene]) => programme("VelvetList", "pages")(name!, scene!)))
+  add("pages", "VelvetList", [["Settings", "settings"], ["Wifi", "wifi"], ["Identity", "identity"], ["Saves", "saves"], ["Runner", "runner"], ["LaunchSettings", "launch-settings"], ["LaunchChanges", "launch-keep"], ["LaunchUnreachable", "launch-unreachable"], ["Invites", "invites"], ["Store", "store"], ["AccountSignedOut", "account-signed-out"], ["AccountExpired", "account-expired"], ["AccountCode", "account-code"], ["AccountCodeTailscale", "account-code-tailscale"], ["AccountForGame", "account-for-game"], ["AccountWorking", "account-working"], ["AccountSignedIn", "account-signed-in"], ["AccountProblem", "account-problem"], ["AccountRefused", "account-refused"], ["FirstBootAccount", "first-boot-account"], ["FirstBootAccountCode", "first-boot-account-code"], ["Installs", "installs"], ["InstallsEmpty", "installs-empty"]].map(([name, scene]) => programme("VelvetList", "pages")(name!, scene!)))
   add("pages", "VelvetPaused", [pause("VelvetPaused", "pages")("Plain", "overlay"), pause("VelvetPaused", "pages")("Stream", "overlay-stream"), pause("VelvetPaused", "pages")("LowBattery", "status-low-pause")])
   const set = (name: string, scene: string) => {
     const v = view(scene)

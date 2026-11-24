@@ -175,6 +175,39 @@ const busyProgress = { ...korri.status.progress, gameId: "tide-pool" }
 const failedSetting = { _tag: "Problem", settingId: "device-name", message: "That name is already used by another device." }
 const wifiFailed = { ...korri.networkFailed, wifi: { ...korri.networkFailed.wifi, attempt: { _tag: "Failed", ssid: "Attic 5G", message: "The password was not accepted.", passwordRejected: false } } }
 
+// ---- Installs (ADR 0092): Glass Garden, which only zao holds, put on this device ----
+
+const GB = 1_000_000_000
+/** The library with Glass Garden changed (its art, so the stage is lit as a real one is) and the list of installs. */
+const peerInstall = (here: object | undefined, installs: object[] | undefined = [], more: object = {}, game: object = {}) => ({
+  ...ready,
+  catalog: {
+    ...ready.catalog,
+    games: ready.catalog.games.map((entry: any) => entry.id !== "glass-garden" ? entry : {
+      ...entry, media: [hero("tide", "#2a7a8c"), logo("tide", 2364, 704)], ...(here === undefined ? {} : { installHere: here }), ...game,
+    }),
+  },
+  ...(installs === undefined ? {} : { installs }),
+  ...more,
+})
+const running = (more: object = {}) => ({ id: "dev:glass", title: "Glass Garden", gameId: "glass-garden", state: { _tag: "Installing", progress: { done: 1.2 * GB, total: 4.7 * GB }, secondsLeft: 412 }, ...more })
+const line = [
+  { id: "dev:vesper", title: "Vesper", gameId: "vesper", state: { _tag: "Installing", progress: { done: 3.1 * GB, total: 8.4 * GB }, secondsLeft: 1980 } },
+  { id: "dev:glass", title: "Glass Garden", gameId: "glass-garden", state: { _tag: "Waiting", bytes: 4.7 * GB } },
+  { id: "artifact:@korri:mgba/core", title: "mGBA core", state: { _tag: "Waiting", bytes: 3_100_000 } },
+  { id: "dev:clockmaker", title: "The Long Winter of the Clockmaker's Apprentice", gameId: "clockmaker", state: { _tag: "Waiting" } },
+  { id: "dev:anti", title: "Antidisestablishmentarianism", gameId: "antidisestablishmentarianism", state: { _tag: "Failed", reason: "The devices that hold this release stopped answering before it was complete. What was installed is kept for a new try." } },
+]
+const many = [...line, ...["Salt Road", "Winter Kiln", "Low Tide Radio", "Paper Moon", "Brass Owl", "Hollow Pine", "Copper Sky"].map((title, index) => ({ id: `dev:more-${index}`, title, state: { _tag: "Waiting", bytes: (index + 1) * 700_000_000 } }))]
+const toPeer = ["down", "down", "down", "down", "confirm"]
+const toInstalls = ["menu", "down", "confirm"]
+const pluginReview = {
+  _tag: "Confirm", kicker: "Install the mGBA plugin?", gameId: "glass-garden",
+  detail: "Glass Garden needs mGBA to run on this device. mGBA asks to read your games and to write saves.",
+  actions: [{ id: "plugin-review:cancel", label: "Not now", enabled: true }, { id: "plugin-review:install", label: "Install mGBA", enabled: true }],
+  declineActionId: "plugin-review:cancel",
+}
+
 /** Presses from the first row of Settings to its first account row (under More, after Wi-Fi and Identity). */
 const ACCOUNT_ROW_DOWNS = 10
 
@@ -355,6 +388,33 @@ const scenarios: Scenario[] = [
   { name: "status-row", models: [device({ battery: { percent: 12, charging: false } })], steps: ["down"] },
   { name: "status-lobby", models: [device({ battery: { percent: 64, charging: true } })], steps: toLobby },
   { name: "status-low-pause", models: [overlay(korri.overlay.stream, { battery: { percent: 9, charging: false } })], steps: [] },
+  // Installs (ADR 0092): a game only zao holds, its choices and why not, the question while it installs, the list.
+  { name: "install-offered", models: [peerInstall({ _tag: "Offered" })], steps: toPeer },
+  { name: "install-offered-focus", models: [peerInstall({ _tag: "Offered" })], steps: [...toPeer, "right"] },
+  { name: "install-later", models: [peerInstall({ _tag: "Offered" })], steps: [...toPeer, "options"] },
+  { name: "install-plugin", models: [peerInstall({ _tag: "NeedsPlugin", pluginTitle: "mGBA" })], steps: toPeer },
+  { name: "install-plugin-review", models: [peerInstall({ _tag: "NeedsPlugin", pluginTitle: "mGBA" }), peerInstall({ _tag: "NeedsPlugin", pluginTitle: "mGBA" }, [], { status: pluginReview })], steps: [...toPeer, "right", "confirm", "model 1"] },
+  { name: "install-checking", models: [peerInstall({ _tag: "Offered" }), peerInstall({ _tag: "Checking" })], steps: [...toPeer, "right", "confirm", "model 1"] },
+  { name: "install-running", models: [peerInstall({ _tag: "Installing", installId: "dev:glass" }, [running({ playWhenReady: true })], {}, { download: { progress: { done: 1.2 * GB, total: 4.7 * GB }, bytes: 3.5 * GB } })], steps: toPeer },
+  { name: "install-running-later", models: [peerInstall({ _tag: "Installing", installId: "dev:glass" }, [running()], {}, { download: { progress: { done: 1.2 * GB, total: 4.7 * GB }, bytes: 3.5 * GB } })], steps: toPeer },
+  { name: "install-waiting", models: [peerInstall({ _tag: "Installing", installId: "dev:glass" }, line, {}, { download: { queued: true, bytes: 4.7 * GB } })], steps: toPeer },
+  { name: "install-no-runner", models: [peerInstall({ _tag: "Unavailable", reason: "noRunner" })], steps: toPeer },
+  { name: "install-no-space", models: [peerInstall({ _tag: "Unavailable", reason: "notEnoughSpace", bytes: 4.7 * GB })], steps: toPeer },
+  { name: "install-no-source", models: [peerInstall({ _tag: "Unavailable", reason: "noSource" })], steps: toPeer },
+  { name: "install-not-allowed", models: [peerInstall({ _tag: "Unavailable", reason: "notAllowed" })], steps: toPeer },
+  { name: "install-meanwhile", models: [peerInstall({ _tag: "Offered" }), peerInstall({ _tag: "Installing", installId: "dev:glass" }, [running({ playWhenReady: true, streamMeanwhile: true })])], steps: [...toPeer, "right", "confirm", "model 1"] },
+  { name: "install-meanwhile-places", models: [peerInstall({ _tag: "Offered" }, [], {}, { launchLocations: [{ id: "zao", label: "zao" }, { id: "aka", label: "aka" }] }), peerInstall({ _tag: "Installing", installId: "dev:glass" }, [running({ playWhenReady: true, streamMeanwhile: true })], {}, { launchLocations: [{ id: "zao", label: "zao" }, { id: "aka", label: "aka" }] })], steps: [...toPeer, "model 1"] },
+  { name: "installs-menu", models: [peerInstall(undefined, line)], steps: toMenu },
+  { name: "installs", models: [peerInstall(undefined, line)], steps: toInstalls },
+  { name: "installs-many", models: [peerInstall(undefined, many)], steps: [...toInstalls, ...Array.from({ length: 11 }, () => "down")] },
+  { name: "installs-empty", models: [peerInstall(undefined, [])], steps: toInstalls },
+  { name: "installs-failed", models: [peerInstall(undefined, line)], steps: [...toInstalls, "down", "down", "down", "down"] },
+  { name: "installs-sheet", models: [peerInstall(undefined, line)], steps: [...toInstalls, "down", "down", "confirm"] },
+  { name: "installs-sheet-next", models: [peerInstall(undefined, line)], steps: [...toInstalls, "down", "confirm"] },
+  { name: "installs-sheet-running", models: [peerInstall(undefined, line)], steps: [...toInstalls, "confirm"] },
+  { name: "installs-sheet-failed", models: [peerInstall(undefined, line)], steps: [...toInstalls, "down", "down", "down", "down", "confirm"] },
+  { name: "installs-cancel", models: [peerInstall(undefined, line)], steps: [...toInstalls, "down", "down", "confirm", "down", "down", "down", "confirm"] },
+  { name: "installs-settings", models: [peerInstall(undefined, line)], steps: [...toSettings.slice(0, 1), "down", "down", "confirm", ...Array.from({ length: 10 }, () => "down")] },
   // The gameplay overlay.
   { name: "overlay", models: [overlay(korri.overlay.plain)], steps: [] },
   { name: "overlay-groups", models: [overlay(korri.overlay.groups)], steps: ["down", "down"] },

@@ -35,6 +35,8 @@ export component VelvetDetail inherits Rectangle {
         foot-facts: root.detail.facts;
         foot-badge: root.detail.badge;
         note: root.detail.note;
+        progress: root.detail.progress;
+        share: root.detail.share;
         inert: root.inert;
         animate y { duration: Tokens.t-mark-in; easing: cubic-bezier(0.16, 1, 0.3, 1); }
         activated(target, at, released) => { root.activated(target, at, released); }

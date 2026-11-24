@@ -31,6 +31,8 @@ import { bytes, caps, duration, saved } from "./words"
 import { accountContent, drawable, entryById, offered, QUIET, stateLine, stateWord, waitingEntry, type AccountContent } from "./account"
 import { breakLines, capsWidth, DISPLAY_LINE, fitCaps, textWidth, type Fit } from "./fit"
 import { codeSlot, CODE_MODULE_PX, plan, type Plan } from "./plan"
+import { installSheet, installsLater, installsPage, laterRow, OPEN_INSTALLS } from "./installs"
+import { INSTALLS } from "./words"
 
 const run = (actionId: string): Act => send({ _tag: "RunAction", actionId })
 const head = (id: string, label: string): RowSpec => ({ id, kind: "head", label })
@@ -56,11 +58,23 @@ function menuSheet(model: Model): PanelSpec {
   if (model.store !== undefined) rows.push({ id: "m:store", kind: "row", label: "Find games", mark: "more", press: seq(CLOSE, send({ _tag: "OpenStore" }), { t: "open", page: { p: "store" } }) })
   const invites = model.invites ?? []
   if (invites.length > 0) rows.push({ id: "m:invites", kind: "row", label: "Invites", value: String(invites.length), mark: "more", press: seq(CLOSE, { t: "open", page: { p: "invites" } }) })
+  // ADR 0092: the list of installs, wherever the host runs installs; its value is how many there are.
+  if (model.installs !== undefined) rows.push({ id: "m:installs", kind: "row", label: INSTALLS, value: installsValue(model), mark: "more", press: seq(CLOSE, OPEN_INSTALLS) })
   rows.push({ id: "m:settings", kind: "row", label: "Settings", mark: "more", press: seq(CLOSE, { t: "open", page: { p: "settings" } }) })
   if (model.network !== undefined) rows.push({ id: "m:wifi", kind: "row", label: "Wi-Fi", value: connectionWords(model.network.connection), mark: "more", press: seq(CLOSE, { t: "open", page: { p: "wifi" } }) })
   if (model.identityManagement !== undefined) rows.push({ id: "m:identity", kind: "row", label: "Identity", mark: "more", press: seq(CLOSE, { t: "open", page: { p: "identity" } }) })
   if (model.actions.length > 0) rows.push(head("m:device", "This device"), ...actionRows("m:a:", model.actions, CLOSE))
   return { key: "sheet:menu", title: "Menu", rows, buttons: [], back: CLOSE, menu: CLOSE }
+}
+
+/** The installs row's value: what runs, else how many wait, else nothing. */
+export function installsValue(model: Model): string {
+  const installs = model.installs ?? []
+  const running = installs.find(install => install.state._tag === "Installing")
+  if (running !== undefined && running.state._tag === "Installing" && running.state.progress.total !== undefined && running.state.progress.total > 0) {
+    return `${Math.floor((100 * running.state.progress.done) / running.state.progress.total)}%`
+  }
+  return installs.length === 0 ? "" : String(installs.length)
 }
 
 export const SORTS = [["recent", "Recently played"], ["title", "A to Z"], ["mostPlayed", "Most played"]] as const
@@ -85,9 +99,14 @@ function actionsSheet(state: State, model: Model): PanelSpec {
   const game = state.detail?.game
   const focused = model.focusedGame
   const rows: RowSpec[] = []
+  // Velvet's own first (ADR 0092): the install with no start at its end. Korri's actions follow.
+  // Korri's newest copy of the game says whether it can still be installed.
+  const fresh = game === undefined ? undefined : gameById(state.lists, model, game.id) ?? game
+  const later = fresh !== undefined && installsLater(fresh)
+  if (later) rows.push(laterRow(fresh))
   if (game === undefined) rows.push(note("g:none", "No game is open."))
   else if (focused === undefined || focused.gameId !== game.id) rows.push(note("g:wait", "One moment."))
-  else if (focused.actions.length === 0) rows.push(note("g:none", "Korri has nothing more for this game."))
+  else if (focused.actions.length === 0) { if (!later) rows.push(note("g:none", "Korri has nothing more for this game.")) }
   else {
     for (const action of focused.actions) {
       const act = seq(send({ _tag: "RunGameAction", gameId: game.id, actionId: action.id }), CLOSE)
@@ -98,7 +117,7 @@ function actionsSheet(state: State, model: Model): PanelSpec {
 }
 
 export function sheetPanel(kind: SheetKind, state: State, model: Model): PanelSpec {
-  return kind === "menu" ? menuSheet(model) : kind === "sort" ? sortSheet(state, model) : actionsSheet(state, model)
+  return kind === "menu" ? menuSheet(model) : kind === "sort" ? sortSheet(state, model) : kind === "install" ? installSheet(state.sheet?.installId, model) : actionsSheet(state, model)
 }
 
 // ---- Pages ----
@@ -123,6 +142,7 @@ function settingsPage(state: State, model: Model): PanelSpec {
     // A sign-in that needs the person ("needs sign-in", or a problem) says so at rest, not only under focus.
     if (line !== undefined && (entry.state._tag === "SignedOut" || entry.state._tag === "Problem")) places.push(note(`v:account:${entry.id}:line`, line))
   }
+  if (model.installs !== undefined) places.push({ id: "v:installs", kind: "row", label: INSTALLS, value: installsValue(model), mark: "more", press: OPEN_INSTALLS })
   if (places.length > 0) rows.push(head("v:head:places", "More"), ...places)
   rows.push(head("v:head:velvet", "Velvet"))
   rows.push({
@@ -339,6 +359,8 @@ export function pagePanel(page: PageRef, state: State, model: Model): PanelSpec 
       return identityPage(state, model)
     case "account":
       return accountPage(page.id, state, model, CLOSE)
+    case "installs":
+      return installsPage(model)
   }
 }
 

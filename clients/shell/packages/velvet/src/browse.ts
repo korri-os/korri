@@ -26,6 +26,7 @@ import { artOf, blankTile, factLines, factsOf, gameTile, hasHero, marqueeOf, nav
 import { openClusterReserve } from "./cluster"
 import { textWidth } from "./fit"
 import { gridMove, lineMove } from "./focus"
+import { hereButtons, hereNote, hereShare, installsLater } from "./installs"
 import { homeOf, sameQuery, shelvesOf, type ShelfItem, type ShelfSpec } from "./lists"
 import { sortWords } from "./pages"
 import { onForget } from "./memo"
@@ -666,6 +667,8 @@ export interface DetailButton {
   readonly label: string
   readonly icon: string
   readonly quiet: boolean
+  /** Something Korri cannot do now: drawn dim, and the detail's note says why. */
+  readonly dim?: boolean
   readonly act: Act
 }
 
@@ -685,12 +688,14 @@ export function detailButtons(game: Game, model: Model): readonly DetailButton[]
     // "Play on aka" on the button read as generated copy).
     buttons.push({ id: "d:play", label: verb, icon: "play", quiet: false, act: send(only === undefined ? { _tag: "LaunchGame", gameId: game.id } : { _tag: "LaunchGame", gameId: game.id, launchLocationId: only.id }) })
   }
+  // ADR 0092: a game only other devices hold can be installed here; the choice stands after Play, never instead of it.
+  buttons.push(...hereButtons(game, model))
   if (game.saves?._tag === "Split") {
     const choose = game.saves.choose
     buttons.push({ id: "d:save", label: choose.label, icon: "save", quiet: true, act: choose.enabled ? send({ _tag: "RunAction", actionId: choose.id }) : NONE })
   }
   const more = model.focusedGame
-  if (more !== undefined && more.gameId === game.id && more.actions.length > 0) buttons.push({ id: "d:more", label: "More", icon: "menu", quiet: true, act: { t: "sheet", sheet: "actions" } })
+  if (installsLater(game) || (more !== undefined && more.gameId === game.id && more.actions.length > 0)) buttons.push({ id: "d:more", label: "More", icon: "menu", quiet: true, act: { t: "sheet", sheet: "actions" } })
   return buttons
 }
 
@@ -724,7 +729,10 @@ function savesWords(game: Game): string | undefined {
   }
 }
 
-function downloadWords(game: Game): string {
+function downloadWords(game: Game, model: Model): string {
+  // An install from other devices says where it stands in its own words (src/installs.ts).
+  const here = hereNote(game, model)
+  if (here !== undefined) return here
   const download = game.download
   if (download === undefined) return ""
   if (download.queued === true) return "Waiting for another download to finish."
@@ -782,10 +790,12 @@ export function detailView(asked: Pictures, state: State, model: Model, plan: Pl
       stack: detailStacks(buttons, plan),
       badge: game.system ?? "",
       facts: factLines(facts, plan.detailFact, plan.width - 2 * plan.padX, game.system === undefined ? 0 : plan.detailFact * (1.6 + textWidth(game.system, true))),
-      note: downloadWords(game),
+      note: downloadWords(game, model),
+      share: hereShare(game, model) ?? 0,
+      progress: hereShare(game, model) !== undefined,
     },
     cards: [],
-    buttons: buttons.map((button, index) => pill(button.label, "detail", button.id, live && index === at, { icon: button.icon, quiet: button.quiet })),
+    buttons: buttons.map((button, index) => pill(button.label, "detail", button.id, live && index === at, { icon: button.icon, quiet: button.quiet, dim: button.dim === true })),
   }
 }
 

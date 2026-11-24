@@ -390,6 +390,9 @@ export struct Detail {
     badge: string,
     facts: Facts,
     note: string,
+    // An install of the game that runs (ADR 0092): a bar over the note, `share` of the way.
+    progress: bool,
+    share: float,
 }
 
 // The empty library, and the library that is loading or could not be read.

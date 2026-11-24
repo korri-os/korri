@@ -20,6 +20,7 @@ import { VelvetMarquee } from "../molecules/VelvetMarquee.slint";
 import { VelvetButtons } from "../molecules/VelvetButtons.slint";
 import { VelvetFacts } from "../molecules/VelvetFacts.slint";
 import { VelvetWords } from "../atoms/VelvetWords.slint";
+import { VelvetBar } from "../atoms/VelvetBar.slint";
 
 export component VelvetPick inherits Rectangle {
     callback activated(target: string, at: float, released: bool);
@@ -33,6 +34,9 @@ export component VelvetPick inherits Rectangle {
     in property <Facts> foot-facts;
     in property <string> foot-badge;
     in property <string> note;
+    // An install that runs (the detail, ADR 0092): a bar between the buttons and the note.
+    in property <bool> progress;
+    in property <float> share;
     in property <bool> inert;
     property <length> u: Tokens.unit;
     property <bool> narrow: Tokens.screen.narrow;
@@ -78,9 +82,16 @@ export component VelvetPick inherits Rectangle {
         size: root.button;
         activated(target, at, released) => { root.activated(target, at, released); }
     }
+    property <length> bar-y: root.buttons-y + buttons-row.block + root.gap * 0.9;
+    if root.progress: VelvetBar {
+        x: root.box-x;
+        y: root.bar-y;
+        width: Math.min(root.box-w, Tokens.screen.detail-fact * root.u * 22);
+        share: root.share;
+    }
     if root.note != "": VelvetWords {
         x: root.box-x;
-        y: root.buttons-y + buttons-row.block + root.gap * 0.6;
+        y: root.progress ? root.bar-y + root.gap * 0.7 : root.buttons-y + buttons-row.block + root.gap * 0.6;
         width: root.box-w;
         text: root.note;
         size: Tokens.screen.detail-fact * root.u;

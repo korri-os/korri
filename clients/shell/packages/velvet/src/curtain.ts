@@ -23,6 +23,7 @@
 import type { SurfaceAction, SurfaceModel as Model, SurfaceStatus, SurfaceSteps } from "../../../../../contracts/generated/surface"
 import { whereOf } from "./art"
 import { breakLines, textWidth } from "./fit"
+import { meanwhileCurtain } from "./installs"
 import { gameById } from "./lists"
 import { onForget } from "./memo"
 import { shortKey } from "./pages"
@@ -233,11 +234,11 @@ onForget(() => {
   last = undefined
 })
 
-/** The curtain that is up: Korri's status first, then Velvet's question, then Korri's identity work. */
+/** The curtain that is up: Korri's status first, then Velvet's question, then Korri's question about an install (src/installs.ts), then Korri's identity work. */
 export function curtainOf(state: State, model: Model): CurtainSpec | undefined {
   if (last !== undefined && last.state === state && last.model === model) return last.curtain
   // The gameplay overlay has its own page; Korri's status still stands over it.
-  const curtain = statusCurtain(state, model) ?? askCurtain(state) ?? identityCurtain(state, model)
+  const curtain = statusCurtain(state, model) ?? askCurtain(state) ?? meanwhileCurtain(state, model) ?? identityCurtain(state, model)
   last = { state, model, curtain }
   return curtain
 }

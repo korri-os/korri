@@ -187,7 +187,7 @@ export function perform(state: State, act: Act | undefined, model: Model, out: R
       return act.ask.buttons.length === 0 ? { ...state, ask: undefined } : { ...state, ask: { spec: act.ask, at: 0 } }
     case "sheet": {
       const { [`sheet:${act.sheet}`]: _dropped, ...panels } = state.panels
-      return { ...state, sheet: { kind: act.sheet }, panels }
+      return { ...state, sheet: act.installId === undefined ? { kind: act.sheet } : { kind: act.sheet, installId: act.installId }, panels }
     }
     case "set":
       out.push(openSet(act.set))
@@ -509,7 +509,7 @@ function published(state: State, model: Model): State {
     if (Object.keys(moving).length !== Object.keys(next.overlay.moving).length) next = { ...next, overlay: { ...next.overlay, moving } }
   }
   // A page whose subject Korri no longer publishes closes.
-  const pages = next.pages.filter(page => !(page.p === "identity" && model.identityManagement === undefined) && !((page.p === "store" || page.p === "provider" || page.p === "entry") && model.store === undefined) && !(page.p === "wifi" && model.network === undefined))
+  const pages = next.pages.filter(page => !(page.p === "identity" && model.identityManagement === undefined) && !((page.p === "store" || page.p === "provider" || page.p === "entry") && model.store === undefined) && !(page.p === "wifi" && model.network === undefined) && !(page.p === "installs" && model.installs === undefined))
   if (pages.length !== next.pages.length) next = { ...next, pages }
   // A new invite is announced once, by a notice that takes no focus.
   const invites = model.invites ?? []

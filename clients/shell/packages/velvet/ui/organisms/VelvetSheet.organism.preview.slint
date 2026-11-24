@@ -16,3 +16,15 @@ export component Menu inherits VelvetPreview {
 export component Actions inherits VelvetPreview {
     VelvetSheet { x: 0; y: 0; width: parent.width; height: parent.height; sheet: { shown: true, title: "Ember Road" }; rows: [{ kind: "row", label: "Verify files", note: "Check the game's files against the library", mark: "none", focus-id: "g:verify-files", focused: true }, { kind: "row", label: "Delete save", note: "The save on this device is removed. Saves on zao stay.", mark: "none", danger: true, focus-id: "g:delete-save" }, { kind: "row", label: "Copy to zao", note: "zao is not on the network", mark: "none", dim: true, focus-id: "g:copy-to-zao" }]; }
 }
+
+export component InstallLater inherits VelvetPreview {
+    VelvetSheet { x: 0; y: 0; width: parent.width; height: parent.height; sheet: { shown: true, title: "Glass Garden" }; rows: [{ kind: "row", label: "Install for later", note: "Puts it on this device to play when you like. Play still streams it now.", mark: "none", focus-id: "g:install-later", focused: true }]; }
+}
+
+export component Install inherits VelvetPreview {
+    VelvetSheet { x: 0; y: 0; width: parent.width; height: parent.height; sheet: { shown: true, title: "mGBA core" }; rows: [{ kind: "note", label: "2nd in line. 3.1 MB.", mark: "none" }, { kind: "row", label: "Install next", mark: "none", focus-id: "i:next", focused: true }, { kind: "row", label: "Move up", mark: "none", focus-id: "i:up" }, { kind: "row", label: "Move down", mark: "none", focus-id: "i:down" }, { kind: "row", label: "Cancel install", mark: "none", danger: true, focus-id: "i:cancel" }]; }
+}
+
+export component InstallFailed inherits VelvetPreview {
+    VelvetSheet { x: 0; y: 0; width: parent.width; height: parent.height; sheet: { shown: true, title: "Antidisestablishmentarianism" }; rows: [{ kind: "problem", label: "The devices that hold this release stopped answering before it was complete. What was installed is kept for a new try.", mark: "none" }, { kind: "row", label: "Try again", note: "Goes on from what was installed.", mark: "none", focus-id: "i:again", focused: true }, { kind: "row", label: "Throw away", mark: "none", danger: true, focus-id: "i:cancel" }]; }
+}

@@ -146,7 +146,7 @@ export type Act =
   | { readonly t: "close" }
   | { readonly t: "type"; readonly entry: Entry; readonly draft?: string }
   | { readonly t: "ask"; readonly ask: AskSpec }
-  | { readonly t: "sheet"; readonly sheet: SheetKind }
+  | { readonly t: "sheet"; readonly sheet: SheetKind; readonly installId?: string }
   | { readonly t: "set"; readonly set: SetState }
   | { readonly t: "sort"; readonly order?: CatalogOrder; readonly systemId?: string | null }
   | { readonly t: "detail"; readonly game: Game }
@@ -252,8 +252,9 @@ export type PageRef =
   | { readonly p: "invites" }
   | { readonly p: "identity" }
   | { readonly p: "account"; readonly id: string }
+  | { readonly p: "installs" }
 
-export type SheetKind = "menu" | "sort" | "actions"
+export type SheetKind = "menu" | "sort" | "actions" | "install"
 
 // ---- The keyboard ----
 
@@ -347,7 +348,8 @@ export interface State {
   readonly scrolled?: Readonly<Record<string, number>>
   readonly set?: SetState
   readonly detail?: DetailState
-  readonly sheet?: { readonly kind: SheetKind }
+  /** `installId`: the install an install's sheet is about. */
+  readonly sheet?: { readonly kind: SheetKind; readonly installId?: string }
   readonly pages: readonly PageRef[]
   /** Each panel's focus, by the panel's key. */
   readonly panels: Readonly<Record<string, PanelState>>
