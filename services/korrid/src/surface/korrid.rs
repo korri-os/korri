@@ -72,6 +72,8 @@ pub struct Korrid {
     pub(crate) battery: Option<Battery>,
     /// ADR 0089: the generic account host's facts for plugin sign-ins.
     pub(crate) plugin_accounts: Option<Arc<dyn super::account_sign_ins::PluginAccountAccess>>,
+    /// ADR 0092 (#553): the install manager and install sources.
+    pub(crate) installs: Option<Arc<dyn super::installs::InstallsAccess>>,
 }
 
 /// How a refusal reads for one method, as the portal client mapped it.
@@ -165,7 +167,16 @@ impl Korrid {
             onboarding_changes: None,
             battery: None,
             plugin_accounts: None,
+            installs: None,
         }
+    }
+
+    pub(crate) fn with_installs(
+        mut self,
+        access: Arc<dyn super::installs::InstallsAccess>,
+    ) -> Self {
+        self.installs = Some(access);
+        self
     }
 
     pub(crate) fn with_network_changes(mut self, changes: Changes) -> Self {

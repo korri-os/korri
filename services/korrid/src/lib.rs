@@ -5540,6 +5540,303 @@ impl surface::account_sign_ins::PluginAccountAccess for PluginAccountFacts {
     }
 }
 
+/// ADR 0092 (#553): the install manager and the install sources, read in
+/// process for the surface's play here and its list of installs.
+struct InstallFacts {
+    state: AppState,
+}
+
+impl InstallFacts {
+    fn holders(
+        &self,
+        holders: Vec<surface::installs::Holder>,
+    ) -> Option<Vec<Arc<acquisition::pieces::PeerHolder>>> {
+        let directory = self.state.federation.clone()?;
+        let credentials = peer_rpc::PeerCredentials::load(self.state.private_state_root()).ok()?;
+        Some(
+            holders
+                .into_iter()
+                .map(|holder| {
+                    Arc::new(acquisition::pieces::PeerHolder {
+                        route: acquisition::pieces::PeerRoute::Federation(directory.clone()),
+                        credentials: credentials.clone(),
+                        device: holder.device,
+                    })
+                })
+                .collect(),
+        )
+    }
+}
+
+fn line_state(state: &acquisition::ArtifactState) -> Option<surface::installs::LineState> {
+    use acquisition::ArtifactState as A;
+    use surface::installs::LineState as L;
+    Some(match state {
+        A::Queued => L::Waiting { bytes: None },
+        A::Downloading {
+            bytes_done,
+            bytes_total,
+            bytes_per_second,
+            ..
+        } => L::Running {
+            done: *bytes_done,
+            total: *bytes_total,
+            bytes_per_second: *bytes_per_second,
+        },
+        A::Unpacking => L::Running {
+            done: 0,
+            total: None,
+            bytes_per_second: None,
+        },
+        A::Failed { reason } => L::Failed {
+            reason: reason.message.clone(),
+        },
+        A::Missing | A::Ready { .. } => return None,
+    })
+}
+
+impl surface::installs::InstallsAccess for InstallFacts {
+    fn line(&self) -> Vec<surface::installs::LineEntry> {
+        use acquisition::{AcquireJobState as J, Member};
+        use surface::installs::{LineEntry, LineState as L};
+        let Ok((root, registry)) = self.state.acquisition_context() else {
+            return Vec::new();
+        };
+        let coordinator = &self.state.acquisition;
+        let artifacts = coordinator
+            .status(root, &registry, None)
+            .map(|snapshot| snapshot.artifacts)
+            .unwrap_or_default();
+        let line = coordinator.line();
+        let mut entries: Vec<LineEntry> = line
+            .iter()
+            .filter_map(|member| match member {
+                Member::Artifact(id) => {
+                    let artifact = artifacts.iter().find(|artifact| artifact.id == *id)?;
+                    let state = match line_state(&artifact.state)? {
+                        L::Waiting { .. } => L::Waiting {
+                            bytes: artifact.bytes_total,
+                        },
+                        state => state,
+                    };
+                    Some(LineEntry {
+                        member: member.clone(),
+                        title: Some(artifact.title.clone()),
+                        state,
+                    })
+                }
+                Member::Job(id) => {
+                    if let Some(status) = coordinator.pieces().status(id) {
+                        let state = match status.state {
+                            acquisition::pieces::DeviceInstallState::Waiting => {
+                                L::Waiting { bytes: None }
+                            }
+                            acquisition::pieces::DeviceInstallState::Installing {
+                                bytes_done,
+                                bytes_total,
+                            } => L::Running {
+                                done: bytes_done,
+                                total: Some(bytes_total),
+                                bytes_per_second: None,
+                            },
+                            _ => return None,
+                        };
+                        return Some(LineEntry {
+                            member: member.clone(),
+                            title: None,
+                            state,
+                        });
+                    }
+                    let job = coordinator.acquire_status(id).ok()?;
+                    let state = match job.state {
+                        J::Queued => L::Waiting { bytes: None },
+                        J::Resolving | J::Unpacking | J::Placing => L::Running {
+                            done: 0,
+                            total: None,
+                            bytes_per_second: None,
+                        },
+                        J::Downloading {
+                            bytes_done,
+                            bytes_total,
+                            bytes_per_second,
+                        } => L::Running {
+                            done: bytes_done,
+                            total: bytes_total,
+                            bytes_per_second,
+                        },
+                        J::Imported { .. } | J::Failed { .. } | J::Cancelled => return None,
+                    };
+                    Some(LineEntry {
+                        member: member.clone(),
+                        title: Some(job.file_name.unwrap_or(job.id)),
+                        state,
+                    })
+                }
+            })
+            .collect();
+        // An artifact whose last try failed has left the line; it shows
+        // until it is thrown away or fetched again.
+        for artifact in &artifacts {
+            if let acquisition::ArtifactState::Failed { reason } = &artifact.state {
+                let member = Member::Artifact(artifact.id.clone());
+                if !line.contains(&member) {
+                    entries.push(LineEntry {
+                        member,
+                        title: Some(artifact.title.clone()),
+                        state: L::Failed {
+                            reason: reason.message.clone(),
+                        },
+                    });
+                }
+            }
+        }
+        entries
+    }
+
+    fn runs_system(&self, system: &str) -> bool {
+        // The registry keeps only runners that run on this platform.
+        self.state.acquisition_context().is_ok_and(|(_, registry)| {
+            registry.runners().values().any(|runner| {
+                runner
+                    .systems
+                    .as_ref()
+                    .is_some_and(|systems| systems.iter().any(|id| id == system))
+            })
+        })
+    }
+
+    fn check(
+        &self,
+        key: String,
+        holders: Vec<surface::installs::Holder>,
+    ) -> futures::future::BoxFuture<
+        'static,
+        Result<
+            surface::installs::Checked,
+            (korri_surface_treaty::SurfaceInstallBlock, Option<u64>),
+        >,
+    > {
+        use acquisition::pieces::Holder as _;
+        use korri_surface_treaty::SurfaceInstallBlock as Block;
+        let state = self.state.clone();
+        let holders = self.holders(holders);
+        Box::pin(async move {
+            let holders = holders.ok_or((Block::NoSource, None))?;
+            let answers = futures::future::join_all(holders.iter().map(|holder| {
+                let key = key.clone();
+                async move {
+                    tokio::time::timeout(std::time::Duration::from_secs(60), holder.manifest(&key))
+                        .await
+                        .unwrap_or_else(|_| {
+                            Err(RpcFailure {
+                                code: "InstallSourceUnavailable".into(),
+                                message: "The device did not answer.".into(),
+                            })
+                        })
+                }
+            }))
+            .await;
+            let manifest = match answers.iter().find_map(|answer| answer.as_ref().ok()) {
+                Some(manifest) => manifest.clone(),
+                None if answers.iter().any(
+                    |answer| matches!(answer, Err(failure) if failure.code == "InstallRefused"),
+                ) =>
+                {
+                    return Err((Block::NotAllowed, None))
+                }
+                None => return Err((Block::NoSource, None)),
+            };
+            let bytes = manifest.bytes();
+            let (root, registry) = state
+                .acquisition_context()
+                .map_err(|_| (Block::NoSource, Some(bytes)))?;
+            // The netplay copy's check of free space (acquisition/netplay.rs).
+            if !acquisition::netplay::room(root, bytes) {
+                return Err((Block::NotEnoughSpace, Some(bytes)));
+            }
+            let extension = |name: &str| {
+                std::path::Path::new(name)
+                    .extension()
+                    .map(|extension| extension.to_string_lossy().to_ascii_lowercase())
+            };
+            let systems = registry
+                .systems()
+                .keys()
+                .filter(|system| {
+                    registry.content_rules(system).is_some_and(|rules| {
+                        manifest.files.iter().any(|file| {
+                            extension(&file.name).is_some_and(|ext| {
+                                rules.extensions.iter().any(|rule| {
+                                    rule.trim_start_matches('.').eq_ignore_ascii_case(&ext)
+                                })
+                            })
+                        })
+                    })
+                })
+                .cloned()
+                .collect();
+            Ok(surface::installs::Checked { bytes, systems })
+        })
+    }
+
+    fn start(
+        &self,
+        key: &str,
+        title: &str,
+        holders: Vec<surface::installs::Holder>,
+        place: acquisition::Place,
+    ) -> Result<String, RpcFailure> {
+        let context = self.state.game_context()?;
+        let holders = self.holders(holders).ok_or_else(|| RpcFailure {
+            code: "InstallSourceUnavailable".into(),
+            message: "No device that holds this release is reachable.".into(),
+        })?;
+        self.state.acquisition.pieces().start(
+            &self.state.acquisition,
+            &context,
+            key,
+            title,
+            holders,
+            place,
+        )
+    }
+
+    fn status(&self, job: &str) -> Option<acquisition::pieces::DeviceInstallStatus> {
+        self.state.acquisition.pieces().status(job)
+    }
+
+    fn cancel(
+        &self,
+        member: acquisition::Member,
+    ) -> futures::future::BoxFuture<'static, Result<(), RpcFailure>> {
+        let state = self.state.clone();
+        Box::pin(async move {
+            match member {
+                acquisition::Member::Job(id) => {
+                    if state.acquisition.pieces().status(&id).is_some() {
+                        state.acquisition.pieces().cancel(&id).await;
+                        Ok(())
+                    } else {
+                        state.acquisition.acquire_cancel(&id).await.map(|_| ())
+                    }
+                }
+                acquisition::Member::Artifact(id) => {
+                    let (root, registry) = state.acquisition_context()?;
+                    state
+                        .acquisition
+                        .cancel(root, &registry, &id)
+                        .await
+                        .map(|_| ())
+                }
+            }
+        })
+    }
+
+    fn reorder(&self, member: &acquisition::Member, index: usize) -> bool {
+        self.state.acquisition.reorder(member, index)
+    }
+}
+
 /// ADR 0083: the Steam engine runner's facts for the surface's sign-in
 /// model, read in process from the route registry and the artifact cache.
 struct SteamEngineFacts {
@@ -5885,6 +6182,9 @@ fn surface_hub_for(
         korrid
             .with_steam_engine(steam_engine)
             .with_plugin_accounts(Arc::new(PluginAccountFacts {
+                state: surface_host.clone(),
+            }))
+            .with_installs(Arc::new(InstallFacts {
                 state: surface_host.clone(),
             }))
             .with_save_changes(match &surface_host.mode {

@@ -33,7 +33,7 @@ fn primary_copy(entry: &Entry) -> Option<GameCopy> {
     }
 }
 
-fn copy_is_local(copy: &GameCopy) -> bool {
+pub fn copy_is_local(copy: &GameCopy) -> bool {
     match copy {
         GameCopy::Local(_) => true,
         GameCopy::Remote(game) => game.source.is_local,
@@ -125,6 +125,65 @@ pub fn entry_for_launch_location(entry: &Entry, launch_location_id: &str) -> Opt
         GameCopy::Remote(_) => copy,
     };
     Some(Entry::for_copy(&launchable))
+}
+
+/// A game that only other devices hold, as a file release (ADR 0092): what
+/// an install of it here needs. `key` is the release key (ADR 0030), from
+/// the catalog's `identity` (`GameIdentity::Hash`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PeerRelease {
+    pub key: String,
+    pub title: String,
+    /// The `SurfaceGame.id` of the presented game.
+    pub game_id: String,
+    /// The game's id on its holders, for their routes.
+    pub holder_game_id: String,
+    /// Every device of the catalog that holds this release, in launch
+    /// location order.
+    pub holders: Vec<super::installs::Holder>,
+}
+
+/// The release an install here would take, for a game that only other
+/// devices hold. None for a game this device holds, a running session, a
+/// game with a provider identity, and a copy with no device key.
+pub fn peer_release(entry: &Entry) -> Option<PeerRelease> {
+    let Entry::Game { game, .. } = entry else {
+        return None;
+    };
+    let copies = ordered_copies_for_entry(entry);
+    if copies.iter().any(copy_is_local) {
+        return None;
+    }
+    let Some(crate::GameIdentity::Hash(key)) = &game.identity else {
+        return None;
+    };
+    let mut holders: Vec<super::installs::Holder> = Vec::new();
+    for copy in &copies {
+        let GameCopy::Remote(remote) = copy else {
+            continue;
+        };
+        let same =
+            matches!(&remote.identity, Some(crate::GameIdentity::Hash(other)) if other == key);
+        let Some(device) = remote.source.device_public_key.clone().filter(|_| same) else {
+            continue;
+        };
+        if holders.iter().all(|holder| holder.device != device) {
+            holders.push(super::installs::Holder {
+                device,
+                label: remote.source.label.clone(),
+            });
+        }
+    }
+    if holders.is_empty() {
+        return None;
+    }
+    Some(PeerRelease {
+        key: key.clone(),
+        title: game.title.clone(),
+        game_id: entry.key(),
+        holder_game_id: game.id.clone(),
+        holders,
+    })
 }
 
 /// Play facts for a game entry. Parses the UTC ISO string once here.

@@ -16,6 +16,7 @@ pub mod acquisition_gate;
 pub mod catalog;
 pub mod controllers;
 pub mod downloads;
+pub mod installs;
 pub mod korrid;
 pub mod launch_model;
 pub mod launch_settings;
@@ -379,8 +380,11 @@ impl SurfaceHub {
             }
             SurfaceRequest::FocusGame { game_id } => {
                 let mut sessions = self.sessions.lock().expect("sessions poisoned");
-                sessions.entry(surface_id.to_owned()).or_default().focused = game_id;
+                sessions.entry(surface_id.to_owned()).or_default().focused = game_id.clone();
                 drop(sessions);
+                if let Some(game_id) = &game_id {
+                    self.root().learn_install(game_id);
+                }
                 self.bump();
             }
             SurfaceRequest::RememberPreference { key, value } => {

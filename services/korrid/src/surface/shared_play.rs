@@ -696,6 +696,63 @@ fn problem_of(reason: impl Into<String>, kicker: &str) -> SurfaceStatus {
 
 // ---------------------------------------------------------------- effects
 
+/// Settings' own plugin controller, on facts a flow holds for one step:
+/// read the repositories (`None`), or run one plugin action and wait for
+/// its end. Netplay's plugin install and play here (#553) share it.
+pub(super) async fn plugin_step(
+    korrid: &super::korrid::Korrid,
+    seed: super::plugins::PluginFacts,
+    action_id: Option<String>,
+    changed: Box<dyn Fn() + Send + Sync>,
+) -> (super::plugins::PluginFacts, Option<String>) {
+    use super::plugins::{PluginsController, PluginsHost};
+    let facts = std::sync::Arc::new(std::sync::Mutex::new(seed));
+    let locked = std::sync::Arc::new(std::sync::Mutex::new(false));
+    let (sender, receiver) = tokio::sync::oneshot::channel::<Option<String>>();
+    let sender = std::sync::Arc::new(std::sync::Mutex::new(Some(sender)));
+    let (read, write, get, set) = (
+        std::sync::Arc::clone(&facts),
+        std::sync::Arc::clone(&facts),
+        std::sync::Arc::clone(&locked),
+        std::sync::Arc::clone(&locked),
+    );
+    let resolve = std::sync::Arc::clone(&sender);
+    let controller = PluginsController::new(
+        korrid.clone(),
+        PluginsHost {
+            facts: Box::new(move || read.lock().expect("facts poisoned").clone()),
+            publish: Box::new(move |next| *write.lock().expect("facts poisoned") = next),
+            status: Box::new(move |next| {
+                let failure = match next {
+                    korri_surface_treaty::SurfaceSettingsStatus::Saving { .. } => return,
+                    korri_surface_treaty::SurfaceSettingsStatus::Problem { message, .. } => {
+                        Some(message)
+                    }
+                    korri_surface_treaty::SurfaceSettingsStatus::Idle => None,
+                };
+                if let Some(sender) = resolve.lock().expect("step poisoned").take() {
+                    let _ = sender.send(failure);
+                }
+            }),
+            busy_get: Box::new(move || *get.lock().expect("lock poisoned")),
+            busy_set: Box::new(move |value| *set.lock().expect("lock poisoned") = value),
+            changed,
+        },
+    );
+    let failure = match action_id {
+        None => {
+            controller.refresh().await;
+            None
+        }
+        Some(action_id) => {
+            controller.run(&action_id);
+            receiver.await.ok().flatten()
+        }
+    };
+    let facts = facts.lock().expect("facts poisoned").clone();
+    (facts, failure)
+}
+
 /// The parts of the host shared play reads and refreshes.
 pub struct SharedPlayContext {
     pub state: Box<dyn Fn() -> LaunchablesState + Send + Sync>,
@@ -979,53 +1036,14 @@ impl SharedPlayController {
         seed: super::plugins::PluginFacts,
         action_id: Option<String>,
     ) -> (super::plugins::PluginFacts, Option<String>) {
-        use super::plugins::{PluginsController, PluginsHost};
-        let facts = std::sync::Arc::new(std::sync::Mutex::new(seed));
-        let locked = std::sync::Arc::new(std::sync::Mutex::new(false));
-        let (sender, receiver) = tokio::sync::oneshot::channel::<Option<String>>();
-        let sender = std::sync::Arc::new(std::sync::Mutex::new(Some(sender)));
-        let (read, write, get, set) = (
-            std::sync::Arc::clone(&facts),
-            std::sync::Arc::clone(&facts),
-            std::sync::Arc::clone(&locked),
-            std::sync::Arc::clone(&locked),
-        );
-        let resolve = std::sync::Arc::clone(&sender);
         let this = std::sync::Arc::clone(self);
-        let controller = PluginsController::new(
-            self.korrid.clone(),
-            PluginsHost {
-                facts: Box::new(move || read.lock().expect("facts poisoned").clone()),
-                publish: Box::new(move |next| *write.lock().expect("facts poisoned") = next),
-                status: Box::new(move |next| {
-                    let failure = match next {
-                        korri_surface_treaty::SurfaceSettingsStatus::Saving { .. } => return,
-                        korri_surface_treaty::SurfaceSettingsStatus::Problem {
-                            message, ..
-                        } => Some(message),
-                        korri_surface_treaty::SurfaceSettingsStatus::Idle => None,
-                    };
-                    if let Some(sender) = resolve.lock().expect("step poisoned").take() {
-                        let _ = sender.send(failure);
-                    }
-                }),
-                busy_get: Box::new(move || *get.lock().expect("lock poisoned")),
-                busy_set: Box::new(move |value| *set.lock().expect("lock poisoned") = value),
-                changed: Box::new(move || (this.context.plugins_changed)()),
-            },
-        );
-        let failure = match action_id {
-            None => {
-                controller.refresh().await;
-                None
-            }
-            Some(action_id) => {
-                controller.run(&action_id);
-                receiver.await.ok().flatten()
-            }
-        };
-        let facts = facts.lock().expect("facts poisoned").clone();
-        (facts, failure)
+        plugin_step(
+            &self.korrid,
+            seed,
+            action_id,
+            Box::new(move || (this.context.plugins_changed)()),
+        )
+        .await
     }
 
     fn still(&self, op: u64, step: InstallStep) -> bool {

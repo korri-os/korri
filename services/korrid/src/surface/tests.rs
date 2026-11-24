@@ -6307,3 +6307,6 @@ async fn a_pending_upload_on_another_device_holds_the_launch_and_asks() {
         "the launch was cancelled"
     );
 }
+
+#[path = "installs_tests.rs"]
+mod installs_tests;

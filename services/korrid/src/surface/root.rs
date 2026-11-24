@@ -23,9 +23,9 @@ use super::{
         state::{Entry, LaunchablesState, Loaded, Phase},
     },
     model::{
-        catalog_games, entry_for_id, entry_for_launch_location, game_actions_for_entry,
-        launch_locations_for_entry, status_from, surface_download_from, GameDownloadContext,
-        DOWNLOAD_ACTION_IDS,
+        catalog_games, copy_is_local, entry_for_id, entry_for_launch_location,
+        game_actions_for_entry, launch_locations_for_entry, ordered_copies_for_entry, status_from,
+        surface_download_from, GameDownloadContext, DOWNLOAD_ACTION_IDS,
     },
     network_onboarding::NetworkOnboarding,
     overlay::{focused_overlay_session, OverlayController, OverlayExit},
@@ -390,6 +390,8 @@ pub struct Root {
     pub store: Arc<StoreAcquisition>,
     pub plugins: Arc<PluginsController>,
     pub shared: Arc<SharedPlayController>,
+    /// ADR 0092 (#553): play here and the list of installs.
+    pub installs: Arc<super::installs::Installs>,
     plugin_facts: Arc<std::sync::Mutex<PluginFacts>>,
     last_library: std::sync::Mutex<Option<String>>,
     last_live_ids: std::sync::Mutex<Option<Vec<String>>>,
@@ -667,12 +669,56 @@ impl Root {
                     },
                 )
             };
+            let installs = {
+                let (state, play, stream, changed, busy) = (
+                    this.clone(),
+                    this.clone(),
+                    this.clone(),
+                    this.clone(),
+                    this.clone(),
+                );
+                let facts = Arc::clone(&plugin_facts);
+                super::installs::Installs::new(
+                    korrid.clone(),
+                    notify.clone(),
+                    super::installs::InstallsHost {
+                        state: Box::new(move || {
+                            state
+                                .upgrade()
+                                .map_or(LaunchablesState::Loading, |root| root.launchables.state())
+                        }),
+                        plugin_facts: Box::new(move || {
+                            facts.lock().expect("plugin facts poisoned").clone()
+                        }),
+                        play: Box::new(move |game_id| {
+                            if let Some(root) = play.upgrade() {
+                                tokio::spawn(async move { root.play_installed(game_id).await });
+                            }
+                        }),
+                        stream: Box::new(move |game_id, launch_location_id| {
+                            if let Some(root) = stream.upgrade() {
+                                root.perform(SurfaceRequest::LaunchGame {
+                                    game_id,
+                                    launch_location_id,
+                                });
+                            }
+                        }),
+                        library_changed: Box::new(move || {
+                            if let Some(root) = changed.upgrade() {
+                                tokio::spawn(async move { root.launchables.refresh().await });
+                            }
+                        }),
+                        busy: Box::new(move || busy.upgrade().is_none_or(|root| root.starting())),
+                    },
+                )
+            };
             // Launch settings: Device settings' group and one game's editor.
             // Back is not taken here: the surface closes its own questions,
             // then the editor.
             let launch = LaunchSettings::new(korrid.clone(), notify.clone());
             Self {
                 shared,
+                installs,
                 launch,
                 runner_was_closed: std::sync::Mutex::new(true),
                 plugins,
@@ -1059,6 +1105,7 @@ impl Root {
             }
         });
         self.shared.start();
+        self.installs.start();
         let launch = Arc::clone(&self.launch);
         tokio::spawn(async move { launch.refresh_device().await });
         // The overlay opens as soon as korrid's Home intent lands (the
@@ -1277,6 +1324,7 @@ impl Root {
             .or_else(|| self.acquisition.status())
             .or_else(|| shared_status.clone())
             .or_else(|| self.downloads.status())
+            .or_else(|| self.installs.status())
         {
             status = problem;
         }
@@ -1330,7 +1378,7 @@ impl Root {
                 .into_iter()
                 .chain(self.accounts.snapshot())
                 .collect(),
-            installs: None,
+            installs: self.installs.list(&state),
         };
         Facts { base, games, state }
     }
@@ -1340,13 +1388,28 @@ impl Root {
         let facts = self.downloads.facts();
         let marks = self.saves.marks();
         let profiles = self.launch.active_profiles();
-        if facts.is_empty() && marks.is_empty() && profiles.is_empty() {
+        // ADR 0092: a game that only other devices hold can be installed.
+        let releases: BTreeMap<String, super::model::PeerRelease> = if self.installs.available() {
+            state
+                .entries()
+                .iter()
+                .filter_map(super::model::peer_release)
+                .map(|release| (release.game_id.clone(), release))
+                .collect()
+        } else {
+            BTreeMap::new()
+        };
+        if facts.is_empty() && marks.is_empty() && profiles.is_empty() && releases.is_empty() {
             return games;
         }
         let ids = decorated_game_ids_by_surface_id(state);
         games
             .into_iter()
             .map(|mut game| {
+                if let Some(release) = releases.get(&game.id) {
+                    game.install_here = self.installs.here(release);
+                    game.download = self.installs.download(release);
+                }
                 if let Some(korrid_id) = ids.get(&game.id) {
                     if let Some(download) = surface_download_from(facts.get(korrid_id)) {
                         game.download = Some(download);
@@ -1447,6 +1510,60 @@ impl Root {
             actions.push(SurfaceAction::new(SAVE_HISTORY_ACTION_ID, "Saves", true));
         }
         actions
+    }
+
+    /// A launch is under way or a game runs: the person is busy with
+    /// something, so a play-here install that ends now does not start.
+    fn starting(&self) -> bool {
+        let state = self.launchables.state();
+        self.planning.load(std::sync::atomic::Ordering::SeqCst)
+            || self
+                .launch_plan
+                .lock()
+                .expect("launch plan poisoned")
+                .is_some()
+            || self.acquisition.status().is_some()
+            || self.saves.status().is_some()
+            || !matches!(
+                &state,
+                LaunchablesState::Loaded(Loaded {
+                    phase: Phase::Ready,
+                    ..
+                })
+            )
+            || state.entries().iter().any(Entry::is_now_playing)
+    }
+
+    /// A play-here install is done (ADR 0092): the library reads the new
+    /// game, then it starts here as a press of Play would start it.
+    async fn play_installed(self: Arc<Self>, game_id: String) {
+        self.launchables.refresh().await;
+        if self.starting() {
+            return;
+        }
+        let current = self.launchables.state();
+        let Some(id) = surface_id_for_korrid_game(&current, &game_id) else {
+            return;
+        };
+        let Some(entry) = entry_for_id(&current, &id).cloned() else {
+            return;
+        };
+        let local = ordered_copies_for_entry(&entry)
+            .into_iter()
+            .find(|copy| copy.id() == game_id && copy_is_local(copy));
+        let Some(local) = local else {
+            return;
+        };
+        self.confirm_launch(&id, Entry::for_copy(&local));
+    }
+
+    /// The person looks at a game: when only other devices hold it, learn
+    /// whether this device has a runner for it.
+    pub fn learn_install(&self, id: &str) {
+        let current = self.launchables.state();
+        if let Some(release) = entry_for_id(&current, id).and_then(super::model::peer_release) {
+            self.installs.learn(release);
+        }
     }
 
     /// Location choices and game actions share the same local lifecycle.
@@ -1846,6 +1963,8 @@ impl Root {
                 game_id,
                 launch_location_id,
             } => {
+                // A launch now: a play-here install no longer starts its game.
+                self.installs.started_something_else();
                 let current = launchables.state();
                 if !current.is_ready()
                     || self.planning.load(std::sync::atomic::Ordering::SeqCst)
@@ -1880,6 +1999,7 @@ impl Root {
                     || self.steam_cloud.act(&action_id)
                     || self.accounts.act(&action_id)
                     || self.store.act(&action_id)
+                    || self.installs.act(&action_id)
                     || self.acquisition.act(&action_id)
                 {
                     return;
@@ -2049,6 +2169,7 @@ impl Root {
                     && !self.saves.dismiss()
                     && !self.acquisition.dismiss()
                     && !self.downloads.dismiss()
+                    && !self.installs.dismiss()
                 {
                     launchables.dismiss_notice();
                 }
@@ -2082,11 +2203,28 @@ impl Root {
             SurfaceRequest::FocusGame { .. }
             | SurfaceRequest::RememberPreference { .. }
             | SurfaceRequest::MoveCatalog { .. } => {}
-            // #553: performed by the install controller (next commit).
-            SurfaceRequest::InstallGame { .. }
-            | SurfaceRequest::MoveInstall { .. }
-            | SurfaceRequest::CancelInstall { .. }
-            | SurfaceRequest::AnswerStreamMeanwhile { .. } => {}
+            SurfaceRequest::InstallGame { game_id, play } => {
+                let current = launchables.state();
+                if !current.is_ready() {
+                    return;
+                }
+                if let Some(release) =
+                    entry_for_id(&current, &game_id).and_then(super::model::peer_release)
+                {
+                    self.installs.install(release, play);
+                }
+            }
+            SurfaceRequest::MoveInstall { install_id, index } => {
+                self.installs.move_install(&install_id, index)
+            }
+            SurfaceRequest::CancelInstall { install_id } => self.installs.cancel(&install_id),
+            SurfaceRequest::AnswerStreamMeanwhile {
+                install_id,
+                stream,
+                launch_location_id,
+            } => self
+                .installs
+                .answer(&install_id, stream, launch_location_id),
         }
     }
 }

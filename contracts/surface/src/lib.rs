@@ -255,9 +255,10 @@ pub enum SurfaceInstallBlock {
 /// (`InstallGame`), never from the catalog, so free space and a reachable
 /// source are known only after that.
 ///
-/// - `Offered`: this device has a runner for the game. `InstallGame` asks
-///   the devices that hold it for its size, checks the free space, and
-///   installs.
+/// - `Offered`: Korri knows nothing that stops it. It learns whether this
+///   device has a runner when the surface reports focus on the game
+///   (`FocusGame`) and again on `InstallGame`, which also asks the devices
+///   that hold it for its size, checks the free space, and installs.
 /// - `NeedsPlugin`: no runner here, but the plugin `pluginTitle` offers
 ///   one. `InstallGame` first asks to install that plugin, with its
 ///   permission review (a `Confirm` status, as for netplay), then goes on
