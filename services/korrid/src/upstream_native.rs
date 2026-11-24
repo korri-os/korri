@@ -1090,52 +1090,30 @@ async fn read_plain_test_response(
 }
 
 impl NativeClient {
-    pub(crate) async fn release_object(
+    /// ADR 0092 (#554): this peer as the install source of the release that
+    /// netplay needs, over its iroh route with this device's endpoint proof.
+    pub(crate) fn install_holder(
         &self,
-        key: &str,
-    ) -> Result<crate::federation::reach::http::Response, UpstreamError> {
+    ) -> Result<crate::acquisition::pieces::PeerHolder, UpstreamError> {
         self.ensure_not_revoked()?;
-        let peer = self
+        let device = self
             .expected_peer_public_key
-            .as_deref()
+            .clone()
             .ok_or_else(|| UpstreamError::Wire("netplay requires an authenticated peer".into()))?;
         let directory = self
             .directory
-            .as_ref()
+            .as_deref()
+            .cloned()
             .ok_or_else(|| UpstreamError::Wire("netplay requires federation reach".into()))?;
         let credentials = self
             .credentials
-            .as_ref()
+            .clone()
             .ok_or_else(|| UpstreamError::Wire("netplay requires device credentials".into()))?;
-        let request = credentials
-            .encode_request(
-                peer,
-                RpcRequest::ReleaseObject(crate::netplay::ReleaseObjectRequest {
-                    release_key: key.into(),
-                }),
-                unix_time(),
-            )
-            .map_err(|_| {
-                UpstreamError::Wire("release request could not be authenticated".into())
-            })?;
-        let connection = directory
-            .reach_connection(peer)
-            .await
-            .map_err(|_| UpstreamError::Wire("netplay route unavailable".into()))?;
-        let proof = directory
-            .own_endpoint_event(peer)
-            .map_err(|_| UpstreamError::Wire("endpoint proof unavailable".into()))?;
-        let response = crate::federation::reach::http::post(
-            &connection,
-            "/peer-releases-object",
-            request.event_json,
-            None,
-            Some(&proof),
-        )
-        .await
-        .map_err(|_| UpstreamError::Wire("release copy failed".into()))?;
-        self.ensure_not_revoked()?;
-        Ok(response)
+        Ok(crate::acquisition::pieces::PeerHolder {
+            route: crate::acquisition::pieces::PeerRoute::Federation(directory),
+            credentials,
+            device,
+        })
     }
 }
 

@@ -415,18 +415,18 @@ pub(crate) fn ready_game_file(
     Some(ready.join(path))
 }
 
-/// ADR 0040 owner decision, 2026-10-26 (netplay q27): copied releases use
+/// ADR 0040 owner decision, 2026-10-26 (netplay q27): netplay's installs use
 /// cache/<release-key hex>/<original filename>. The release key names it,
 /// so a peer never becomes a provider. ADR 0092 (#551): every install uses
 /// this layout, provider installs too. Keep placement policy in one place.
-pub(crate) fn copied_release_cache(root: &Path) -> PathBuf {
+pub(crate) fn install_cache(root: &Path) -> PathBuf {
     root.join("cache")
 }
 
-pub(crate) fn copied_game_content(
+pub(crate) fn installed_game_content(
     root: &Path,
     key: &str,
     rules: &crate::plugin::ContentRules,
 ) -> Option<PathBuf> {
-    ready_game_file(&copied_release_cache(root).join(ready_name(key)?), rules)
+    ready_game_file(&install_cache(root).join(ready_name(key)?), rules)
 }

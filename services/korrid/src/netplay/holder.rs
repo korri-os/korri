@@ -130,36 +130,3 @@ pub(crate) async fn register(
         .map(SessionNetplayOutcome::Ok)
         .unwrap_or_else(SessionNetplayOutcome::Err)
 }
-pub(crate) async fn object(
-    state: &AppState,
-    context: &AuthorizationContext,
-    key: &str,
-) -> Result<std::fs::File, RpcFailure> {
-    let (
-        ServerMode::Host(host),
-        AuthorizationContext::Peer(Principal::OwnerDevice {
-            device_public_key, ..
-        }),
-    ) = (&state.mode, context)
-    else {
-        return Err(failure("NoNetplayRoute", "No release is available."));
-    };
-    let reservation = state.netplay_holder.reservation.lock().await;
-    let reserved = reservation
-        .as_ref()
-        .filter(|reservation| reservation.device_public_key == *device_public_key)
-        .ok_or_else(|| failure("NoNetplayRoute", "No netplay seat is reserved."))?;
-    let host = host.clone();
-    let launch = reserved.launch_id.clone();
-    let key = key.to_owned();
-    tokio::task::spawn_blocking(move || {
-        let local = host.netplay_local(&launch)?;
-        if local.facts.release_key != key {
-            return Err(failure("NoNetplayRoute", "This is not the live release."));
-        }
-        std::fs::File::open(local.content)
-            .map_err(|_| failure("CopyFailed", "The release could not be read."))
-    })
-    .await
-    .map_err(|_| failure("CopyFailed", "The release could not be read."))?
-}

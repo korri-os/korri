@@ -165,7 +165,7 @@ pub(crate) fn acquired_game_dirs(
             let key = release.identity.as_ref()?.value();
             let hex = placement::ready_name(key)?;
             let rules = registry.content_rules(&release.system.as_ref()?.0)?;
-            let ready = placement::copied_release_cache(root).join(hex);
+            let ready = placement::install_cache(root).join(hex);
             placement::ready_game_file(&ready, rules).map(|_| (key.to_owned(), ready))
         })
         .collect()
@@ -624,7 +624,7 @@ impl GameAcquisition {
             placement::remove_game_staging(&staging, &keep)?;
             placement::clean_work(&cache)?;
         }
-        let cache = placement::copied_release_cache(root);
+        let cache = placement::install_cache(root);
         // An install that korrid stopped while it published (ADR 0092).
         if cache.is_dir() {
             placement::clean_work(&cache)?;
@@ -1245,11 +1245,8 @@ fn publish_and_record(
     let identity = identify_work(&work.path, rules).map_err(download_failed)?;
     // ADR 0092: an install lands in the release-key layout; the provider
     // cache only held the job's work folder.
-    let installs = placement::create_base(
-        &context.root,
-        placement::copied_release_cache(&context.root),
-    )
-    .map_err(download_failed)?;
+    let installs = placement::create_base(&context.root, placement::install_cache(&context.root))
+        .map_err(download_failed)?;
     placement::publish_acquired_game(&installs, work, identity.value()).map_err(download_failed)?;
     let game_id = context
         .discovery

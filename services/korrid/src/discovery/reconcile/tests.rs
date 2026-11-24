@@ -472,7 +472,7 @@ fn artwork_uses_acquired_content_identities_without_discovery_ownership() {
                 identity,
             })
             .unwrap();
-        let ready = crate::acquisition::placement::copied_release_cache(root.path())
+        let ready = crate::acquisition::placement::install_cache(root.path())
             .join(crate::acquisition::placement::ready_name(identity.value()).unwrap());
         fs::create_dir_all(&ready).unwrap();
         fs::write(ready.join("game.gba"), b"verified acquisition content").unwrap();

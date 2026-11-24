@@ -394,8 +394,8 @@ impl AcquisitionCoordinator {
         handle.spawn(self.clone().work());
     }
 
-    /// ADR 0016 and ADR 0092: a provider game job or a netplay copy joins
-    /// the line. A `member` is kept across a restart in the order file.
+    /// ADR 0016 and ADR 0092: a provider game job or an install from devices
+    /// joins the line. A `member` is kept across a restart in the order file.
     pub(super) fn queue_turn(&self, key: PathBuf, place: Place, listed: Listed<'_>) -> TurnWait {
         let (sender, grants) = tokio::sync::mpsc::unbounded_channel();
         let key = {
@@ -416,6 +416,7 @@ impl AcquisitionCoordinator {
             }
             queue.tickets.insert(key.clone(), sender);
             match listed {
+                #[cfg(test)]
                 Listed::Hidden => (),
                 Listed::Kept(private_root, member) => queue.remember(private_root, &key, member),
                 Listed::Shown(member) => {

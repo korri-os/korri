@@ -358,76 +358,30 @@ async fn start_inner(
                     done: 0,
                     total: prepared.release_bytes,
                 });
-                let transfer = async {
-                    let _turn = acquisition::netplay::turn(
-                        &state.acquisition,
-                        &context.root,
-                        &prepared.release_key,
-                    )
-                    .await;
-                    let mut response = peer
-                        .release_object(&prepared.release_key)
-                        .await
-                        .map_err(|_| failure("CopyFailed", "The release could not be copied."))?;
-                    if !response.status().is_success()
-                        || response.content_length() != Some(prepared.release_bytes)
-                    {
-                        return Err(failure(
-                            "CopyFailed",
-                            "The release copy has an unexpected length.",
-                        ));
-                    }
-                    let encoded = response
-                        .headers()
-                        .get(axum::http::header::CONTENT_DISPOSITION)
-                        .and_then(|value| value.to_str().ok())
-                        .and_then(|value| value.strip_prefix("attachment; filename*=UTF-8''"))
-                        .ok_or_else(|| failure("CopyFailed", "The release has no file name."))?;
-                    let encoded = format!("name={encoded}");
-                    let name = url::form_urlencoded::parse(encoded.as_bytes())
-                        .next()
-                        .map(|(_, name)| name.into_owned())
-                        .ok_or_else(|| failure("CopyFailed", "The release name is invalid."))?;
-                    let writer_context = context.clone();
-                    let bytes = prepared.release_bytes;
-                    let mut copy = tokio::task::spawn_blocking(move || {
-                        acquisition::netplay::Copy::begin(&writer_context, &name, bytes)
-                    })
-                    .await
-                    .map_err(|_| failure("CopyFailed", "The release copy could not start."))??;
-                    let mut done = 0;
-                    loop {
-                        let chunk = tokio::time::timeout(Duration::from_secs(60), response.chunk())
-                            .await
-                            .map_err(|_| failure("CopyFailed", "The release copy stopped."))?
-                            .map_err(|_| failure("CopyFailed", "The release copy failed."))?;
-                        let Some(chunk) = chunk else {
-                            break;
-                        };
-                        let count = chunk.len() as u64;
-                        copy = tokio::task::spawn_blocking(move || {
-                            copy.write(&chunk)?;
-                            Ok::<_, RpcFailure>(copy)
-                        })
-                        .await
-                        .map_err(|_| failure("CopyFailed", "The release copy failed."))??;
-                        done += count;
-                        state.netplay_receiver.phase(&attempt, NetplayPhase::Copying {
-                            done,
-                            total: prepared.release_bytes,
-                        });
-                    }
-                    let context = context.clone();
-                    let key = prepared.release_key.clone();
-                    let title = invite
-                        .session
-                        .title
-                        .clone()
-                        .unwrap_or_else(|| "Game".into());
-                    tokio::task::spawn_blocking(move || copy.finish(&context, &key, &title))
-                        .await
-                        .map_err(|_| failure("CopyFailed", "The release could not be verified."))?
+                // ADR 0092 (#554): an install from the holding device, at the
+                // front of the line. Copying reads the install's progress.
+                let holder = peer
+                    .install_holder()
+                    .map_err(|_| failure("CopyFailed", "The holding device is not an install source."))?;
+                let title = invite
+                    .session
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| "Game".into());
+                let progress = |done, total| {
+                    state
+                        .netplay_receiver
+                        .phase(&attempt, NetplayPhase::Copying { done, total });
                 };
+                let transfer = acquisition::netplay::install(
+                    &state.acquisition,
+                    &context,
+                    &prepared.release_key,
+                    &title,
+                    prepared.release_bytes,
+                    holder,
+                    &progress,
+                );
                 tokio::select! {
                     _ = cancelled.changed() => return Err(failure("NoNetplayRoute", "The launch was cancelled.")),
                     result = transfer => result?,

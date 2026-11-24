@@ -132,13 +132,6 @@ pub enum SessionNetplayOutcome {
     Ok(SessionNetplayPrepared),
     Err(crate::RpcFailure),
 }
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ReleaseObjectRequest {
-    pub release_key: String,
-}
-
 #[typeshare(serialized_as = "NetplayPhaseWire")]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag")]
@@ -186,11 +179,6 @@ mod wire_tests {
                 PeerPolicy::OwnerDeviceOnly,
             ),
             (
-                "app.releases.object",
-                serde_json::json!({"releaseKey":format!("sha256:{}", "1".repeat(64))}),
-                PeerPolicy::OwnerDeviceOnly,
-            ),
-            (
                 "app.invites.netplay",
                 serde_json::json!({"inviteId":"opaque"}),
                 PeerPolicy::LocalOnly,
@@ -201,6 +189,10 @@ mod wire_tests {
             assert_eq!(policy_for(&request), policy);
             assert_eq!(serde_json::to_value(request).unwrap(), wire);
         }
+        // #554: netplay installs its release through the pieces route; the
+        // single-file route is gone.
+        let old = serde_json::json!({"_tag":"app.releases.object","payload":{"releaseKey":format!("sha256:{}", "1".repeat(64))}});
+        assert!(serde_json::from_value::<RpcRequest>(old).is_err());
     }
     #[test]
     fn netplay_password_is_redacted_from_all_containing_debug_values() {

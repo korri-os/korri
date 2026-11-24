@@ -8,7 +8,6 @@ use crate::netplay::{NetplayRunner, NetplaySession, PluginLaunchNetplay};
 
 pub(crate) struct NetplayLocal {
     pub facts: NetplaySession,
-    pub content: PathBuf,
     pub config: PathBuf,
 }
 impl HostRuntime {
@@ -84,9 +83,6 @@ impl HostRuntime {
             .ok_or_else(|| dynamic_failure("netplay runner unavailable"))?;
         let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
             .map_err(crate::game_routes::settings_failure)?;
-        if snapshot.library.get(&game).into_iter().flat_map(|game| &game.releases).any(|candidate| matches!(candidate.identity.as_ref(), Some(crate::config::library::LibraryIdentity::Parts { value, .. }) if value == &release)) {
-            return Err(crate::netplay::failure("MultipartReleaseUnsupported", "This release needs several files. Use stream play."));
-        }
         let route = crate::config::resolver::resolve_linux_route(
             root,
             &snapshot,
@@ -111,11 +107,9 @@ impl HostRuntime {
         .map_err(|error| dynamic_failure(error.to_string()))?;
         let input: PluginLaunchInput = serde_json::from_str(&launch.command[3])
             .map_err(|_| dynamic_failure("invalid launch input"))?;
-        let content = PathBuf::from(
-            input
-                .content_path
-                .ok_or_else(|| dynamic_failure("netplay requires file content"))?,
-        );
+        if input.content_path.is_none() {
+            return Err(dynamic_failure("netplay requires file content"));
+        }
         if std::fs::read_to_string(&config)
             .is_ok_and(|text| text.contains("netplay_request_device_p"))
         {
@@ -124,11 +118,18 @@ impl HostRuntime {
                 "A receiving device cannot host this session.",
             ));
         }
-        let metadata = std::fs::metadata(&content)
-            .map_err(|_| dynamic_failure("netplay release unavailable"))?;
-        if !metadata.is_file() || crate::acquisition::placement::ready_name(&release).is_none() {
+        // ADR 0092 (#554, #282): the receiver installs the release's files
+        // from this device's piece route, one file or several (a cue with its
+        // tracks). Its size is the size of the files that route serves.
+        if crate::acquisition::placement::ready_name(&release).is_none() {
             return Err(dynamic_failure("netplay requires a file release"));
         }
+        let release_bytes = crate::acquisition::pieces::release_files(root, &snapshot, &release)
+            .map_err(|_| dynamic_failure("netplay requires a file release"))?
+            .iter()
+            .map(|(_, path)| std::fs::metadata(path).map(|metadata| metadata.len()))
+            .sum::<std::io::Result<u64>>()
+            .map_err(|_| dynamic_failure("netplay release unavailable"))?;
         let plugin_id = runner
             .rsplit_once('/')
             .ok_or_else(|| dynamic_failure("invalid runner identity"))?
@@ -137,14 +138,13 @@ impl HostRuntime {
         Ok(NetplayLocal {
             facts: NetplaySession {
                 release_key: release,
-                release_bytes: metadata.len(),
+                release_bytes,
                 runner: NetplayRunner {
                     plugin_id,
                     runner_id: runner,
                     netplay,
                 },
             },
-            content,
             config: config.into(),
         })
     }
@@ -327,7 +327,7 @@ mod tests {
         RpcRequest, RpcResponse,
     };
     use sha2::{Digest, Sha256};
-    use std::{collections::BTreeMap, io::Read, sync::Mutex};
+    use std::{collections::BTreeMap, sync::Mutex};
     #[derive(Default)]
     struct RecordedControl(Mutex<Vec<RetroarchCommand>>);
     impl RetroarchControlExecutor for RecordedControl {
@@ -527,28 +527,10 @@ mod tests {
                 .count(),
             1
         );
-        let mut file = crate::netplay::holder::object(&state, &peer(&device), &key)
-            .await
-            .unwrap();
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes).unwrap();
-        assert_eq!(bytes, b"game bytes");
-        assert!(crate::netplay::holder::object(&state, &peer(&other), &key)
-            .await
-            .is_err());
-        assert!(crate::netplay::holder::object(
-            &state,
-            &peer(&device),
-            &format!("sha256:{}", "0".repeat(64))
-        )
-        .await
-        .is_err());
         host.session_stop(&live.launch_id).await.unwrap();
-        assert!(crate::netplay::holder::object(&state, &peer(&device), &key)
-            .await
-            .is_err());
-        // The holder cannot serve a multipart release through this one-file
-        // treaty. Use the existing ordered-parts producer's aggregate key.
+        // #282: a multipart release is netplay's too: the receiver installs
+        // it through the pieces collection. Use the existing ordered-parts
+        // producer's aggregate key.
         let parts = [
             format!("sha256:{}", "1".repeat(64)),
             format!("sha256:{}", "2".repeat(64)),
@@ -578,10 +560,18 @@ mod tests {
         let RpcResponse::SessionStatus(crate::SessionStatusOutcome::Ok(status)) = status else {
             panic!("status failed");
         };
-        assert!(status.active.unwrap().netplay.is_none());
-        assert!(
-            matches!(crate::dispatch(&state, &peer(&device), request(&multipart_live.launch_id)).await.unwrap(), RpcResponse::SessionNetplay(SessionNetplayOutcome::Err(crate::RpcFailure { code, .. })) if code == "MultipartReleaseUnsupported")
+        assert_eq!(
+            status.active.unwrap().netplay.unwrap().release_key,
+            multipart
         );
+        let response = crate::dispatch(&state, &peer(&device), request(&multipart_live.launch_id))
+            .await
+            .unwrap();
+        let RpcResponse::SessionNetplay(SessionNetplayOutcome::Ok(prepared)) = response else {
+            panic!("{response:?}");
+        };
+        assert_eq!(prepared.release_key, multipart);
+        assert_eq!(prepared.release_bytes, 10);
         host.session_stop(&multipart_live.launch_id).await.unwrap();
         coordinator.fence();
         receiver.join().unwrap();

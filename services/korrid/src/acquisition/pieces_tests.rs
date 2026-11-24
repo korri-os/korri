@@ -200,8 +200,8 @@ impl Device {
 
     /// An installed release in the ADR 0092 layout.
     fn hold(&self, key: &str, files: &[(&str, &[u8])]) {
-        let ready = placement::copied_release_cache(&self.context.root)
-            .join(placement::ready_name(key).unwrap());
+        let ready =
+            placement::install_cache(&self.context.root).join(placement::ready_name(key).unwrap());
         fs::create_dir_all(&ready).unwrap();
         for (name, bytes) in files {
             fs::write(ready.join(name), bytes).unwrap();
@@ -215,6 +215,15 @@ impl Device {
             credentials: receiver.credentials.clone(),
             device: self.key(),
         })
+    }
+
+    /// The same, by value, as netplay takes it.
+    fn peer_for(&self, receiver: &Device) -> PeerHolder {
+        PeerHolder {
+            route: PeerRoute::Origin(self.base.clone().unwrap()),
+            credentials: receiver.credentials.clone(),
+            device: self.key(),
+        }
     }
 
     /// Lose this device: it answers nothing more.
@@ -282,8 +291,8 @@ async fn an_install_takes_pieces_from_two_holders_and_survives_losing_one() {
     }
 
     // The install is the release: the first answer named it.
-    let ready = placement::copied_release_cache(&receiver.context.root)
-        .join(placement::ready_name(&key).unwrap());
+    let ready =
+        placement::install_cache(&receiver.context.root).join(placement::ready_name(&key).unwrap());
     assert_eq!(fs::read(ready.join("Game.gba")).unwrap(), rom);
     let snapshot = receiver.context.discovery.published().unwrap();
     assert_eq!(
@@ -347,8 +356,8 @@ async fn a_cue_with_its_tracks_installs_as_one_collection() {
         )
         .await
         .unwrap();
-    let ready = placement::copied_release_cache(&receiver.context.root)
-        .join(placement::ready_name(&key).unwrap());
+    let ready =
+        placement::install_cache(&receiver.context.root).join(placement::ready_name(&key).unwrap());
     assert_eq!(fs::read(ready.join("Game (Track 1).bin")).unwrap(), track1);
     assert_eq!(fs::read(ready.join("Game (Track 2).bin")).unwrap(), track2);
     assert_eq!(fs::read(ready.join("Game.cue")).unwrap(), cue);
@@ -379,8 +388,8 @@ async fn a_holder_whose_bytes_are_not_the_release_installs_nothing() {
         .await
         .unwrap_err();
     assert_eq!(failure.code, "InstallFailed");
-    let ready = placement::copied_release_cache(&receiver.context.root)
-        .join(placement::ready_name(&key).unwrap());
+    let ready =
+        placement::install_cache(&receiver.context.root).join(placement::ready_name(&key).unwrap());
     assert!(!ready.exists());
     assert!(receiver
         .context
@@ -503,8 +512,8 @@ async fn a_holder_hashes_once_and_again_after_the_file_changes() {
     // In place: the store holds no copy of the release's bytes.
     let copied: u64 = walk_size(&super::pieces::store_path(&holder.context.root));
     assert!(copied < rom.len() as u64 / 2, "{copied}");
-    let ready = placement::copied_release_cache(&holder.context.root)
-        .join(placement::ready_name(&key).unwrap());
+    let ready =
+        placement::install_cache(&holder.context.root).join(placement::ready_name(&key).unwrap());
     let mut grown = rom.clone();
     grown.extend_from_slice(b"more");
     fs::write(ready.join("Game.gba"), &grown).unwrap();
@@ -586,7 +595,7 @@ fn walk_files(path: &Path, seen: &mut impl FnMut(&Path, u64)) {
 }
 
 fn ready(device: &Device, key: &str) -> PathBuf {
-    placement::copied_release_cache(&device.context.root).join(placement::ready_name(key).unwrap())
+    placement::install_cache(&device.context.root).join(placement::ready_name(key).unwrap())
 }
 
 async fn installing_past(pieces: &super::pieces::Pieces, job: &str, bytes: u64) {
@@ -997,5 +1006,221 @@ async fn ended_installs_are_pruned() {
     );
     pieces.prune(std::time::Instant::now() + Duration::from_secs(3600));
     assert!(pieces.status(&job).is_none());
+    holder.lose();
+}
+
+/// The files of a disc release (a cue with its tracks) and its release key,
+/// as discovery computes it over the folder.
+fn disc_release(receiver: &Device) -> (Vec<(&'static str, Vec<u8>)>, String) {
+    let track1: Vec<u8> = (0..(PIECE_BYTES as usize + 77))
+        .map(|i| (i % 7) as u8)
+        .collect();
+    let track2: Vec<u8> = (0..4096).map(|i| (i % 13) as u8).collect();
+    let cue = b"FILE \"Game (Track 1).bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\nFILE \"Game (Track 2).bin\" BINARY\n  TRACK 02 AUDIO\n    INDEX 01 00:00:00\n".to_vec();
+    let files = vec![
+        ("Game.cue", cue),
+        ("Game (Track 1).bin", track1),
+        ("Game (Track 2).bin", track2),
+    ];
+    let probe = tempfile::tempdir().unwrap();
+    for (name, bytes) in &files {
+        fs::write(probe.path().join(name), bytes).unwrap();
+    }
+    let rules = receiver
+        .context
+        .registry
+        .content_rules("psx")
+        .unwrap()
+        .clone();
+    let key = super::game::identify_work(probe.path(), &rules)
+        .unwrap()
+        .value()
+        .to_owned();
+    (files, key)
+}
+
+/// #554: netplay's release is an install from the holding device at the
+/// front of the line, ahead of a background install, and its Copying
+/// phase reads the install's progress.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn netplay_installs_its_release_at_the_front_of_the_line() {
+    let (rom, key) = release(3 * PIECE_BYTES as usize + 5);
+    let (other_rom, other_key) = release(PIECE_BYTES as usize);
+    let holder = Device::new(29, true).await;
+    let receiver = Device::new(30, false).await;
+    holder.hold(&key, &[("Game.gba", &rom)]);
+    holder.hold(&other_key, &[("Other.gba", &other_rom)]);
+    // Another install runs, so the background one waits.
+    let mut blocker = receiver.coordinator.queue_turn(
+        receiver.context.root.join("cache").join("d".repeat(64)),
+        Place::Back,
+        super::Listed::Hidden,
+    );
+    let turn = blocker.turn().await;
+    let pieces = receiver.coordinator.pieces();
+    let background = pieces
+        .start(
+            &receiver.coordinator,
+            &receiver.context,
+            &other_key,
+            "Other",
+            vec![holder.holder_for(&receiver)],
+            Place::Back,
+        )
+        .unwrap();
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let netplay = {
+        let (coordinator, context) = (receiver.coordinator.clone(), receiver.context.clone());
+        let (key, peer, seen) = (key.clone(), holder.peer_for(&receiver), seen.clone());
+        let bytes = rom.len() as u64;
+        tokio::spawn(async move {
+            let progress = move |done, total| seen.lock().unwrap().push((done, total));
+            super::netplay::install(&coordinator, &context, &key, "Game", bytes, peer, &progress)
+                .await
+        })
+    };
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while receiver.coordinator.line().len() < 2 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let line = receiver.coordinator.line();
+    assert_eq!(line[1], super::Member::Job(background.clone()), "{line:?}");
+    drop(turn);
+    blocker.end();
+    let game = netplay.await.unwrap().unwrap();
+    pieces.wait(&background).await.unwrap();
+    assert_eq!(
+        fs::read(ready(&receiver, &key).join("Game.gba")).unwrap(),
+        rom
+    );
+    let snapshot = receiver.context.discovery.published().unwrap();
+    assert!(snapshot.library.contains_key(&game));
+    let seen = seen.lock().unwrap();
+    assert_eq!(
+        seen.last(),
+        Some(&(rom.len() as u64, rom.len() as u64)),
+        "{seen:?}"
+    );
+    holder.lose();
+}
+
+/// #282: netplay installs a release of several files (a cue with its
+/// tracks) through the pieces collection.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn netplay_installs_a_release_of_several_files() {
+    let holder = Device::new(31, true).await;
+    let receiver = Device::new(32, false).await;
+    let (files, key) = disc_release(&receiver);
+    let held: Vec<(&str, &[u8])> = files.iter().map(|(n, b)| (*n, b.as_slice())).collect();
+    holder.hold(&key, &held);
+    let bytes = files.iter().map(|(_, b)| b.len() as u64).sum();
+    super::netplay::install(
+        &receiver.coordinator,
+        &receiver.context,
+        &key,
+        "Disc game",
+        bytes,
+        holder.peer_for(&receiver),
+        &|_, _| (),
+    )
+    .await
+    .unwrap();
+    for (name, content) in &files {
+        assert_eq!(
+            &fs::read(ready(&receiver, &key).join(name)).unwrap(),
+            content
+        );
+    }
+    holder.lose();
+}
+
+/// A netplay that ends before its install cancels the install it started;
+/// an install that was already in the line goes on.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_netplay_that_ends_cancels_only_the_install_it_started() {
+    let (rom, key) = release(8 * PIECE_BYTES as usize);
+    let holder = Device::new(33, true).await;
+    let receiver = Device::new(34, false).await;
+    holder.hold(&key, &[("Game.gba", &rom)]);
+    holder.behaviour.delay_ms.store(100, Ordering::SeqCst);
+    let pieces = receiver.coordinator.pieces();
+    let netplay = || {
+        let (coordinator, context) = (receiver.coordinator.clone(), receiver.context.clone());
+        let (key, peer) = (key.clone(), holder.peer_for(&receiver));
+        tokio::spawn(async move {
+            super::netplay::install(&coordinator, &context, &key, "Game", 0, peer, &|_, _| ()).await
+        })
+    };
+    let started = netplay();
+    let job = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Some(job) = pieces.live_job(&key) {
+                return job;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    installing_past(pieces, &job, PIECE_BYTES).await;
+    started.abort();
+    let _ = started.await;
+    let status = tokio::time::timeout(Duration::from_secs(10), pieces.wait(&job))
+        .await
+        .unwrap();
+    assert_eq!(status.unwrap_err().code, "InstallCancelled");
+    assert!(!super::pieces::receive_path(
+        &receiver.context.root,
+        placement::ready_name(&key).unwrap()
+    )
+    .exists());
+
+    // The person's install of the same release: netplay joins it, and its
+    // end leaves it running.
+    let person = pieces
+        .start(
+            &receiver.coordinator,
+            &receiver.context,
+            &key,
+            "Game",
+            vec![holder.holder_for(&receiver)],
+            Place::Back,
+        )
+        .unwrap();
+    let joined = netplay();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    joined.abort();
+    let _ = joined.await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(pieces.live_job(&key), Some(person.clone()));
+    pieces.cancel(&person).await;
+    holder.lose();
+}
+
+/// A holder whose bytes are not the release: netplay answers with its own
+/// failure code.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failed_netplay_install_answers_copy_failed() {
+    let (rom, key) = release(PIECE_BYTES as usize);
+    let holder = Device::new(35, true).await;
+    let receiver = Device::new(36, false).await;
+    let mut other = rom.clone();
+    other[3] ^= 0xff;
+    holder.hold(&key, &[("Game.gba", &other)]);
+    let failure = super::netplay::install(
+        &receiver.coordinator,
+        &receiver.context,
+        &key,
+        "Game",
+        rom.len() as u64,
+        holder.peer_for(&receiver),
+        &|_, _| (),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(failure.code, "CopyFailed");
     holder.lose();
 }

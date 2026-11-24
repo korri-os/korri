@@ -1899,10 +1899,6 @@ export interface ReleaseDiscoveryInput {
 	files: ReleaseDiscoveryFile[];
 }
 
-export interface ReleaseObjectRequest {
-	releaseKey: string;
-}
-
 export interface RetroarchSessionTelemetry {
 	contentBasename: string;
 	crc32: string;

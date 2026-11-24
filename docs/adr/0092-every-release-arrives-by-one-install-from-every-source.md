@@ -38,7 +38,7 @@ None of them can resume after an interruption.
 - Where an installed release lives on disk is netplay's release-key layout
   (ADR 0040): `cache/<release-key hex>/` with the content inside, the same
   folder for every install source. Decided in #551. The producer is the
-  netplay copy (`placement::copied_release_cache`, owner decision netplay
+  netplay copy (`placement::install_cache`, owner decision netplay
   q27, 2026-10-26), and the folder name is ADR 0030's "ready folder name"
   (`placement::ready_name`). The provider layout
   (`cache/<plugin>/<provider>/<hex>/`, `placement::provider_cache`) needs a

@@ -219,9 +219,9 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
             PeerPolicy::ExplicitScope(Scope::StreamLaunch)
         }
         RpcRequest::MoonlightCertificateRevoke(_) => PeerPolicy::OwnerDeviceOnly,
-        RpcRequest::SessionStreamPlay(_)
-        | RpcRequest::SessionNetplay(_)
-        | RpcRequest::ReleaseObject(_) => PeerPolicy::OwnerDeviceOnly,
+        RpcRequest::SessionStreamPlay(_) | RpcRequest::SessionNetplay(_) => {
+            PeerPolicy::OwnerDeviceOnly
+        }
         RpcRequest::InstallManifest(_) | RpcRequest::InstallPiece(_) => {
             PeerPolicy::OwnerOrHouseholdDevice
         }

@@ -213,7 +213,7 @@ fn linux_route_candidates_for_runner(
             // release also has a declaration whose artifact is not installed.
             if !routed {
                 if let Some(path) = registry.content_rules(system_id).and_then(|rules| {
-                    crate::acquisition::placement::copied_game_content(root, key, rules)
+                    crate::acquisition::placement::installed_game_content(root, key, rules)
                 }) {
                     let flattened = format!("cache:{}", path.display());
                     emitted.insert(runner.id.clone());

@@ -197,7 +197,7 @@ impl Fixture {
             })
             .unwrap();
         // ADR 0092: an installed release lives under its release key.
-        let cache = super::super::placement::copied_release_cache(self.readable.path())
+        let cache = super::super::placement::install_cache(self.readable.path())
             .join(super::super::placement::ready_name(identity.value()).unwrap());
         fs::create_dir_all(&cache).unwrap();
         fs::write(cache.join("game.gba"), bytes).unwrap();

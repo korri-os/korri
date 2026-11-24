@@ -1676,9 +1676,6 @@ pub enum RpcRequest {
     SessionCancel(SessionCancelRequest),
     #[serde(rename = "app.session.netplay")]
     SessionNetplay(netplay::SessionNetplayRequest),
-    #[typeshare(skip)]
-    #[serde(rename = "app.releases.object")]
-    ReleaseObject(netplay::ReleaseObjectRequest),
     /// ADR 0092 (#552): what a holder holds of a release, for an install.
     #[typeshare(skip)]
     #[serde(rename = "app.installs.manifest")]
@@ -3062,7 +3059,6 @@ async fn dispatch(
     let mut response = match request {
         // Objects are answered with bytes on their own routes, never here.
         RpcRequest::SaveObject(_)
-        | RpcRequest::ReleaseObject(_)
         | RpcRequest::InstallPiece(_)
         | RpcRequest::GameAssetObject(_) => return Err(authorization::AuthorizationDenied),
         RpcRequest::InstallManifest(request) => {

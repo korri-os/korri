@@ -20,8 +20,8 @@
 //! Access (ADR 0077): the device owner's devices and family members' devices
 //! may install, with no prompt on the holder. Guests may not.
 //!
-//! The holder side runs today. The receiver side (`Pieces::install`,
-//! `PeerHolder`) waits for its first caller, play-here (#553).
+//! Netplay installs the release it needs from the holding device here
+//! (#554, `netplay.rs`); play-here (#553) installs from every holder.
 #![cfg_attr(not(test), allow(dead_code))]
 use super::{game::GameContext, placement, space::Floor, Failure, Place};
 use crate::{
@@ -163,7 +163,7 @@ pub(crate) struct Pieces {
 }
 
 pub(crate) fn store_path(root: &Path) -> PathBuf {
-    placement::copied_release_cache(root).join(".blobs")
+    placement::install_cache(root).join(".blobs")
 }
 
 /// The folder of the receive stores, inside the holder store's folder.
@@ -196,7 +196,7 @@ impl Pieces {
             return Ok(store.clone());
         }
         let path = store_path(root);
-        let cache = placement::create_base(root, placement::copied_release_cache(root))
+        let cache = placement::create_base(root, placement::install_cache(root))
             .map_err(|error| error.rpc())?;
         debug_assert_eq!(path.parent(), Some(cache.as_path()));
         let store = match FsStore::load(&path).await {
@@ -229,9 +229,12 @@ impl Pieces {
         placement::ready_name(key).ok_or_else(not_held)?;
         let files = {
             let (context, key) = (context.clone(), key.to_owned());
-            tokio::task::spawn_blocking(move || release_files(&context, &key))
-                .await
-                .map_err(|_| not_held())??
+            tokio::task::spawn_blocking(move || {
+                let snapshot = context.discovery.published().map_err(|_| not_held())?;
+                release_files(&context.root, &snapshot, &key)
+            })
+            .await
+            .map_err(|_| not_held())??
         };
         let store = self.store(&context.root).await?;
         if !rehash {
@@ -348,10 +351,15 @@ async fn kept(store: &FsStore, key: &str, files: &[(String, PathBuf)]) -> Option
 
 /// The files of one file release on this device, as `(name in the release,
 /// absolute path)`: an installed release (ADR 0092 layout), else the first
-/// library location of the release key that is not missing.
-fn release_files(context: &GameContext, key: &str) -> Result<Vec<(String, PathBuf)>, RpcFailure> {
-    let ready = placement::copied_release_cache(&context.root)
-        .join(placement::ready_name(key).ok_or_else(not_held)?);
+/// library location of the release key that is not missing. Netplay's
+/// holder (`host/netplay.rs`) reads the size of the release it serves here.
+pub(crate) fn release_files(
+    root: &Path,
+    snapshot: &crate::config::ConfigSnapshot,
+    key: &str,
+) -> Result<Vec<(String, PathBuf)>, RpcFailure> {
+    let ready =
+        placement::install_cache(root).join(placement::ready_name(key).ok_or_else(not_held)?);
     if placement::is_ready(&ready) {
         let mut files = Vec::new();
         walk(&ready, &ready, &mut files)?;
@@ -360,7 +368,6 @@ fn release_files(context: &GameContext, key: &str) -> Result<Vec<(String, PathBu
             return Ok(files);
         }
     }
-    let snapshot = context.discovery.published().map_err(|_| not_held())?;
     for location in snapshot.locations.get(key).into_iter().flatten() {
         let (storage, parts, discovery) = match location {
             crate::config::Location::File {
@@ -406,8 +413,8 @@ fn release_files(context: &GameContext, key: &str) -> Result<Vec<(String, PathBu
             .into_iter()
             .map(|(name, path)| {
                 crate::config::storage::resolve_file_target(
-                    &context.root,
-                    &snapshot,
+                    root,
+                    snapshot,
                     &crate::config::resolver::ResolvedFileTarget {
                         storage_id: storage.0.clone(),
                         path,
@@ -629,11 +636,8 @@ impl Pieces {
         place: Place,
     ) -> Result<String, RpcFailure> {
         let hex = placement::ready_name(key).ok_or_else(install_failed)?;
-        let cache = placement::create_base(
-            &context.root,
-            placement::copied_release_cache(&context.root),
-        )
-        .map_err(|error| error.rpc())?;
+        let cache = placement::create_base(&context.root, placement::install_cache(&context.root))
+            .map_err(|error| error.rpc())?;
         let mut jobs = self.jobs.lock().expect("device installs mutex poisoned");
         prune(&mut jobs, std::time::Instant::now());
         if let Some((id, job)) = jobs.iter().find(|(_, job)| {
@@ -701,6 +705,26 @@ impl Pieces {
     pub(crate) fn status(&self, job: &str) -> Option<DeviceInstallStatus> {
         let jobs = self.jobs.lock().expect("device installs mutex poisoned");
         jobs.get(job).map(|job| job.status.borrow().clone())
+    }
+
+    /// The install of `key` that waits or runs, if any.
+    pub(crate) fn live_job(&self, key: &str) -> Option<String> {
+        let jobs = self.jobs.lock().expect("device installs mutex poisoned");
+        jobs.iter()
+            .find(|(_, job)| {
+                let status = job.status.borrow();
+                status.release_key == key && status.state.live()
+            })
+            .map(|(id, _)| id.clone())
+    }
+
+    /// Every change of one install's status, from now on.
+    pub(crate) fn watch(
+        &self,
+        job: &str,
+    ) -> Option<tokio::sync::watch::Receiver<DeviceInstallStatus>> {
+        let jobs = self.jobs.lock().expect("device installs mutex poisoned");
+        jobs.get(job).map(|job| job.status.subscribe())
     }
 
     /// Wait for the end of one install from devices.
@@ -1125,7 +1149,7 @@ impl Pieces {
                         "The installed files are not the release that was asked for.",
                     )
                 })?;
-            let installs = placement::copied_release_cache(&context.root);
+            let installs = placement::install_cache(&context.root);
             placement::publish_acquired_game(&installs, work, &key).map_err(|error| error.rpc())?;
             context
                 .discovery
@@ -1208,7 +1232,6 @@ pub(crate) struct PeerHolder {
 /// How a receiver reaches a holder.
 pub(crate) enum PeerRoute {
     /// The federation's iroh route to the device.
-    #[cfg_attr(test, allow(dead_code))] // Tests use `Origin`.
     Federation(crate::federation::FederationDirectory),
     /// One fixed loopback origin, for korrids in one test process.
     #[cfg(test)]

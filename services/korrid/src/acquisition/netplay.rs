@@ -1,16 +1,21 @@
-//! A peer copy uses the same space floor, identity, atomic placement and
-//! library publication as a store download. There is no second content store.
-use super::{game::GameContext, placement, space::Floor, Failure};
-use crate::{netplay::failure, RpcFailure};
-use std::{
-    fs,
-    io::Write,
-    os::unix::fs::OpenOptionsExt,
-    path::{Path, PathBuf},
+//! ADR 0040 and ADR 0092 (#554): the release that netplay needs arrives by
+//! one install from devices, at the front of the line. The holding device is
+//! its install source; its piece route admits the owner's and family
+//! members' devices (ADR 0077). A file release and a release of several
+//! files (a cue with its tracks, an m3u with its discs) are one collection.
+use super::{
+    game::GameContext,
+    pieces::{DeviceInstallState, PeerHolder, Pieces},
+    placement,
+    space::Floor,
+    AcquisitionCoordinator, Failure, Place,
 };
+use crate::{netplay::failure, RpcFailure};
+use std::{path::Path, sync::Arc};
 
+/// Room for an install of `bytes` on this device.
 pub(crate) fn room(root: &Path, bytes: u64) -> bool {
-    let cache = placement::copied_release_cache(root);
+    let cache = placement::install_cache(root);
     let directory = if cache.is_dir() {
         cache.as_path()
     } else {
@@ -20,258 +25,100 @@ pub(crate) fn room(root: &Path, bytes: u64) -> bool {
         .and_then(|floor| floor.room())
         .is_ok_and(|room| room >= bytes.saturating_add(8192))
 }
-fn failed(error: Failure, bytes: u64) -> RpcFailure {
-    if error == Failure::NoSpace {
+
+/// The netplay answer for an install that did not end in the library. The
+/// codes and the space message are netplay's wire (`surface/shared_play.rs`
+/// reads the bytes from "The copy needs N bytes.").
+fn netplay_failure(reason: &RpcFailure, bytes: u64) -> RpcFailure {
+    if reason.message == Failure::NoSpace.rpc().message {
         failure("NotEnoughSpace", &format!("The copy needs {bytes} bytes."))
     } else {
         failure(
             "CopyFailed",
-            "The release copy could not be verified or stored.",
+            "The release could not be installed from the holding device.",
         )
-    }
-}
-pub(crate) struct Copy {
-    work: placement::WorkFolder,
-    file: fs::File,
-    floor: Floor,
-    expected: u64,
-    written: u64,
-    cache: PathBuf,
-}
-impl Copy {
-    pub(crate) fn begin(context: &GameContext, name: &str, bytes: u64) -> Result<Self, RpcFailure> {
-        Self::begin_with_probe(context, name, bytes, None)
-    }
-    fn begin_with_probe(
-        context: &GameContext,
-        name: &str,
-        bytes: u64,
-        probe: Option<super::space::Probe>,
-    ) -> Result<Self, RpcFailure> {
-        let cache = placement::create_base(
-            &context.root,
-            placement::copied_release_cache(&context.root),
-        )
-        .map_err(|error| failed(error, bytes))?;
-        let mut floor = Floor::new(&cache, probe).map_err(|error| failed(error, bytes))?;
-        if floor.room().map_err(|error| failed(error, bytes))? < bytes.saturating_add(8192) {
-            return Err(failed(Failure::NoSpace, bytes));
-        }
-        floor
-            .reserve_entry()
-            .map_err(|error| failed(error, bytes))?;
-        let work = placement::WorkFolder::create(&cache).map_err(|error| failed(error, bytes))?;
-        if !super::claims::safe_file_name(name)
-            || name.starts_with('.')
-            || name.chars().any(char::is_control)
-        {
-            return Err(failed(Failure::UnsafePath, bytes));
-        }
-        floor
-            .reserve_entry()
-            .map_err(|error| failed(error, bytes))?;
-        let file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o644)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(work.path.join(name))
-            .map_err(|_| failed(Failure::Storage, bytes))?;
-        self::fs::set_permissions(
-            work.path.join(name),
-            <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o644),
-        )
-        .map_err(|_| failed(Failure::Storage, bytes))?;
-        Ok(Self {
-            work,
-            file,
-            floor,
-            expected: bytes,
-            written: 0,
-            cache,
-        })
-    }
-    pub(crate) fn write(&mut self, bytes: &[u8]) -> Result<(), RpcFailure> {
-        if self.written.saturating_add(bytes.len() as u64) > self.expected {
-            return Err(failed(Failure::Storage, self.expected));
-        }
-        self.floor
-            .reserve(bytes.len() as u64)
-            .map_err(|error| failed(error, self.expected))?;
-        self.file
-            .write_all(bytes)
-            .map_err(|_| failed(Failure::Storage, self.expected))?;
-        self.written += bytes.len() as u64;
-        Ok(())
-    }
-    pub(crate) fn finish(
-        self,
-        context: &GameContext,
-        key: &str,
-        title: &str,
-    ) -> Result<String, RpcFailure> {
-        if self.written != self.expected {
-            return Err(failed(Failure::Storage, self.expected));
-        }
-        self.file
-            .sync_all()
-            .map_err(|_| failed(Failure::Storage, self.expected))?;
-        self.floor
-            .check()
-            .map_err(|error| failed(error, self.expected))?;
-        let (system, identity) = context
-            .registry
-            .systems()
-            .values()
-            .find_map(|system| {
-                let system = &system.id;
-                let rules = context.registry.content_rules(system)?;
-                let identity = super::game::identify_work(&self.work.path, rules).ok()?;
-                (identity.value() == key).then_some((system.clone(), identity))
-            })
-            .ok_or_else(|| failed(Failure::NotSystemFile, self.expected))?;
-        placement::publish_acquired_game(&self.cache, self.work, key)
-            .map_err(|error| failed(error, self.expected))?;
-        context
-            .discovery
-            .record_copied_release(title, &system, &identity)
-            .map_err(|error| {
-                log::debug!("netplay library record: {error}");
-                failed(Failure::Storage, self.expected)
-            })
     }
 }
 
-/// Same line and sleep inhibitor as provider downloads. ADR 0092: netplay
-/// goes to the front of the line; a background download pauses for it.
-pub(crate) struct CopyTurn {
-    _turn: super::Turn,
+/// A netplay that ends before its install does cancels the install it
+/// started. An install that was already in the line, which the person or
+/// play-here started, goes on.
+struct Started {
+    pieces: Pieces,
+    job: String,
+    armed: bool,
 }
-pub(crate) async fn turn(
-    coordinator: &super::AcquisitionCoordinator,
-    root: &Path,
+impl Drop for Started {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let (pieces, job) = (self.pieces.clone(), std::mem::take(&mut self.job));
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                pieces.cancel(&job).await;
+            });
+        }
+    }
+}
+
+/// Install `key` from the holding device at the front of the line and wait
+/// for it. `progress` hears `(bytes done, bytes total)` as pieces arrive.
+/// Returns the library game id.
+pub(crate) async fn install(
+    coordinator: &AcquisitionCoordinator,
+    context: &GameContext,
     key: &str,
-) -> CopyTurn {
-    let turn = coordinator
-        .queue_turn(
-            placement::copied_release_cache(root)
-                .join(placement::ready_name(key).expect("validated release key")),
-            super::Place::Front,
-            super::Listed::Hidden,
+    title: &str,
+    bytes: u64,
+    holder: PeerHolder,
+    progress: &(dyn Fn(u64, u64) + Send + Sync),
+) -> Result<String, RpcFailure> {
+    let pieces = coordinator.pieces();
+    let joined = pieces.live_job(key).is_some();
+    let job = pieces
+        .start(
+            coordinator,
+            context,
+            key,
+            title,
+            vec![Arc::new(holder)],
+            Place::Front,
         )
-        .turn()
-        .await;
-    CopyTurn { _turn: turn }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        discovery::{DiscoveryLifecycleCoordinator, FolderSelectionGrantStore},
-        plugin::{load_plugin_source, PluginRegistry},
-        plugin_policy::RegistrySource,
+        .map_err(|reason| netplay_failure(&reason, bytes))?;
+    let mut started = Started {
+        pieces: pieces.clone(),
+        job: job.clone(),
+        armed: !joined,
     };
-    use sha2::{Digest, Sha256};
-    use std::sync::{Arc, Mutex};
-    const CONTENT: &[u8] = b"a real file release";
-    fn key() -> String {
-        format!("sha256:{}", hex::encode(Sha256::digest(CONTENT)))
-    }
-    fn fixture() -> (tempfile::TempDir, GameContext) {
-        let root = tempfile::tempdir().unwrap();
-        fs::create_dir_all(root.path().join("catalog")).unwrap();
-        fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
-        fs::write(root.path().join("catalog/library.yaml"), "{}\n").unwrap();
-        let plugin = load_plugin_source("@test", "export const name='core'; export const systems={snes:{title:'Super Nintendo',content:{extensions:['sfc']}}};").unwrap();
-        let registry = PluginRegistry::new(vec![plugin], ["@test:core".into()]).unwrap();
-        let private_root = root.path().join("private");
-        let discovery = DiscoveryLifecycleCoordinator::new_with_registry_source(
-            root.path(),
-            &private_root,
-            Arc::new(Mutex::new(())),
-            FolderSelectionGrantStore::default(),
-            RegistrySource::Selected(Arc::new(registry.clone())),
-        );
-        let context = GameContext {
-            root: root.path().into(),
-            private_root,
-            registry,
-            discovery,
-        };
-        (root, context)
-    }
-    #[test]
-    fn netplay_copy_checks_hash_publishes_atomically_and_records_the_library_release() {
-        let (_root, context) = fixture();
-        let mut copy = Copy::begin(&context, "Turtles.sfc", CONTENT.len() as u64).unwrap();
-        copy.write(&CONTENT[..4]).unwrap();
-        copy.write(&CONTENT[4..]).unwrap();
-        let game = copy.finish(&context, &key(), "Turtles").unwrap();
-        let ready = context
-            .root
-            .join("cache")
-            .join(placement::ready_name(&key()).unwrap());
-        assert_eq!(fs::read(ready.join("Turtles.sfc")).unwrap(), CONTENT);
-        let snapshot = context.discovery.published().unwrap();
-        assert_eq!(
-            snapshot.library[&game].releases[0]
-                .identity
-                .as_ref()
-                .unwrap()
-                .value(),
-            key()
-        );
-        assert!(
-            snapshot.provider_links.is_empty(),
-            "a peer must not invent a provider"
-        );
-        assert_eq!(
-            super::super::game::acquired_game_dirs(
-                &context.root,
-                &context.registry,
-                &snapshot,
-                &game
-            )[0]
-            .1,
-            ready
-        );
-    }
-    #[test]
-    fn netplay_copy_cancel_or_hash_failure_leaves_no_partial_file_or_library_record() {
-        let (_root, context) = fixture();
-        let mut copy = Copy::begin(&context, "Turtles.sfc", CONTENT.len() as u64).unwrap();
-        copy.write(&CONTENT[..4]).unwrap();
-        let work = copy.work.path.clone();
-        drop(copy);
-        assert!(!work.exists());
-        let mut copy = Copy::begin(&context, "Turtles.sfc", CONTENT.len() as u64).unwrap();
-        copy.write(CONTENT).unwrap();
-        let work = copy.work.path.clone();
-        assert_eq!(
-            copy.finish(&context, &format!("sha256:{}", "0".repeat(64)), "Turtles")
-                .unwrap_err()
-                .code,
-            "CopyFailed"
-        );
-        assert!(!work.exists());
-        assert!(context.discovery.published().unwrap().library.is_empty());
-    }
-    #[test]
-    fn netplay_copy_checks_the_existing_space_floor_before_any_file_write() {
-        let (_root, context) = fixture();
-        let result = Copy::begin_with_probe(
-            &context,
-            "Turtles.sfc",
-            12345,
-            Some(super::super::space::fixed(12345)),
-        );
-        let failure = result.err().unwrap();
-        assert_eq!(failure.code, "NotEnoughSpace");
-        assert!(failure.message.contains("12345"));
-        assert!(fs::read_dir(context.root.join("cache"))
-            .unwrap()
-            .next()
-            .is_none());
+    let mut status = pieces
+        .watch(&job)
+        .ok_or_else(|| netplay_failure(&Failure::Storage.rpc(), bytes))?;
+    loop {
+        let state = status.borrow_and_update().state.clone();
+        match state {
+            DeviceInstallState::Waiting => (),
+            DeviceInstallState::Installing {
+                bytes_done,
+                bytes_total,
+            } => progress(bytes_done, bytes_total),
+            DeviceInstallState::Imported { game_id } => {
+                started.armed = false;
+                return Ok(game_id);
+            }
+            // A failed install keeps its verified pieces for the next try,
+            // and the person's list shows it until it is thrown away.
+            DeviceInstallState::Failed { reason } => {
+                started.armed = false;
+                return Err(netplay_failure(&reason, bytes));
+            }
+            DeviceInstallState::Cancelled => {
+                started.armed = false;
+                return Err(failure("CopyFailed", "The install was cancelled."));
+            }
+        }
+        if status.changed().await.is_err() {
+            return Err(netplay_failure(&Failure::Storage.rpc(), bytes));
+        }
     }
 }

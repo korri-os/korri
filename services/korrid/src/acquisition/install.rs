@@ -1,8 +1,9 @@
 //! The install manager (ADR 0092): one line for every install on this device.
-//! Pinned artifacts (ADR 0012, ADR 0013), provider games (ADR 0016) and the
-//! netplay copy (ADR 0040) wait in it. One install runs at a time. The person
-//! can reorder the line, and play-here and netplay go to its front, which
-//! pauses a background download until they are done.
+//! Pinned artifacts (ADR 0012, ADR 0013), provider games (ADR 0016) and
+//! installs from devices, netplay's among them (ADR 0040), wait in it. One
+//! install runs at a time. The person can reorder the line, and play-here and
+//! netplay go to its front, which pauses a background download until they are
+//! done.
 //!
 //! The cache stays the truth of what is in the line: an artifact's `.part`
 //! marker, a provider job's record (`game.rs`). The order file is the
@@ -24,8 +25,8 @@ use tokio::sync::{mpsc, watch};
 
 /// What the order file names: an artifact by its declared id
 /// (`AcquisitionStartRequest.artifactIds`) or a provider job by its
-/// `AcquireJobStatus.jobId`. A netplay copy is not named: it is never kept
-/// across a restart (ADR 0040).
+/// `AcquireJobStatus.jobId`. An install from devices, netplay's too, is
+/// shown under its job id but never kept across a restart (ADR 0092).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) enum Member {
@@ -35,7 +36,8 @@ pub(crate) enum Member {
 
 /// How an install that waits through a ticket shows in the line.
 pub(crate) enum Listed<'a> {
-    /// Not in `line()` (the netplay copy, until #554).
+    /// Not in `line()`: a test's stand-in for an install that runs.
+    #[cfg(test)]
     Hidden,
     /// In `line()` and in the order file a restart reads.
     Kept(&'a Path, Member),

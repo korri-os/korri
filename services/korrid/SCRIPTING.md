@@ -527,13 +527,13 @@ uses the modification time, which can put a running download behind a later
 one. Process restart forgets in-memory failures and progress.
 
 ADR 0092 makes this queue the install manager: artifacts, provider games and
-the netplay copy wait in one line. `<private-state-root>/acquisition/queue.json`
+installs from devices, netplay's among them, wait in one line. `<private-state-root>/acquisition/queue.json`
 keeps the person's order, a list of `{ "artifact": <artifact id> }` and
 `{ "job": <jobId> }`, the running install first. It only sorts: the cache
 says what is in the line, and an install the file does not name sorts after
 the named ones by when it was queued. Only the end of an install removes it
 from the file, so a korrid that stops keeps the order. The person can
-reorder installs that wait; the running one keeps running. The netplay copy
+reorder installs that wait; the running one keeps running. Netplay's install
 goes to the front, as a launch's artifacts do.
 
 ADR 0092 (#552): devices are install sources for file releases. A holder
@@ -549,6 +549,13 @@ install. The finished install moves out of the store, is checked against its
 release key, and is published under `cache/<hex of the release key>/`. The
 owner's devices and family members' devices may install, with no prompt on
 the holder; guests are refused.
+
+Netplay (ADR 0040, #554) installs the release it needs this way, from the
+device that holds the session, at the front of the line; its `Copying` phase
+reads the install's progress. A release of several files (a cue with its
+tracks) is one collection, so netplay plays it too (#282). A netplay that ends
+before its install cancels the install it started; an install that was
+already in the line goes on. No single-file release route remains.
 
 While a job downloads or unpacks, korrid holds a logind `sleep` inhibitor in
 `block` mode. The screen may blank, but the device does not suspend. Shutdown

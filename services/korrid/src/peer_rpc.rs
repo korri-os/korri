@@ -570,7 +570,6 @@ impl PeerRpcServer {
         let peer = Router::new()
             .route("/peer-rpc", post(peer_rpc))
             .route("/peer-saves-object", post(saves_object::object_route))
-            .route("/peer-releases-object", post(saves_object::object_route))
             .route("/peer-installs-piece", post(installs_piece::piece_route))
             .layer(DefaultBodyLimit::max(MAX_PEER_EVENT_BYTES))
             .with_state(self)
@@ -650,7 +649,7 @@ impl PeerRpcServer {
             .map_err(|_| PeerRpcError::Invalid)?;
         if matches!(
             &envelope.request,
-            RpcRequest::SaveObject(_) | RpcRequest::ReleaseObject(_) | RpcRequest::InstallPiece(_)
+            RpcRequest::SaveObject(_) | RpcRequest::InstallPiece(_)
         ) != object_route
         {
             return Err(PeerRpcError::WrongKind);
