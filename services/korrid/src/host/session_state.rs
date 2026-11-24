@@ -1103,6 +1103,15 @@ impl HostSessionControl {
         match ownership {
             Ok(FocusOwnership::Launch) => {
                 recovered_intent.take();
+                // Recovery has no historical first-frame fact, but a focused
+                // exact live window must not retain a pre-restart audio gate.
+                if let Err(error) = self.backend.release_audio(&launch_id) {
+                    eprintln!(
+                        "korrid: RecoveredAudioFailed {{ launch_id: {launch_id}, reason: {} }}",
+                        error.message
+                    );
+                    return ActiveState::FocusFailed { launch_id, game_id };
+                }
                 ActiveState::Running { launch_id, game_id }
             }
             // Only an excluded Korri surface proves a restart interrupted an
@@ -1774,6 +1783,18 @@ impl HostSessionControl {
             Ok(None) => focus_launch_window(compositor.as_ref(), &pids, &excluded),
             Err(reason) => FocusOutcome::Failed(reason),
         };
+        if matches!(outcome, FocusOutcome::Focused(_))
+            && self
+                .initial_handoff
+                .lock()
+                .expect("handoff mutex poisoned")
+                .as_ref()
+                .is_none_or(|(exact, _)| exact != launch_id)
+        {
+            if let Err(error) = self.backend.release_audio(launch_id) {
+                return Some(FocusOutcome::Failed(error.message));
+            }
+        }
         Some(outcome)
     }
 
