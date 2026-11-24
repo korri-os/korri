@@ -689,6 +689,14 @@ impl Launchables {
     }
 
     pub(crate) async fn poll_local_session(self: &Arc<Self>) {
+        self.observe_local_session(false).await;
+    }
+
+    pub(crate) async fn session_changed(self: &Arc<Self>) {
+        self.observe_local_session(true).await;
+    }
+
+    async fn observe_local_session(self: &Arc<Self>, changed: bool) {
         let (operation, load_operation, local_launch_id, observing) = {
             let inner = self.lock();
             let observing = matches!(
@@ -708,7 +716,7 @@ impl Launchables {
                 observing,
             )
         };
-        if local_launch_id.is_none() && !observing {
+        if !changed && local_launch_id.is_none() && !observing {
             return;
         }
         let eligible = matches!(
