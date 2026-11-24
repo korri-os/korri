@@ -192,11 +192,6 @@ impl Forwards {
             });
         }
         tasks.spawn(async move {
-            let _report = datagrams::Report {
-                side: "viewer",
-                connection: connection.clone(),
-                counters,
-            };
             let mut lost = Lost::default();
             loop {
                 let (port, payload) = tokio::select! {
