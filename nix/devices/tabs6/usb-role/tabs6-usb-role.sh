@@ -312,13 +312,18 @@ device)
 	to_device && kernel_resume
 	;;
 detached) detached ;;
+gadget-stop)
+	# Host can qualify before systemd starts the gadget. Cancel its late-UDC
+	# wait without changing the shared product gadget or the kernel's role.
+	[ -z "$GADGET_UNIT" ] || systemctl stop --no-block "$GADGET_UNIT"
+	;;
 boot-role)
 	[ -z "$(kernel_client)" ] || die "kernel owns boot data role"
 	boot_role
 	;;
 boot-vbus) boot_vbus ;;
 *)
-	echo "usage: tabs6-usb-role [status|host|device|detached|boot-role|boot-vbus]" >&2
+	echo "usage: tabs6-usb-role [status|host|device|detached|gadget-stop|boot-role|boot-vbus]" >&2
 	exit 2
 	;;
 esac

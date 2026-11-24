@@ -48,10 +48,7 @@ in
     systemd.services.tabs6-typec-role-watch = lib.mkIf (!config.tabs6.console.enable) {
       description = "Tab S6 kernel USB role detach input workaround";
       wantedBy = [ "multi-user.target" ];
-      after = [
-        "usb-gadget.service"
-        "systemd-modules-load.service"
-      ];
+      after = [ "systemd-modules-load.service" ];
       environment.TABS6_USB_ROLE_HELPER = lib.getExe usbRole;
       serviceConfig = {
         ExecStart = "${typecStatus}/bin/tabs6-typec-role-watch";

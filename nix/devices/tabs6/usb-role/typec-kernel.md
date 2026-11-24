@@ -96,6 +96,14 @@ and VBUS-first sequence. A failed manual host attempt stays unbound; run
 Do not change cables in manual powered-host mode: it remains an unmonitored
 operator override, not proof of safe pass-through sourcing.
 
+Kernel host qualification can finish before systemd starts the gadget.
+The role watcher starts without waiting for the gadget. On an initial or new
+host role it stops the gadget with `systemctl --no-block`, which cancels its
+late-UDC wait and avoids delaying network startup for 60 seconds. On return to
+device it restarts the gadget. This keeps the shared product gadget unchanged;
+only the Tab S6 edge knows about its role switch. No role or chip write is part
+of either gadget lifecycle action.
+
 The existing boot `boot-vbus` service still requests verified boost-off because
 SM5705 registers can survive warm reboot. The product has no user-space
 `boot-role` writer; the driver owns boot data role. The console retains its

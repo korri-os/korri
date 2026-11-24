@@ -22,6 +22,17 @@ fn role(sysfs: &Path) -> Result<String, String> {
     }
 }
 
+fn apply(helper: &str, command: &str) -> Result<(), String> {
+    let status = Command::new(helper)
+        .arg(command)
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!("{command} workaround failed: {status}"));
+    }
+    Ok(())
+}
+
 fn run() -> Result<(), String> {
     if std::env::args().len() != 1 {
         return Err("usage: tabs6-typec-role-watch".into());
@@ -30,6 +41,9 @@ fn run() -> Result<(), String> {
     let sysfs = Path::new(&root);
     let helper = std::env::var("TABS6_USB_ROLE_HELPER").unwrap_or("tabs6-usb-role".into());
     let mut previous = role(sysfs)?;
+    if previous == "host" {
+        apply(&helper, "gadget-stop")?;
+    }
     loop {
         thread::sleep(Duration::from_millis(50));
         let current = match role(sysfs) {
@@ -43,13 +57,9 @@ fn run() -> Result<(), String> {
         };
         if previous == "host" && current == "device" {
             println!("kernel host -> device; restarting detached input providers");
-            let status = Command::new(&helper)
-                .arg("detached")
-                .status()
-                .map_err(|e| e.to_string())?;
-            if !status.success() {
-                return Err(format!("detach workaround failed: {status}"));
-            }
+            apply(&helper, "detached")?;
+        } else if previous == "device" && current == "host" {
+            apply(&helper, "gadget-stop")?;
         }
         previous = current;
     }

@@ -434,6 +434,13 @@ class UsbRole(unittest.TestCase):
         self.assertTrue((client / "driver").exists())
         self.assertIn("start tabs6-typec-role-watch.service", self.systemctl())
 
+    def test_host_gadget_cleanup_never_writes_role_or_chip_registers(self):
+        self.set_role("host")
+        self.assertEqual(self.run_role("gadget-stop").returncode, 0)
+        self.assertEqual(self.systemctl(), ["stop --no-block usb-gadget.service"])
+        self.assertEqual(self.role(), "host")
+        self.assertEqual(self.writes(), [])
+
     def test_detach_workaround_only_restarts_after_kernel_teardown(self):
         self.set_role("device")
         self.reg(CNTL, 5)
@@ -462,7 +469,7 @@ class UsbRole(unittest.TestCase):
             try:
                 time.sleep(0.15)
                 self.assertIsNone(proc.poll())
-                self.assertEqual(self.systemctl(), [])
+                self.assertEqual(self.systemctl(), ["stop --no-block usb-gadget.service"])
                 # A transient unreadable role must not erase the last host.
                 role_path = self.sys / "class/usb_role/a600000.usb-role-switch/role"
                 role_path.unlink()
