@@ -45,6 +45,31 @@ use std::{
 
 static SKIPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// The CPU, shared between the tests of this file. The test harness runs them
+/// in parallel, and a timed test measures CPU time on its own thread: with the
+/// other tests walking every scenario beside it, the same call takes up to
+/// twice as long (cache, memory bandwidth, frequency), and how much depends on
+/// how many scenarios they walk. So the timed test holds the CPU alone (`alone`)
+/// for its whole measurement, and every other test shares it (`sharing`): they
+/// still run in parallel with each other, and never beside the measurement.
+/// On Linux std's RwLock lets no new reader in while a writer waits, so the
+/// timed test waits only for the tests already running; the file has nine
+/// tests, so it never waits without end on any platform. A test that panics poisons the
+/// lock; the guard is taken all the same, so one failure does not fail the rest.
+static CPU: std::sync::RwLock<()> = std::sync::RwLock::new(());
+
+/// For a test that does not measure time: it runs beside the others.
+fn sharing() -> std::sync::RwLockReadGuard<'static, ()> {
+    CPU.read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// For the test that measures time: no other test of this file runs meanwhile.
+fn alone() -> std::sync::RwLockWriteGuard<'static, ()> {
+    CPU.write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Step the clock past every motion.
 fn settle() {
     SKIPPED.fetch_add(3_000, std::sync::atomic::Ordering::Relaxed);
@@ -341,6 +366,7 @@ fn screen_value(screen: &Value) -> slint_interpreter::Value {
 
 #[test]
 fn every_preview_state_draws_at_every_size() {
+    let _cpu = sharing();
     install();
     let root = package();
     let mut files = Vec::new();
@@ -482,6 +508,7 @@ const ODD_SIZES: [(u32, u32); 6] = [
 ///   page draws, to the window's last column.
 #[test]
 fn the_backdrop_has_no_seam() {
+    let _cpu = sharing();
     install();
     let root = package();
     let home = scenario(&root, "home-no-art");
@@ -591,6 +618,7 @@ const TOUR: [&str; 12] = [
 
 #[test]
 fn focus_stays_in_sight_through_every_scenario_at_every_size() {
+    let _cpu = sharing();
     install();
     let root = package();
     let views =
@@ -742,6 +770,7 @@ fn focus_stays_in_sight_through_every_scenario_at_every_size() {
 /// library.
 #[test]
 fn the_clock_stands_clear_of_the_menu_pill() {
+    let _cpu = sharing();
     use i_slint_backend_testing::ElementRoot;
     install();
     let root = package();
@@ -816,6 +845,7 @@ fn the_clock_stands_clear_of_the_menu_pill() {
 /// focused, and the focused one is in the window.
 #[test]
 fn every_focus_entry_selects_one_drawn_target() {
+    let _cpu = sharing();
     install();
     let root = package();
     let views =
@@ -874,6 +904,7 @@ fn every_focus_entry_selects_one_drawn_target() {
 /// set that asks for that system and shows only that system's games.
 #[test]
 fn a_system_set_shows_only_that_systems_games() {
+    let _cpu = sharing();
     let root = package();
     let home = scenario(&root, "home");
     let games = home["models"][0]["catalog"]["games"]
@@ -939,6 +970,7 @@ fn a_system_set_shows_only_that_systems_games() {
 /// so a busy machine's worst case does not decide it).
 #[test]
 fn logic_loads_well_inside_the_call_budget() {
+    let _cpu = sharing();
     let source = std::fs::read_to_string(package().join("logic.js")).unwrap();
     let mut best = std::time::Duration::MAX;
     for _ in 0..10 {
@@ -980,6 +1012,7 @@ const TIMED_ENGINES: usize = 7;
 /// budget the same way.
 #[test]
 fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
+    let _cpu = alone();
     let root = package();
     let home = scenario(&root, "home");
     let mut model = home["models"][0].clone();
@@ -1123,6 +1156,7 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
 /// are still package-relative paths).
 #[test]
 fn frames() {
+    let _cpu = sharing();
     let Some(out) = std::env::var_os("VELVET_FRAMES").map(PathBuf::from) else {
         return;
     };
