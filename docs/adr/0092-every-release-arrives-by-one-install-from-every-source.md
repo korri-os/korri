@@ -30,7 +30,11 @@ None of them can resume after an interruption.
   0.105 needs iroh 1.x, so it fits korrid's iroh 1.4.1. A holder hashes a
   release in place, without copying it into a store. A file that changes
   while it is served fails the check on the receiving device, so a holder
-  must hash a folder release again after it changes.
+  must hash a folder release again after it changes. Measured in #552 with
+  the real iroh-blobs store: a generated file of 4,700,000,000 bytes, not a
+  real release, hashed in place, gives an outboard (the kept BLAKE3 tree)
+  of 18,359,360 bytes, about 0.39% of the file. The size depends only on
+  the file's length: (⌈length / 16 KiB⌉ − 1) × 64 bytes.
 - Where an installed release lives on disk is netplay's release-key layout
   (ADR 0040): `cache/<release-key hex>/` with the content inside, the same
   folder for every install source. Decided in #551. The producer is the
