@@ -32,6 +32,8 @@ struct Configured {
     started: std::sync::Mutex<Vec<(String, Place)>>,
     cancelled: std::sync::Mutex<Vec<Member>>,
     reordered: std::sync::Mutex<Vec<(Member, usize)>>,
+    /// This device already holds the release.
+    held: std::sync::Mutex<bool>,
 }
 
 impl Configured {
@@ -85,6 +87,9 @@ impl InstallsAccess for Configured {
     fn status(&self, job: &str) -> Option<DeviceInstallStatus> {
         self.jobs.lock().unwrap().get(job).cloned()
     }
+    fn holds(&self, _key: &str) -> bool {
+        *self.held.lock().unwrap()
+    }
     fn cancel(
         &self,
         member: Member,
@@ -130,6 +135,7 @@ fn routes(system: &str, runner: &str) -> Value {
 #[derive(Default)]
 struct Calls {
     played: std::sync::Mutex<Vec<String>>,
+    library_reads: std::sync::atomic::AtomicUsize,
     streamed: std::sync::Mutex<Vec<(String, Option<String>)>>,
     busy: std::sync::atomic::AtomicBool,
 }
@@ -140,18 +146,22 @@ fn controller(
     facts: PluginFacts,
 ) -> (Arc<Installs>, Arc<Calls>) {
     let calls = Arc::new(Calls::default());
-    let (played, streamed, busy) = (calls.clone(), calls.clone(), calls.clone());
+    let (played, streamed, busy, read) =
+        (calls.clone(), calls.clone(), calls.clone(), calls.clone());
     let installs = Installs::new(
         in_memory_korrid(Arc::new(std::sync::Mutex::new(outcomes))).with_installs(access),
         Arc::new(|| {}),
         InstallsHost {
             state: Box::new(|| ready(vec![peer_game(Some(KEY))], None, None)),
             plugin_facts: Box::new(move || facts.clone()),
-            play: Box::new(move |id| played.played.lock().unwrap().push(id)),
+            play: Box::new(move |installed| played.played.lock().unwrap().push(installed.key)),
             stream: Box::new(move |id, location| {
                 streamed.streamed.lock().unwrap().push((id, location))
             }),
-            library_changed: Box::new(|| {}),
+            library_changed: Box::new(move || {
+                read.library_reads
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }),
             busy: Box::new(move || busy.busy.load(std::sync::atomic::Ordering::SeqCst)),
         },
     );
@@ -436,7 +446,7 @@ async fn a_slow_play_here_asks_once_whether_to_stream_meanwhile_and_waiting_keep
     );
     access.line.lock().unwrap().clear();
     installs.read_line();
-    assert_eq!(*calls.played.lock().unwrap(), ["local-anguna"]);
+    assert_eq!(*calls.played.lock().unwrap(), [KEY]);
     assert!(installs.list(&state).unwrap().is_empty());
 }
 
@@ -506,6 +516,78 @@ async fn something_else_started_meanwhile_keeps_the_game_from_starting() {
     );
     installs.read_line();
     assert!(calls.played.lock().unwrap().is_empty());
+    // The game does not start, but the library still reads it.
+    assert_eq!(reads(&calls), 1);
+}
+
+fn reads(calls: &Calls) -> usize {
+    calls
+        .library_reads
+        .load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Bug (device check, 2026-11-24): an install without play that ended left
+/// the catalog stale.
+#[tokio::test]
+async fn every_install_that_lands_reads_the_library_with_play_or_without() {
+    let access = gba_runner_here();
+    *access.check.lock().unwrap() = fits(1_000);
+    let (installs, calls) = controller(access.clone(), idle_outcomes(0), PluginFacts::default());
+    installs.install(release(), false);
+    until("started", || !access.started.lock().unwrap().is_empty()).await;
+    running(&access, 0, 1_000);
+    installs.read_line();
+    assert_eq!(reads(&calls), 0);
+    access.set_job(
+        "j1",
+        DeviceInstallState::Imported {
+            game_id: "anguna".into(),
+        },
+    );
+    access.line.lock().unwrap().clear();
+    installs.read_line();
+    assert_eq!(reads(&calls), 1);
+    assert!(calls.played.lock().unwrap().is_empty());
+    // A provider job or an artifact that leaves the line also ends.
+    *access.line.lock().unwrap() = vec![LineEntry {
+        member: Member::Job("provider".into()),
+        title: Some("anguna.gba".into()),
+        state: LineState::Waiting { bytes: None },
+    }];
+    installs.read_line();
+    assert_eq!(reads(&calls), 1);
+    access.line.lock().unwrap().clear();
+    installs.read_line();
+    assert_eq!(reads(&calls), 2);
+    // Nothing changed: no read.
+    installs.read_line();
+    assert_eq!(reads(&calls), 2);
+}
+
+/// A stale entry: the install just finished, the catalog still shows the
+/// game on the holder only. Pressing again installs nothing again.
+#[tokio::test]
+async fn a_release_this_device_already_holds_is_never_installed_again() {
+    for play in [true, false] {
+        let access = gba_runner_here();
+        *access.check.lock().unwrap() = fits(1_000);
+        *access.held.lock().unwrap() = true;
+        let (installs, calls) =
+            controller(access.clone(), idle_outcomes(0), PluginFacts::default());
+        installs.install(release(), play);
+        until("settled", || {
+            installs.here(&release()) == Some(SurfaceInstallHere::Offered)
+        })
+        .await;
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(access.started.lock().unwrap().is_empty(), "play {play}");
+        if play {
+            assert_eq!(*calls.played.lock().unwrap(), [KEY]);
+        } else {
+            assert_eq!(reads(&calls), 1);
+            assert!(calls.played.lock().unwrap().is_empty());
+        }
+    }
 }
 
 #[tokio::test]
@@ -840,4 +922,290 @@ async fn the_hub_publishes_install_here_and_performs_install_game() {
     )
     .unwrap();
     until("cancelled", || !access.cancelled.lock().unwrap().is_empty()).await;
+}
+
+// ------------------------------------------------- the real surface root
+
+/// The catalog as korrid answers it: the holder's copy only, or also the
+/// local copy that the install made.
+fn catalog_outcome(local: bool) -> Value {
+    let identity = json!({ "kind": "hash", "value": KEY });
+    let mut games = vec![json!({
+        "id": "anguna", "title": "Anguna", "host": "ibuki", "supportsRunnerSelection": false,
+        "identity": identity, "source": { "devicePublicKey": "ibuki-key", "label": "ibuki", "isLocal": false } })];
+    if local {
+        games.push(json!({
+            "id": "anguna", "title": "Anguna", "host": "aka", "supportsRunnerSelection": false,
+            "identity": identity, "source": { "devicePublicKey": "aka-key", "label": "aka", "isLocal": true } }));
+    }
+    json!({ "_tag": "Ok", "payload": { "games": games } })
+}
+
+fn local_games_outcome(local: bool) -> Value {
+    let games: Vec<Value> = if local {
+        vec![
+            json!({ "id": "anguna", "title": "Anguna", "system": "GBA", "systemId": "gba",
+            "identity": { "kind": "hash", "value": KEY } }),
+        ]
+    } else {
+        Vec::new()
+    };
+    json!({ "_tag": "Ok", "payload": { "games": games } })
+}
+
+/// The surface root with its real launchables, on a korrid whose catalog
+/// reads take time and are counted, and that records every request.
+struct Device {
+    hub: Arc<SurfaceHub>,
+    outcomes: Outcomes,
+    requests: Arc<std::sync::Mutex<Vec<Value>>>,
+    catalog_reads: Arc<std::sync::atomic::AtomicUsize>,
+    _directory: tempfile::TempDir,
+}
+
+fn device(access: Arc<Configured>) -> Device {
+    let mut outcomes = idle_outcomes(0);
+    outcomes.insert("app.catalog.snapshot".into(), catalog_outcome(false));
+    outcomes.insert("app.local-games.list".into(), local_games_outcome(false));
+    outcomes.insert(
+        "app.session.reserve".into(),
+        json!({ "_tag": "Ok", "payload": { "gameId": "anguna", "launchId": "exact" } }),
+    );
+    outcomes.insert(
+        "app.session.start".into(),
+        json!({ "_tag": "Ok", "payload": { "session": { "gameId": "anguna", "launchId": "exact" }, "warnings": [] } }),
+    );
+    let outcomes: Outcomes = Arc::new(std::sync::Mutex::new(outcomes));
+    let requests = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let catalog_reads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let base = in_memory_korrid(Arc::clone(&outcomes));
+    let korrid = Korrid::new(Arc::new({
+        let (requests, reads) = (Arc::clone(&requests), Arc::clone(&catalog_reads));
+        move |request: RpcRequest| {
+            let (base, requests, reads) = (base.clone(), Arc::clone(&requests), Arc::clone(&reads));
+            Box::pin(async move {
+                let value = serde_json::to_value(&request).unwrap();
+                if value["_tag"] == "app.catalog.snapshot" {
+                    reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    // A catalog read takes time on a device.
+                    tokio::time::sleep(Duration::from_millis(30)).await;
+                }
+                requests.lock().unwrap().push(value);
+                base.rpc(crate::surface::korrid::Mapping::Unreachable, request)
+                    .await
+                    .map_err(|failure| Refusal::Unreachable(failure.message))
+            })
+        }
+    }))
+    .with_installs(access);
+    let directory = tempfile::tempdir().unwrap();
+    let intent = crate::overlay_intent::OverlayIntent::default();
+    let hub = SurfaceHub::new(
+        korrid,
+        directory.path().join("private"),
+        intent.subscribe(),
+        Arc::default(),
+    );
+    Device {
+        hub,
+        outcomes,
+        requests,
+        catalog_reads,
+        _directory: directory,
+    }
+}
+
+fn only_game(model: &SurfaceModel) -> korri_surface_treaty::SurfaceGame {
+    match &model.catalog {
+        SurfaceCatalog::Ready { window, .. } => {
+            assert_eq!(window.len(), 1, "one card: {window:?}");
+            window[0].clone()
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// The library now holds the release, as discovery and the catalog report
+/// it a moment after the install ends.
+fn library_holds_it(outcomes: &Outcomes) {
+    let mut outcomes = outcomes.lock().unwrap();
+    outcomes.insert("app.catalog.snapshot".into(), catalog_outcome(true));
+    outcomes.insert("app.local-games.list".into(), local_games_outcome(true));
+}
+
+async fn install_from_the_hub(device: &Device, access: &Configured, play: bool) {
+    let model = settled(&device.hub, "velvet").await;
+    let game = only_game(&model);
+    assert_eq!(game.install_here, Some(SurfaceInstallHere::Offered));
+    device
+        .hub
+        .request(
+            "velvet",
+            SurfaceRequest::InstallGame {
+                game_id: game.id,
+                play,
+            },
+        )
+        .unwrap();
+    until("started", || !access.started.lock().unwrap().is_empty()).await;
+    running(access, 1_000, 1_000);
+    tokio::time::sleep(Duration::from_millis(40)).await;
+}
+
+/// Bug 1 of the device check: an install without play ended, and the
+/// catalog stayed stale until a Reload.
+#[tokio::test]
+async fn an_install_without_play_that_lands_reads_the_catalog_again() {
+    let access = gba_runner_here();
+    *access.check.lock().unwrap() = fits(1_000);
+    let device = device(access.clone());
+    install_from_the_hub(&device, &access, false).await;
+    let before = device
+        .catalog_reads
+        .load(std::sync::atomic::Ordering::SeqCst);
+    library_holds_it(&device.outcomes);
+    access.set_job(
+        "j1",
+        DeviceInstallState::Imported {
+            game_id: "anguna".into(),
+        },
+    );
+    access.line.lock().unwrap().clear();
+    let model = model_until(&device.hub, "the local game", |model| {
+        matches!(&model.catalog, SurfaceCatalog::Ready { window, .. }
+            if window.len() == 1 && window[0].install_here.is_none())
+    })
+    .await;
+    assert!(
+        device
+            .catalog_reads
+            .load(std::sync::atomic::Ordering::SeqCst)
+            > before
+    );
+    let game = only_game(&model);
+    assert_eq!(game.section.as_deref(), Some("This device"));
+    assert_eq!(model.installs, Some(Vec::new()));
+    // Install only: nothing starts.
+    tokio::time::sleep(Duration::from_millis(60)).await;
+    assert!(
+        !device
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| call["_tag"] == "app.session.reserve"
+                || call["_tag"] == "app.session.prepare")
+    );
+}
+
+/// Bug 2 of the device check: play here installed the game, looked for it
+/// before the catalog held it, and failed to start it. It must wait for a
+/// catalog that holds the local copy, then start that copy, never the
+/// stream.
+#[tokio::test]
+async fn play_here_waits_for_the_catalog_then_starts_the_local_copy() {
+    let access = gba_runner_here();
+    *access.check.lock().unwrap() = fits(1_000);
+    let device = device(access.clone());
+    install_from_the_hub(&device, &access, true).await;
+    access.set_job(
+        "j1",
+        DeviceInstallState::Imported {
+            game_id: "anguna".into(),
+        },
+    );
+    access.line.lock().unwrap().clear();
+    // Discovery records it a while after the install ends: the first
+    // catalog reads after the end do not hold it yet.
+    let outcomes = Arc::clone(&device.outcomes);
+    let reads = Arc::clone(&device.catalog_reads);
+    let at_end = reads.load(std::sync::atomic::Ordering::SeqCst);
+    tokio::spawn(async move {
+        while reads.load(std::sync::atomic::Ordering::SeqCst) < at_end + 2 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        library_holds_it(&outcomes);
+    });
+    until("the local start", || {
+        device
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| call["_tag"] == "app.session.reserve")
+    })
+    .await;
+    let requests = device.requests.lock().unwrap().clone();
+    let reserve = requests
+        .iter()
+        .find(|call| call["_tag"] == "app.session.reserve")
+        .unwrap();
+    assert_eq!(reserve["payload"]["gameId"], json!("anguna"));
+    assert!(
+        !requests
+            .iter()
+            .any(|call| call["_tag"] == "app.session.prepare"),
+        "never the stream"
+    );
+    let model = device.hub.model("velvet").unwrap();
+    assert!(
+        !matches!(model.status, SurfaceStatus::Problem { .. }),
+        "{:?}",
+        model.status
+    );
+}
+
+/// The library never shows the release: the person learns why and can
+/// retry, and Retry tries the start again.
+#[tokio::test]
+async fn play_here_that_cannot_find_the_installed_game_says_so_and_retries() {
+    let access = gba_runner_here();
+    *access.check.lock().unwrap() = fits(1_000);
+    let device = device(access.clone());
+    install_from_the_hub(&device, &access, true).await;
+    access.set_job(
+        "j1",
+        DeviceInstallState::Imported {
+            game_id: "anguna".into(),
+        },
+    );
+    access.line.lock().unwrap().clear();
+    let model = model_until(&device.hub, "the problem", |model| {
+        matches!(model.status, SurfaceStatus::Problem { .. })
+    })
+    .await;
+    let SurfaceStatus::Problem {
+        kicker, can_retry, ..
+    } = model.status
+    else {
+        unreachable!()
+    };
+    assert_eq!(kicker, "Couldn't start Anguna");
+    assert!(can_retry);
+    library_holds_it(&device.outcomes);
+    device.hub.request("velvet", SurfaceRequest::Retry).unwrap();
+    until("the local start", || {
+        device
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| call["_tag"] == "app.session.reserve")
+    })
+    .await;
+}
+
+async fn model_until(
+    hub: &Arc<SurfaceHub>,
+    what: &str,
+    ready: impl Fn(&SurfaceModel) -> bool,
+) -> SurfaceModel {
+    for _ in 0..1000 {
+        let model = hub.model("velvet").unwrap();
+        if ready(&model) {
+            return model;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("never: {what}: {:?}", hub.model("velvet").unwrap())
 }

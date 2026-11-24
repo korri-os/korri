@@ -144,6 +144,9 @@ pub(crate) trait InstallsAccess: Send + Sync {
         place: Place,
     ) -> Result<String, RpcFailure>;
     fn status(&self, job: &str) -> Option<DeviceInstallStatus>;
+    /// This device already holds the release: installed, or in a library
+    /// folder (`pieces::release_files`).
+    fn holds(&self, key: &str) -> bool;
     /// Cancel an install that waits or runs, or throw away one that failed.
     fn cancel(&self, member: Member) -> BoxFuture<'static, Result<(), RpcFailure>>;
     /// Move a waiting install to `index` among those that wait.
@@ -324,6 +327,8 @@ struct Inner {
     line: Vec<LineEntry>,
     plugin: Option<PluginFlow>,
     problem: Option<SurfaceStatus>,
+    /// The play that `problem` offers to retry.
+    retry: Option<PlayInstalled>,
 }
 
 impl Inner {
@@ -338,12 +343,22 @@ impl Inner {
     }
 }
 
+/// The release a finished play-here install starts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlayInstalled {
+    pub key: String,
+    pub title: String,
+}
+
 /// What the controller needs of the rest of the host.
 pub struct InstallsHost {
     pub state: Box<dyn Fn() -> LaunchablesState + Send + Sync>,
     pub plugin_facts: Box<dyn Fn() -> PluginFacts + Send + Sync>,
-    /// A play-here install is done: start this korrid game on this device.
-    pub play: Box<dyn Fn(String) + Send + Sync>,
+    /// A play-here install is done, or the person asked to play a release
+    /// this device already holds: once the library holds the release (by
+    /// its key), start its local copy here. The host reads the library
+    /// itself first.
+    pub play: Box<dyn Fn(PlayInstalled) + Send + Sync>,
     /// Stream play of a game now, as `LaunchGame` with this location.
     pub stream: Box<dyn Fn(String, Option<String>) + Send + Sync>,
     /// A plugin was installed, or a game: the library reads again.
@@ -661,6 +676,56 @@ impl Installs {
         tokio::spawn(async move { this.check_and_start(release, play).await });
     }
 
+    /// The release is already on this device, and the entry the person
+    /// pressed is stale: nothing installs again. The library reads again,
+    /// and play here starts the local copy.
+    fn already_held(&self, release: &PeerRelease, play: bool) {
+        self.set_check(&release.key, Check::Idle);
+        if play {
+            (self.host.play)(PlayInstalled {
+                key: release.key.clone(),
+                title: release.title.clone(),
+            });
+        } else {
+            (self.host.library_changed)();
+        }
+    }
+
+    /// The host could not find the installed release in its library: the
+    /// person can retry, which starts it again.
+    pub fn play_failed(&self, play: PlayInstalled) {
+        {
+            let mut inner = self.lock();
+            inner.problem = Some(SurfaceStatus::Problem {
+                kicker: format!("Couldn't start {}", play.title),
+                reason: format!(
+                    "{} is installed, but it is not in this device's library yet.",
+                    play.title
+                ),
+                can_retry: true,
+                game_id: None,
+                game_title: Some(play.title.clone()),
+            });
+            inner.retry = Some(play);
+        }
+        (self.notify)();
+    }
+
+    /// The surface's Retry. True when an install problem was showing.
+    pub fn retry(&self) -> bool {
+        let play = {
+            let mut inner = self.lock();
+            let Some(play) = inner.retry.take() else {
+                return false;
+            };
+            inner.problem = None;
+            play
+        };
+        (self.notify)();
+        (self.host.play)(play);
+        true
+    }
+
     fn set_check(&self, key: &str, check: Check) {
         self.lock()
             .releases
@@ -674,6 +739,9 @@ impl Installs {
         let Some(access) = self.access.clone() else {
             return;
         };
+        if access.holds(&release.key) {
+            return self.already_held(&release, play);
+        }
         let runner = self.read_runner(&release).await;
         if let Some(fact) = &runner {
             self.lock()
@@ -723,6 +791,10 @@ impl Installs {
                     bytes: Some(checked.bytes),
                 },
             );
+        }
+        // It may have arrived while the holders were asked.
+        if access.holds(&release.key) {
+            return self.already_held(&release, play);
         }
         let place = if play { Place::Front } else { Place::Back };
         match access.start(&release.key, &release.title, release.holders.clone(), place) {
@@ -931,9 +1003,12 @@ impl Installs {
 
     /// The surface's Dismiss. True when an install problem was showing.
     pub fn dismiss(&self) -> bool {
-        if self.lock().problem.take().is_none() {
+        let mut inner = self.lock();
+        inner.retry = None;
+        if inner.problem.take().is_none() {
             return false;
         }
+        drop(inner);
         (self.notify)();
         true
     }
@@ -1048,9 +1123,16 @@ impl Installs {
         let line = access.line();
         let now = Instant::now();
         let mut imported = Vec::new();
+        let mut ended = false;
         let changed = {
             let mut inner = self.lock();
             let before = (inner.line.clone(), jobs_view(&inner.jobs));
+            // An install that left the line ended: a provider game or an
+            // artifact may now be in the library.
+            ended |= before
+                .0
+                .iter()
+                .any(|entry| !line.iter().any(|now| now.member == entry.member));
             inner.line = line;
             let ids: Vec<String> = inner.jobs.keys().cloned().collect();
             for id in ids {
@@ -1077,9 +1159,15 @@ impl Installs {
                     }
                 }
                 match &status.state {
-                    DeviceInstallState::Imported { game_id } => {
+                    DeviceInstallState::Imported { .. } => {
+                        // Every install that lands changes the library,
+                        // with play here or without.
+                        ended = true;
                         if job.play {
-                            imported.push(game_id.clone());
+                            imported.push(PlayInstalled {
+                                key: job.key.clone(),
+                                title: job.title.clone(),
+                            });
                         }
                         inner.jobs.remove(&id);
                     }
@@ -1091,13 +1179,16 @@ impl Installs {
             }
             before != (inner.line.clone(), jobs_view(&inner.jobs)) || !imported.is_empty()
         };
-        if !imported.is_empty() {
+        // Unless the person started something else meanwhile, the host
+        // plays it once its library holds it, and reads the library for
+        // that; otherwise it only reads the library.
+        let busy = !imported.is_empty() && (self.host.busy)();
+        if busy || (ended && imported.is_empty()) {
             (self.host.library_changed)();
         }
-        for game_id in imported {
-            // Unless the person started something else meanwhile.
-            if !(self.host.busy)() {
-                (self.host.play)(game_id);
+        if !busy {
+            for play in imported {
+                (self.host.play)(play);
             }
         }
         if changed {

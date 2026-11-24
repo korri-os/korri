@@ -23,9 +23,9 @@ use super::{
         state::{Entry, LaunchablesState, Loaded, Phase},
     },
     model::{
-        catalog_games, copy_is_local, entry_for_id, entry_for_launch_location,
-        game_actions_for_entry, launch_locations_for_entry, ordered_copies_for_entry, status_from,
-        surface_download_from, GameDownloadContext, DOWNLOAD_ACTION_IDS,
+        catalog_games, entry_for_id, entry_for_launch_location, game_actions_for_entry,
+        launch_locations_for_entry, ordered_copies_for_entry, status_from, surface_download_from,
+        GameDownloadContext, DOWNLOAD_ACTION_IDS,
     },
     network_onboarding::NetworkOnboarding,
     overlay::{focused_overlay_session, OverlayController, OverlayExit},
@@ -203,6 +203,37 @@ fn korrid_game_for_claim(
         }
     }
     None
+}
+
+/// How often play here reads the library for a release that just landed,
+/// and how long it waits between reads: discovery records the release and
+/// the catalog publishes it a moment after the install ends.
+const PLAY_INSTALLED_READS: u32 = 20;
+const PLAY_INSTALLED_WAIT: Duration = if cfg!(test) {
+    Duration::from_millis(20)
+} else {
+    Duration::from_millis(500)
+};
+
+/// The presented entry and the catalog copy on this device of a release,
+/// by its release key: the copy a launch here takes.
+fn local_copy_of_release(state: &LaunchablesState, key: &str) -> Option<(String, crate::Game)> {
+    let is_release = |game: &crate::Game| {
+        game.source.is_local
+            && matches!(&game.identity, Some(crate::GameIdentity::Hash(hash)) if hash == key)
+    };
+    state.entries().iter().find_map(|entry| {
+        if entry.is_now_playing() {
+            return None;
+        }
+        ordered_copies_for_entry(entry)
+            .into_iter()
+            .find_map(|copy| match copy {
+                super::launchables::fold::GameCopy::Remote(game) if is_release(&game) => Some(game),
+                _ => None,
+            })
+            .map(|game| (entry.key(), game))
+    })
 }
 
 /// The surface's id for a korrid game, once the catalog holds it.
@@ -690,9 +721,9 @@ impl Root {
                         plugin_facts: Box::new(move || {
                             facts.lock().expect("plugin facts poisoned").clone()
                         }),
-                        play: Box::new(move |game_id| {
+                        play: Box::new(move |installed| {
                             if let Some(root) = play.upgrade() {
-                                tokio::spawn(async move { root.play_installed(game_id).await });
+                                tokio::spawn(async move { root.play_installed(installed).await });
                             }
                         }),
                         stream: Box::new(move |game_id, launch_location_id| {
@@ -1534,27 +1565,35 @@ impl Root {
             || state.entries().iter().any(Entry::is_now_playing)
     }
 
-    /// A play-here install is done (ADR 0092): the library reads the new
-    /// game, then it starts here as a press of Play would start it.
-    async fn play_installed(self: Arc<Self>, game_id: String) {
-        self.launchables.refresh().await;
-        if self.starting() {
-            return;
+    /// A play-here install is done (ADR 0092), or the person asked to play
+    /// a release this device already holds: read the library until it holds
+    /// the release's local copy, then start that copy here, as a press of
+    /// Play on it would. The local copy is the catalog game with
+    /// `source.isLocal` and this release key: the only one with a launch
+    /// path on this device (`launchable_on_this_device`), never the stream.
+    async fn play_installed(self: Arc<Self>, installed: super::installs::PlayInstalled) {
+        for attempt in 0..PLAY_INSTALLED_READS {
+            if attempt > 0 {
+                tokio::time::sleep(PLAY_INSTALLED_WAIT).await;
+            }
+            self.launchables.refresh().await;
+            // The person started something else meanwhile.
+            if self.starting() {
+                return;
+            }
+            let current = self.launchables.state();
+            if let Some((id, local)) = local_copy_of_release(&current, &installed.key) {
+                self.confirm_launch(
+                    &id,
+                    Entry::Game {
+                        game: local,
+                        alternatives: Vec::new(),
+                    },
+                );
+                return;
+            }
         }
-        let current = self.launchables.state();
-        let Some(id) = surface_id_for_korrid_game(&current, &game_id) else {
-            return;
-        };
-        let Some(entry) = entry_for_id(&current, &id).cloned() else {
-            return;
-        };
-        let local = ordered_copies_for_entry(&entry)
-            .into_iter()
-            .find(|copy| copy.id() == game_id && copy_is_local(copy));
-        let Some(local) = local else {
-            return;
-        };
-        self.confirm_launch(&id, Entry::for_copy(&local));
+        self.installs.play_failed(installed);
     }
 
     /// The person looks at a game: when only other devices hold it, learn
@@ -2160,7 +2199,7 @@ impl Root {
             // Korri has nothing new to try after a failed launch, so retrying
             // means re-reading the world.
             SurfaceRequest::Retry => {
-                if !self.saves.retry() && !self.acquisition.retry() {
+                if !self.saves.retry() && !self.acquisition.retry() && !self.installs.retry() {
                     launchables.reload()
                 }
             }

@@ -5834,6 +5834,15 @@ impl surface::installs::InstallsAccess for InstallFacts {
         self.state.acquisition.pieces().status(job)
     }
 
+    fn holds(&self, key: &str) -> bool {
+        let Ok(context) = self.state.game_context() else {
+            return false;
+        };
+        context.discovery.published().is_ok_and(|snapshot| {
+            acquisition::pieces::release_files(&context.root, &snapshot, key).is_ok()
+        })
+    }
+
     fn cancel(
         &self,
         member: acquisition::Member,
