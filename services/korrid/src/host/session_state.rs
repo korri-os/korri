@@ -1105,7 +1105,17 @@ impl HostSessionControl {
                 recovered_intent.take();
                 // Recovery has no historical first-frame fact, but a focused
                 // exact live window must not retain a pre-restart audio gate.
-                if let Err(error) = self.backend.release_audio(&launch_id) {
+                let recovered = self
+                    .initial_handoff
+                    .lock()
+                    .expect("handoff mutex poisoned")
+                    .as_ref()
+                    .is_none_or(|(exact, _)| exact != &launch_id);
+                if let Err(error) = if recovered {
+                    self.backend.release_audio(&launch_id)
+                } else {
+                    Ok(())
+                } {
                     eprintln!(
                         "korrid: RecoveredAudioFailed {{ launch_id: {launch_id}, reason: {} }}",
                         error.message
@@ -4917,7 +4927,10 @@ mod tests {
             Instant::now(),
         );
         assert!(shell.frozen());
-        assert_eq!(backend.state.lock().unwrap().audio_released, [id.clone()]);
+        assert_eq!(
+            backend.state.lock().unwrap().audio_released.as_slice(),
+            std::slice::from_ref(&id)
+        );
         control.observe_first_frame(
             Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
             Instant::now(),
@@ -4927,6 +4940,53 @@ mod tests {
             control.initial_handoff_for(&control.lock_state()),
             Some(InitialHandoff::Observed)
         );
+    }
+
+    #[test]
+    fn first_frame_recovery_does_not_release_audio_or_lose_the_next_new_event() {
+        for recover_with_status in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let backend = Arc::new(DeterministicBackend::default());
+            let compositor = Arc::new(RecordingCompositor::default());
+            let shell = Arc::new(RecordingShellUnit::default());
+            let control = shell_control(
+                root.path(),
+                backend.clone(),
+                compositor.clone(),
+                shell.clone(),
+            );
+            let id = prepare(&control, "one").launch_id;
+            backend.set_pids(&id, &[9100]);
+            *compositor.tree.lock().unwrap() = compositor_tree(9100);
+            backend.state.lock().unwrap().state_unavailable = true;
+            assert!(matches!(
+                control.status(),
+                HostSessionStatus::RecoveryBlocked
+            ));
+            backend.state.lock().unwrap().state_unavailable = false;
+            if recover_with_status {
+                assert!(matches!(
+                    control.status(),
+                    HostSessionStatus::Running { .. }
+                ));
+                assert!(backend.state.lock().unwrap().audio_released.is_empty());
+                assert!(!shell.frozen());
+                assert_eq!(
+                    control.initial_handoff_for(&control.lock_state()),
+                    Some(InitialHandoff::Waiting)
+                );
+            }
+            control.observe_first_frame(
+                Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+                Instant::now(),
+            );
+            assert_eq!(
+                control.initial_handoff_for(&control.lock_state()),
+                Some(InitialHandoff::Observed)
+            );
+            assert_eq!(backend.state.lock().unwrap().audio_released, [id]);
+            assert!(shell.frozen());
+        }
     }
 
     #[test]

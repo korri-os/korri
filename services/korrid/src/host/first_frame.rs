@@ -47,7 +47,7 @@ impl HostSessionControl {
             .expect("start first-frame observer");
     }
 
-    pub(super) fn observe_first_frame(&self, event: Option<&str>, now: Instant) {
+    pub(crate) fn observe_first_frame(&self, event: Option<&str>, now: Instant) {
         let mut state = self.lock_state_named("first_frame");
         // The native hide rule also holds new shell windows. Only the shell
         // unit's own PIDs authorize showing its primary window; pane placement
@@ -74,8 +74,13 @@ impl HostSessionControl {
             }
         }
         // No unit calls or reconciliation effects on every idle event-loop turn.
-        let waiting = self.initial_handoff_for(&state) == Some(InitialHandoff::Waiting);
-        if !waiting && event.is_none() {
+        let pending = self
+            .initial_handoff
+            .lock()
+            .expect("handoff mutex poisoned")
+            .as_ref()
+            .is_some_and(|(_, handoff)| matches!(handoff, FirstFrameHandoff::Waiting { .. }));
+        if !pending && event.is_none() {
             state.reconcile = false;
             return;
         }
@@ -84,6 +89,7 @@ impl HostSessionControl {
         if before != status_from_state(&state) {
             self.session_changes.send_replace(());
         }
+        let waiting = self.initial_handoff_for(&state) == Some(InitialHandoff::Waiting);
         let launch_id = match &*state {
             ActiveState::Running { launch_id, .. } => launch_id.clone(),
             _ => return,

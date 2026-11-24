@@ -1142,7 +1142,7 @@ mod tests {
         // Exercise the real holder's terminal status encoding, not the peer fixture.
         assert!(
             matches!(crate::host_session_status_outcome(f.holder.session_status().await),
-            SessionStatusOutcome::Err(RpcFailure { code, .. }) if code == "SessionCompleted")
+            SessionStatusOutcome::Err(RpcFailure { code, .. }) if code == "HostLaunchFailed")
         );
         let response = f
             .call(

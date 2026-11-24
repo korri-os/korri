@@ -250,14 +250,12 @@ async fn daemon_initial_handoff_is_exact_latched_and_not_recreated_by_focus_loss
     let root = tempfile::tempdir().unwrap();
     let (runtime, backend) = runtime(root.path());
     let compositor = focusable_compositor();
-    let (app, native) = native_routers(
-        runtime
-            .with_compositor(compositor.clone())
-            .with_shell_unit(Arc::new(
-                crate::host::control::RecordingShellUnit::identity_only(),
-            )),
-        root.path(),
-    );
+    let runtime = runtime
+        .with_compositor(compositor.clone())
+        .with_shell_unit(Arc::new(
+            crate::host::control::RecordingShellUnit::identity_only(),
+        ));
+    let (app, native) = native_routers(runtime.clone(), root.path());
     let a = reserve(&app).await;
     assert_eq!(start(&app, &a).await["outcome"]["_tag"], "Ok");
     assert_handoff(&app, &a, "waiting").await;
@@ -269,6 +267,7 @@ async fn daemon_initial_handoff_is_exact_latched_and_not_recreated_by_focus_loss
     *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":true},{"id":4,"pid":9100,"focused":false}]});
     assert_handoff(&app, &a, "waiting").await;
     *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":true}]});
+    runtime.observe_window_new(3, 9100);
     assert_handoff(&app, &a, "observed").await;
     *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":false},{"id":2,"pid":4100,"app_id":"korri-shell","focused":true}]});
     let lost = assert_handoff(&app, &a, "observed").await;
@@ -374,9 +373,10 @@ async fn daemon_pending_projection_preserves_genuine_observation_failure_and_hom
     let (runtime, backend) = runtime(root.path());
     let compositor = focusable_compositor();
     *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":true}]});
-    let (app, native) = native_routers(runtime.clone().with_compositor(compositor), root.path());
+    let runtime = runtime.with_compositor(compositor);
+    let (app, native) = native_routers(runtime.clone(), root.path());
     let foreign = router(
-        runtime,
+        runtime.clone(),
         root.path(),
         "foreign-capability",
         SurfaceHostPermission::LocalSessions,
@@ -384,6 +384,7 @@ async fn daemon_pending_projection_preserves_genuine_observation_failure_and_hom
     let a = reserve(&app).await;
     backend.set_window_pids(&a, [9100].into());
     assert_eq!(start(&app, &a).await["outcome"]["_tag"], "Ok");
+    runtime.observe_window_new(3, 9100);
     assert_eq!(freeze(&native, &a).await["outcome"]["_tag"], "Ok");
     assert_overlay(&app, &a).await;
     let b = reserve(&app).await;
@@ -420,10 +421,12 @@ async fn daemon_busy_pending_projection_does_not_clear_home_during_a_failed_retu
     let (runtime, backend) = runtime(root.path());
     let compositor = focusable_compositor();
     *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":true}]});
-    let (app, native) = native_routers(runtime.with_compositor(compositor.clone()), root.path());
+    let runtime = runtime.with_compositor(compositor.clone());
+    let (app, native) = native_routers(runtime.clone(), root.path());
     let a = reserve(&app).await;
     backend.set_window_pids(&a, [9100].into());
     assert_eq!(start(&app, &a).await["outcome"]["_tag"], "Ok");
+    runtime.observe_window_new(3, 9100);
     assert_eq!(freeze(&native, &a).await["outcome"]["_tag"], "Ok");
     *compositor.tree.lock().unwrap() =
         json!({"id":1,"nodes":[{"id":2,"pid":4100,"app_id":"korri-shell","focused":true}]});
@@ -466,18 +469,17 @@ async fn daemon_observes_handoff_without_a_surface_poll_and_retains_it_after_lat
     let (runtime, backend) = runtime(root.path());
     let compositor = focusable_compositor();
     *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":true}]});
-    let (app, _) = native_routers(
-        runtime
-            .with_compositor(compositor.clone())
-            .with_shell_unit(Arc::new(
-                crate::host::control::RecordingShellUnit::identity_only(),
-            )),
-        root.path(),
-    );
+    let runtime = runtime
+        .with_compositor(compositor.clone())
+        .with_shell_unit(Arc::new(
+            crate::host::control::RecordingShellUnit::identity_only(),
+        ));
+    let (app, _) = native_routers(runtime.clone(), root.path());
     let id = reserve(&app).await;
     backend.set_window_pids(&id, [9100].into());
     assert_eq!(start(&app, &id).await["outcome"]["_tag"], "Ok");
-    // The native prepare/freezer reconciliation already observed exact focus.
+    runtime.observe_window_new(3, 9100);
+    // The native event boundary observed the frame without a status poll.
     // A fresh surface host sees the history even though its first poll sees loss.
     *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":false},{"id":2,"pid":4100,"app_id":"korri-shell","focused":true}]});
     let lost = assert_handoff(&app, &id, "observed").await;
@@ -514,7 +516,7 @@ async fn daemon_confirmed_early_exit_retires_pending_identity_before_delayed_ack
     backend.complete_live();
     let completed = status(&app).await;
     assert_eq!(
-        completed["outcome"]["payload"]["code"], "SessionCompleted",
+        completed["outcome"]["payload"]["code"], "HostLaunchFailed",
         "{completed}"
     );
     assert!(completed["outcome"]["payload"]

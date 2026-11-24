@@ -1,6 +1,5 @@
-# One launch's Pulse sink. PID 1 runs this as the gameplay uid, never korrid
-# or root. Sink mute discards samples, including its monitor, before loopback
-# reaches the ordinary output that Sunshine records.
+# PID 1 runs this as the gameplay uid. The game receives only this launch's
+# Pulse socket, never the shared Pulse or native PipeWire socket.
 set -euo pipefail
 operation=$1
 launch=$2
@@ -23,16 +22,36 @@ cleanup() {
   return "$failed"
 }
 case "$operation" in
-  prepare)
-    output=$(pactl get-default-sink)
+  serve)
     trap 'cleanup' ERR
+    pactl get-default-sink > "$state/output"
     pactl load-module module-null-sink "sink_name=$sink" \
       'sink_properties=node.description=Korri-game node.virtual=true priority.session=0' > "$state/sink"
     pactl set-sink-mute "$sink" true
-    pactl load-module module-loopback "source=$sink.monitor" "sink=$output" \
-      source_dont_move=true sink_dont_move=true > "$state/loopback"
+    sed "s/@LAUNCH_ID@/$launch/g" "${KORRI_GAME_AUDIO_CONFIG:?native game audio config is required}" > "$state/pipewire-pulse.conf"
+    exec pipewire-pulse -c "$state/pipewire-pulse.conf"
     ;;
-  release) pactl set-sink-mute "$sink" false ;;
+  ready)
+    for _ in $(seq 1 100); do
+      if timeout 0.25s env PULSE_SERVER="unix:$state/native" pactl info >/dev/null 2>&1; then
+        exit 0
+      fi
+      sleep 0.01
+    done
+    echo "launch Pulse socket did not become ready" >&2
+    exit 1
+    ;;
+  release)
+    # Nothing links the launch to an audible output before this host action.
+    # Even a client unmuting its own sink cannot bypass the first-frame gate.
+    # The mute also discards the monitor's samples, so none is replayed later.
+    pactl set-sink-mute "$sink" false
+    if [[ ! -s "$state/loopback" ]]; then
+      read -r output < "$state/output"
+      pactl load-module module-loopback "source=$sink.monitor" "sink=$output" \
+        source_dont_move=true sink_dont_move=true > "$state/loopback"
+    fi
+    ;;
   stop) cleanup ;;
   *) exit 2 ;;
 esac

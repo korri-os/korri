@@ -1826,6 +1826,16 @@ impl HostRuntime {
         })
     }
 
+    /// Feed a controlled compositor event into the same local boundary as IPC.
+    #[cfg(test)]
+    pub(crate) fn observe_window_new(&self, node: i64, pid: i32) {
+        let event =
+            serde_json::json!({"change":"new","container":{"id":node,"pid":pid}}).to_string();
+        self.control()
+            .expect("host control")
+            .observe_first_frame(Some(&event), std::time::Instant::now());
+    }
+
     #[cfg(test)]
     pub(crate) fn with_compositor(mut self, compositor: Arc<dyn CompositorControl>) -> Self {
         self.launcher = self

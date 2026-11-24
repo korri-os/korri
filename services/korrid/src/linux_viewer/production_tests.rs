@@ -442,7 +442,7 @@ esac
     assert!(!viewer_commands.is_empty());
     assert!(viewer_commands
         .iter()
-        .all(|c| c.ends_with("[con_id=11] focus, fullscreen enable")));
+        .all(|c| c.ends_with("[con_id=11] move container to workspace current; [con_id=11] fullscreen enable; [con_id=11] focus")));
     assert!(commands
         .lines()
         .filter(|c| c.contains("con_id=22"))

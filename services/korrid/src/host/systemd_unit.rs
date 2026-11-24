@@ -1664,8 +1664,7 @@ impl SystemdLaunchUnitBackend {
         if sandbox.pulse_audio {
             // Expose only Pulse outside the hidden runtime, never its control sockets.
             read_only_binds.push_str(&format!(
-                " /run/user/{}/pulse:/run/korri-game-audio",
-                self.runtime_uid
+                " /run/korri-game-audio-{launch_id}:/run/korri-game-audio"
             ));
         }
         let modifier_runtime = if modifiers {
@@ -2611,12 +2610,8 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         environment: &BTreeMap<String, String>,
         sandbox: &super::systemd_unit::LaunchSandbox,
     ) -> Result<(), LaunchUnitError> {
-        let mut environment = environment.clone();
-        if sandbox.pulse_audio {
-            environment.insert("PULSE_SINK".into(), format!("korri-game-{launch_id}"));
-        }
         let arguments =
-            self.launch_arguments_in_sandbox(launch_id, configured_command, &environment, sandbox)?;
+            self.launch_arguments_in_sandbox(launch_id, configured_command, environment, sandbox)?;
         // Before-hook channels were removed when those units finished. The
         // game gets a fresh inode, never an exit value authored by a hook.
         if sandbox.plugin {
@@ -3576,7 +3571,7 @@ mod tests {
                 .find(|arg| arg.starts_with("--property=BindReadOnlyPaths="))
                 .unwrap();
             *bind = format!(
-                "--property=BindReadOnlyPaths=/tmp/.X11-unix/X0 /run/user/{uid}/pulse:/run/korri-game-audio"
+                "--property=BindReadOnlyPaths=/tmp/.X11-unix/X0 /run/korri-game-audio-{LAUNCH_ID}:/run/korri-game-audio"
             );
             let separator = expected.iter().position(|arg| arg == "--").unwrap();
             expected.insert(

@@ -60,7 +60,7 @@ async fn launch_progress(observe_handoff: bool) {
     .with_compositor(compositor.clone());
     runtime.claim_save_owner();
     let app = router(
-        runtime,
+        runtime.clone(),
         root.path(),
         TOKEN,
         SurfaceHostPermission::LocalSessions,
@@ -110,6 +110,7 @@ async fn launch_progress(observe_handoff: bool) {
     );
     if observe_handoff {
         compositor.tree.lock().unwrap()["nodes"][0]["focused"] = json!(true);
+        runtime.observe_window_new(3, 9100);
         let status = rpc(&app, "app.session.status", json!({})).await;
         assert_eq!(
             status["outcome"]["payload"]["active"]["initialHandoff"],

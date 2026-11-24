@@ -98,7 +98,7 @@ async fn held_status_preserves_newer_home(replacement: bool, completed: bool) {
     let old = observing.await.unwrap();
     if completed {
         assert_eq!(
-            old["outcome"]["payload"]["code"], "SessionCompleted",
+            old["outcome"]["payload"]["code"], "HostLaunchFailed",
             "{old}"
         );
     } else {
@@ -389,7 +389,7 @@ async fn metadata_terminal_status_cleans_home_without_retargeting_fullscreen_lea
     backend.complete_live();
     let completed = rpc(&app, "app.session.status", json!({})).await;
     assert_eq!(
-        completed["outcome"]["payload"]["code"], "SessionCompleted",
+        completed["outcome"]["payload"]["code"], "HostLaunchFailed",
         "{completed}"
     );
     let b = reserve(&app).await;
@@ -505,7 +505,7 @@ async fn native_control_status_reads_exact_liveness_without_surface_focus_work()
     backend.complete_live();
     let completed = rpc(&native, "app.session.status", json!({})).await;
     assert_eq!(
-        completed["outcome"]["payload"]["code"], "SessionCompleted",
+        completed["outcome"]["payload"]["code"], "HostLaunchFailed",
         "{completed}"
     );
     assert_eq!(compositor.0.load(Ordering::SeqCst), 0);

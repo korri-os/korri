@@ -18,9 +18,14 @@ let
     name = "korri-game-audio";
     runtimeInputs = [
       pkgs.pulseaudio
+      pkgs.pipewire
       pkgs.coreutils
+      pkgs.gnused
     ];
-    text = builtins.readFile ./game-audio.sh;
+    text = ''
+      export KORRI_GAME_AUDIO_CONFIG=${./game-audio.conf}
+    ''
+    + builtins.readFile ./game-audio.sh;
   };
   serviceUser = "korrid";
   serviceGroup = "korrid";
