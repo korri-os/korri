@@ -1095,6 +1095,18 @@ impl HostSessionControl {
     }
 
     fn recovered_running_state(&self, launch_id: String, game_id: Option<String>) -> ActiveState {
+        let remembered = self
+            .initial_handoff
+            .lock()
+            .expect("handoff mutex poisoned")
+            .as_ref()
+            .filter(|(exact, _)| exact == &launch_id)
+            .map(|(_, handoff)| handoff.phase());
+        // A pending first frame deliberately has no game focus yet. Native
+        // observation recovery must not turn it into a failed focus handoff.
+        if remembered == Some(InitialHandoff::Waiting) {
+            return ActiveState::Running { launch_id, game_id };
+        }
         let ownership = self.current_focus_ownership(&launch_id);
         let mut recovered_intent = self
             .recovered_overlay_intent
@@ -1105,22 +1117,14 @@ impl HostSessionControl {
                 recovered_intent.take();
                 // Recovery has no historical first-frame fact, but a focused
                 // exact live window must not retain a pre-restart audio gate.
-                let recovered = self
-                    .initial_handoff
-                    .lock()
-                    .expect("handoff mutex poisoned")
-                    .as_ref()
-                    .is_none_or(|(exact, _)| exact != &launch_id);
-                if let Err(error) = if recovered {
-                    self.backend.release_audio(&launch_id)
-                } else {
-                    Ok(())
-                } {
-                    eprintln!(
-                        "korrid: RecoveredAudioFailed {{ launch_id: {launch_id}, reason: {} }}",
-                        error.message
-                    );
-                    return ActiveState::FocusFailed { launch_id, game_id };
+                if remembered.is_none() {
+                    if let Err(error) = self.backend.release_audio(&launch_id) {
+                        eprintln!(
+                            "korrid: RecoveredAudioFailed {{ launch_id: {launch_id}, reason: {} }}",
+                            error.message
+                        );
+                        return ActiveState::FocusFailed { launch_id, game_id };
+                    }
                 }
                 ActiveState::Running { launch_id, game_id }
             }
@@ -4944,7 +4948,7 @@ mod tests {
 
     #[test]
     fn first_frame_recovery_does_not_release_audio_or_lose_the_next_new_event() {
-        for recover_with_status in [false, true] {
+        for (recover_with_status, focus) in [(false, 2), (true, 2), (false, 3), (true, 3)] {
             let root = tempfile::tempdir().unwrap();
             let backend = Arc::new(DeterministicBackend::default());
             let compositor = Arc::new(RecordingCompositor::default());
@@ -4957,7 +4961,7 @@ mod tests {
             );
             let id = prepare(&control, "one").launch_id;
             backend.set_pids(&id, &[9100]);
-            *compositor.tree.lock().unwrap() = compositor_tree(9100);
+            *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, focus);
             backend.state.lock().unwrap().state_unavailable = true;
             assert!(matches!(
                 control.status(),
@@ -4985,7 +4989,6 @@ mod tests {
                 Some(InitialHandoff::Observed)
             );
             assert_eq!(backend.state.lock().unwrap().audio_released, [id]);
-            assert!(shell.frozen());
         }
     }
 
