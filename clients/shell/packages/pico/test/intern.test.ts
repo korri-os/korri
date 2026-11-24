@@ -21,6 +21,7 @@ const game: Required<SurfaceGame> = {
   totalPlaytimeSeconds: 4_000,
   saves: { _tag: "Synced" },
   download: { bytes: 1_000 } as SurfaceGame["download"] & object,
+  installHere: { _tag: "Offered" },
   systemId: "pico8",
   system: "PICO-8",
   media: [

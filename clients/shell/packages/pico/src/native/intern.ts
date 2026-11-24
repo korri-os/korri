@@ -88,6 +88,7 @@ export const GAME_FIELDS: Readonly<Record<keyof SurfaceGame, true>> = {
   totalPlaytimeSeconds: true,
   saves: true,
   download: true,
+  installHere: true,
   systemId: true,
   system: true,
   media: true,
@@ -121,6 +122,7 @@ export function sameGame(a: SurfaceGame, b: SurfaceGame): boolean {
     // Rarely present: by their JSON text.
     && (a.saves === b.saves || sameText(a.saves, b.saves))
     && (a.download === b.download || sameText(a.download, b.download))
+    && (a.installHere === b.installHere || sameText(a.installHere, b.installHere))
 }
 
 function sameLocations(a: SurfaceGame["launchLocations"], b: SurfaceGame["launchLocations"]): boolean {
