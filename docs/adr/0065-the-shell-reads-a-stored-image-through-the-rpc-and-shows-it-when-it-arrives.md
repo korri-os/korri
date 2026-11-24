@@ -74,3 +74,23 @@ RPC, not traditional REST." This record is the corrected decision.
   images at once will load some of them again as it scrolls. The shell scales
   a stored image down to at most 1920 px on its longer side, and serving an
   image at the exact size a surface draws it is still not decided.
+
+## Amendment: decode for the drawn box (2026-11-24)
+
+Contract 3.8 now accepts `size: { width, height }` beside `$image`, in logical
+pixels, one decoded pixel per logical pixel. The shell downsamples with
+Lanczos3 to cover the box, preserving aspect and never enlarging the stored
+image. Without `size`, the original behavior remains unchanged.
+
+The cache key includes the requested size and palette mode. Its budget counts
+the resulting decoded pixels, not the stored pixels. Velvet counts those
+same variants. A 600×900 poster drawn at 216×324 takes 279,936 bytes rather
+than 2,160,000 bytes. A seven-column set can keep every tile in sight without
+raising the shell's 24 MiB budget.
+
+Cost: one URL shown at two sizes takes two cache entries and two decodes.
+Decoding a raster can still transiently allocate its stored pixels before
+downsampling; this change reduces retained pixels, not peak decoder memory.
+High-density windows still use one texel per logical pixel, not per physical
+pixel. A full 4K background can exceed the budget; Velvet selects a smaller
+source or shows its light instead. This resolves the last sentence above.

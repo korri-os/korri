@@ -93,6 +93,7 @@ pub enum Event {
         generation: u64,
         url: String,
         mode: Option<crate::pico8::Mode>,
+        size: Option<crate::images::Size>,
         pixels: std::result::Result<crate::images::Arrival, String>,
     },
 }
@@ -227,6 +228,7 @@ struct ImageJob {
     generation: u64,
     url: String,
     mode: Option<crate::pico8::Mode>,
+    size: Option<crate::images::Size>,
 }
 
 pub struct Shell {
@@ -308,7 +310,7 @@ impl Shell {
                 for job in receiver {
                     // An SVG data URL is the surface's own picture: rendered here, not fetched.
                     let pixels = if crate::images::svg_data_url(&job.url) {
-                        crate::images::render_svg(&job.url)
+                        crate::images::render_svg(&job.url, job.size)
                             .map(crate::images::Arrival)
                             .map_err(|_| "it does not render".to_owned())
                     } else {
@@ -316,7 +318,7 @@ impl Shell {
                             .asset(&job.url, crate::images::MAX_ENCODED_BYTES)
                             .map_err(|error| error.to_string())
                             .and_then(|bytes| {
-                                crate::images::decode_stored(&bytes, job.mode)
+                                crate::images::decode_stored(&bytes, job.mode, job.size)
                                     .map(crate::images::Arrival)
                                     .map_err(|_| "it does not decode".to_owned())
                             })
@@ -325,6 +327,7 @@ impl Shell {
                         generation: job.generation,
                         url: job.url,
                         mode: job.mode,
+                        size: job.size,
                         pixels,
                     });
                 }
@@ -583,8 +586,9 @@ impl Shell {
                 generation,
                 url,
                 mode,
+                size,
                 pixels,
-            } => self.image_arrived(generation, &url, mode, pixels),
+            } => self.image_arrived(generation, &url, mode, size, pixels),
         }
     }
 
@@ -595,6 +599,7 @@ impl Shell {
         generation: u64,
         url: &str,
         mode: Option<crate::pico8::Mode>,
+        size: Option<crate::images::Size>,
         pixels: std::result::Result<crate::images::Arrival, String>,
     ) {
         if self
@@ -620,7 +625,7 @@ impl Shell {
                 None
             }
         };
-        if !current.images.arrived(url, mode, pixels) {
+        if !current.images.arrived(url, mode, size, pixels) {
             self.current = Some(current);
             return;
         }
@@ -1015,11 +1020,12 @@ impl Shell {
         let generation = self.next_generation;
         let mut images = ImageCache::new(&package.dir);
         let image_jobs = self.image_jobs.clone();
-        images.load_assets_with(Box::new(move |url, mode| {
+        images.load_assets_with(Box::new(move |url, mode, size| {
             let _ = image_jobs.send(ImageJob {
                 generation,
                 url: url.to_owned(),
                 mode,
+                size,
             });
         }));
         let surface = views.surface.create()?;

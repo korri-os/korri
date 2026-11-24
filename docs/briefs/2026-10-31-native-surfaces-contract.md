@@ -165,9 +165,32 @@ game (#179) are out of scope for this run.
 
 ### 3.8 Images (C5, D4)
 A view value `{ "$image": url }` is decoded once and cached by the shell.
-`{ "$image": url, "pico8": "flat" | "vivid" }` asks the shell to quantise the
-image to the PICO-8 palette first. The algorithm is ported unchanged from
-`surfaces/pico/src/pico8-remap.ts`. No other operation exists in this run.
+Per-image options follow the same pattern as `pico8`:
+
+- `{ "$image": url, "size": { "width": 216, "height": 324 } }` gives the
+  box the image is drawn in, in **logical pixels**, the same units as
+  `Resized` and Slint layout. Both dimensions must be positive whole numbers
+  within the unsigned 32-bit range. These are not physical display pixels:
+  the shell requests one decoded image pixel per logical pixel, independent
+  of the window's scale factor.
+- The shell keeps aspect ratio and scales down to cover that box (rounding
+  dimensions upwards), never upscaling beyond the stored image. If either
+  requested dimension is larger than the stored image, it keeps stored size.
+  The drawing still owns cropping or containment. For a contained image,
+  give its fitted box, not the surrounding unused space.
+- With no `size`, behavior is unchanged: a stored korrid image has at most
+  1920 pixels on its longer side; package files and data URLs keep their size.
+  An explicit `size` replaces that default bound, not the stored-size bound.
+- `{ "$image": url, "pico8": "flat" | "vivid" }` asks the shell to quantise
+  the decoded image to the PICO-8 palette. It can be combined with `size`;
+  quantisation follows downscaling. The algorithm is ported unchanged from
+  `surfaces/pico/src/pico8-remap.ts`. `pico8` requires a raster image.
+
+The cache key is URL + requested size (or its absence) + `pico8` mode (or its
+absence). Distinct requested sizes have distinct entries, including when
+both requests resolve to stored size. The 24 MiB cache budget counts actual
+decoded RGBA pixels, four bytes each. Stored korrid images still load and
+decode off the UI thread and show empty until they arrive (ADR 0065).
 
 ### 3.9 Verification and limits (C7, D6)
 - **At install:**

@@ -4,7 +4,7 @@
 //! | View JSON | Slint value |
 //! | --- | --- |
 //! | key `fooBar` | property or field `foo-bar` |
-//! | `{"$image": url}`, `{"$image": url, "pico8": mode}` | `image` (contract 3.8) |
+//! | `{"$image": url}` with optional `size` and `pico8` | `image` (contract 3.8) |
 //! | other object | struct |
 //! | array | model |
 //! | string, number, boolean | string, int or float by the declared type, bool |
@@ -17,7 +17,10 @@
 //! install-time verifier uses the same conversion, so a view that passes
 //! verification converts the same way at run time.
 
-use crate::{images::ImageCache, pico8};
+use crate::{
+    images::{ImageCache, Size},
+    pico8,
+};
 use anyhow::{bail, Context, Result};
 use i_slint_compiler::langtype::Type;
 use serde_json::Value as Json;
@@ -207,17 +210,29 @@ pub fn bind_activated(instance: &ComponentInstance, send: impl Fn(Json) + 'stati
     Ok(())
 }
 
-fn image_request(
-    fields: &serde_json::Map<String, Json>,
-) -> Result<Option<(&str, Option<pico8::Mode>)>> {
+struct ImageRequest<'a> {
+    url: &'a str,
+    mode: Option<pico8::Mode>,
+    size: Option<Size>,
+}
+
+fn image_request(fields: &serde_json::Map<String, Json>) -> Result<Option<ImageRequest<'_>>> {
     let Some(url) = fields.get("$image") else {
         return Ok(None);
     };
     let url = url.as_str().context("$image must be a string")?;
     let mut mode = None;
+    let mut size = None;
     for (key, value) in fields {
         match key.as_str() {
             "$image" => {}
+            "size" => {
+                size = Some(
+                    serde_json::from_value::<Size>(value.clone())
+                        .context("image size needs positive whole width and height")?
+                        .validate()?,
+                );
+            }
             "pico8" => {
                 mode = Some(
                     value
@@ -229,7 +244,7 @@ fn image_request(
             other => bail!("unknown image key {other}"),
         }
     }
-    Ok(Some((url, mode)))
+    Ok(Some(ImageRequest { url, mode, size }))
 }
 
 /// How a JSON value differs from the one before it: what `Binder` needs to bring the
@@ -457,11 +472,11 @@ fn convert_from(
             Value::Model(ModelRc::new(VecModel::from(values)))
         }
         (Json::Object(fields), Type::Image) => {
-            let (url, mode) =
+            let ImageRequest { url, mode, size } =
                 image_request(fields)?.with_context(|| format!("{path}: image needs $image"))?;
             Value::Image(
                 images
-                    .get(url, mode)
+                    .get(url, mode, size)
                     .with_context(|| format!("{path}: image decode"))?,
             )
         }
@@ -1053,6 +1068,38 @@ mod tests {
     }
 
     #[test]
+    fn image_size_is_validated_at_the_view_boundary() -> Result<()> {
+        let types = declared(&compile(SOURCE));
+        let dir = tempfile::tempdir()?;
+        let mut images = ImageCache::new(dir.path());
+        let url = crate::images::tests::png_data_url();
+        for size in [
+            json!({"width": 0, "height": 1}),
+            json!({"width": -1, "height": 1}),
+            json!({"width": 1.5, "height": 1}),
+            json!({"width": 1}),
+            json!({"width": 1, "height": 1, "extra": 2}),
+            json!(null),
+        ] {
+            assert!(check(
+                &json!({"art": {"$image": url, "size": size}}),
+                &types,
+                &mut images
+            )
+            .is_err());
+        }
+        let value = convert(
+            &json!({"$image": url, "size": {"width": 1, "height": 1}, "pico8": "flat"}),
+            &Type::Image,
+            &Value::Void,
+            &mut images,
+            "art",
+        )?;
+        assert_eq!(image_width(&value), 2);
+        Ok(())
+    }
+
+    #[test]
     fn accepts_images_with_pico8_and_null_partial_structs() -> Result<()> {
         let types = declared(&compile(SOURCE));
         let dir = tempfile::tempdir()?;
@@ -1170,7 +1217,7 @@ mod tests {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(url.split_once(',').expect("comma").1)
             .expect("base64");
-        crate::images::decode_raster(&bytes, None).expect("decode")
+        crate::images::decode_raster(&bytes, None, None).expect("decode")
     }
 
     fn image_width(value: &Value) -> u32 {
@@ -1218,7 +1265,7 @@ mod tests {
         let instance = definition.create()?;
         let dir = tempfile::tempdir()?;
         let mut images = ImageCache::new(dir.path());
-        images.load_assets_with(Box::new(|_, _| {}));
+        images.load_assets_with(Box::new(|_, _, _| {}));
         let mut binder = Binder::new(&definition);
         let mut differ = Differ::default();
         let wanted = format!("/game-assets/{}.png", "a".repeat(64));
@@ -1235,7 +1282,7 @@ mod tests {
             panic!("model")
         };
 
-        assert!(images.arrived(&wanted, None, Some(arrived_pixels())));
+        assert!(images.arrived(&wanted, None, None, Some(arrived_pixels())));
         // The top-level image and the items model: `count` is left alone.
         assert_eq!(
             binder.refresh_image(&instance, &view, &wanted, &mut images)?,
