@@ -14,6 +14,10 @@ This amends the 2026-11-01 rule that no browser, web server or second host
 runs on a Linux device. A device still runs no browser. korrid may now serve a
 **web screen** (`CONTEXT.md`) to a browser on another machine.
 
+**Changed by ADR 0097 on the same day:** where this record says "Bonfire", read
+"the management surface". The owner moved the name Bonfire to a look for a
+different surface, and the management surface has no name yet.
+
 ## Decision
 
 - A **web screen** is a surface host that runs in a browser. It carries the
