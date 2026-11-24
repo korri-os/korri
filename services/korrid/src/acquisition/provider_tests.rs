@@ -2203,3 +2203,62 @@ async fn a_broken_download_keeps_its_bytes_and_the_next_get_resumes_it() {
     let ready = world.installs().join(sha_hex(&body));
     assert_eq!(fs::read(ready.join("slow.gba")).unwrap(), body);
 }
+
+/// M1: a korrid that stops keeps the person's order. Three installs wait
+/// in the order the person chose; a stop drops their tasks in any order;
+/// the next korrid's line is the same order.
+#[test]
+fn a_stop_keeps_the_order_of_three_queued_installs() {
+    let host = runtime();
+    let _host = host.enter();
+    let (server, _) = resumable_site();
+    let world = world_with(server, None);
+    let private = world.context.private_root.clone();
+    let first = runtime();
+    let (slow, b, c) = first.block_on(async {
+        world.search().await;
+        world
+            .offer("b", "gba", "/files/b.gba", vec![2u8; 4096])
+            .await;
+        world
+            .offer("c", "gba", "/files/c.gba", vec![3u8; 4096])
+            .await;
+        let slow = world.acquire("slow").await.unwrap();
+        downloading_past(&world.coordinator, &slow.job_id, 1024).await;
+        let b = world.acquire("b").await.unwrap();
+        let c = world.acquire("c").await.unwrap();
+        let job = |status: &AcquireJobStatus| super::Member::Job(status.job_id.clone());
+        // The person's order differs from the order the installs began.
+        assert!(world.coordinator.reorder(&job(&c), 0));
+        assert_eq!(world.coordinator.line(), [job(&slow), job(&c), job(&b)]);
+        (job(&slow), job(&b), job(&c))
+    });
+    first.shutdown_timeout(Duration::from_secs(5));
+    let order: Vec<super::Member> =
+        serde_json::from_slice(&fs::read(super::install::order_path(&private)).unwrap()).unwrap();
+    assert_eq!(
+        order,
+        [slow.clone(), c.clone(), b.clone()],
+        "the file after the stop"
+    );
+
+    let second = runtime();
+    let restarted = AcquisitionCoordinator {
+        engine: DownloadEngine::for_test(Duration::from_secs(5)),
+        sleep: sleep::SleepBlock::InMemory(Arc::default()),
+        games: GameAcquisition::with_engine(engine()),
+        ..Default::default()
+    };
+    second.block_on(async {
+        restarted
+            .recover_installs(
+                &world.root,
+                &private,
+                &world.context.registry,
+                Some(&world.context),
+            )
+            .unwrap();
+        assert_eq!(restarted.line(), [slow, c, b]);
+    });
+    second.shutdown_timeout(Duration::from_secs(5));
+}

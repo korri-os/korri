@@ -154,6 +154,10 @@ pub(crate) struct Pieces {
     stores: Arc<tokio::sync::Mutex<BTreeMap<PathBuf, FsStore>>>,
     /// One release is hashed at a time.
     hashing: Arc<tokio::sync::Mutex<()>>,
+    /// Installs from devices, by job id. Memory only (see `DeviceJob`).
+    jobs: Arc<Mutex<BTreeMap<String, DeviceJob>>>,
+    #[cfg(test)]
+    fault: Arc<Mutex<Option<PublishFault>>>,
 }
 
 pub(crate) fn store_path(root: &Path) -> PathBuf {
@@ -441,11 +445,59 @@ pub(crate) trait Holder: Send + Sync {
     ) -> impl std::future::Future<Output = Result<Vec<u8>, RpcFailure>> + Send;
 }
 
-/// What an install from devices reports while it runs.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct Progress {
-    pub done: u64,
-    pub total: u64,
+/// What a surface can read of one install from devices (ADR 0092, #552).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag")]
+pub(crate) enum DeviceInstallState {
+    /// In the line, behind another install.
+    Waiting,
+    Installing {
+        #[serde(rename = "bytesDone")]
+        bytes_done: u64,
+        #[serde(rename = "bytesTotal")]
+        bytes_total: u64,
+    },
+    Imported {
+        #[serde(rename = "gameId")]
+        game_id: String,
+    },
+    Failed {
+        reason: RpcFailure,
+    },
+    Cancelled,
+}
+
+impl DeviceInstallState {
+    fn live(&self) -> bool {
+        matches!(self, Self::Waiting | Self::Installing { .. })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeviceInstallStatus {
+    pub job_id: String,
+    pub release_key: String,
+    pub state: DeviceInstallState,
+}
+
+/// One install from devices. It lives in memory only: a restart forgets
+/// it, because the schema of a kept devices-install record is not decided.
+/// Its verified pieces are not lost: they stay in its receive store.
+struct DeviceJob {
+    status: tokio::sync::watch::Sender<DeviceInstallStatus>,
+    cancel: tokio::sync::watch::Sender<bool>,
+}
+
+/// A test fault in publication, after the files left the receive store.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PublishFault {
+    /// Publication fails as a failed identification does.
+    Fail,
+    /// korrid stops: the work folder goes (startup deletes `.tmp-*`) and
+    /// nothing else runs.
+    Crash,
 }
 
 /// One piece that still has to arrive.
@@ -456,9 +508,38 @@ struct Want {
     length: u64,
 }
 
+/// Where the verified pieces of one install from devices wait, beside the
+/// holder store: `<storage root>/cache/.blobs/installs/<hex of the release
+/// key>/<one store per try>`. Derived data, like the holder store; it goes when the install
+/// ends, and a store whose bytes cannot be read goes and starts again.
+pub(crate) fn receive_path(root: &Path, hex: &str) -> PathBuf {
+    store_path(root).join("installs").join(hex)
+}
+
+fn cancelled_failure() -> RpcFailure {
+    failure("InstallCancelled", "The install was cancelled.")
+}
+
+async fn drop_store(store: FsStore, path: &Path) {
+    let _ = store.shutdown().await;
+    let release = path.parent().map(Path::to_path_buf);
+    match std::fs::remove_dir_all(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            eprintln!("korrid install sources: a receive store stayed: {error}")
+        }
+        _ => (),
+    }
+    // The release's folder goes with its last store.
+    if let Some(release) = release {
+        let _ = std::fs::remove_dir(release);
+    }
+}
+
 impl Pieces {
     /// Receiver: install the file release `key` from these holders at once,
-    /// as one install in the line (ADR 0092). Returns the library game id.
+    /// as one install in the line (ADR 0092), and wait for its end. Returns
+    /// the library game id.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn install<H: Holder + 'static>(
         &self,
         coordinator: &super::AcquisitionCoordinator,
@@ -467,7 +548,127 @@ impl Pieces {
         title: &str,
         holders: Vec<Arc<H>>,
         place: Place,
-        progress: impl Fn(Progress) + Send + Sync + 'static,
+    ) -> Result<String, RpcFailure> {
+        let job = self.start(coordinator, context, key, title, holders, place)?;
+        self.wait(&job).await
+    }
+
+    /// Start an install from devices, or join the one of the same release
+    /// that is already in the line: both callers get its job id.
+    pub(crate) fn start<H: Holder + 'static>(
+        &self,
+        coordinator: &super::AcquisitionCoordinator,
+        context: &GameContext,
+        key: &str,
+        title: &str,
+        holders: Vec<Arc<H>>,
+        place: Place,
+    ) -> Result<String, RpcFailure> {
+        placement::ready_name(key).ok_or_else(install_failed)?;
+        let mut jobs = self.jobs.lock().expect("device installs mutex poisoned");
+        if let Some((id, _)) = jobs.iter().find(|(_, job)| {
+            let status = job.status.borrow();
+            status.release_key == key && status.state.live()
+        }) {
+            return Ok(id.clone());
+        }
+        let id = format!("{:032x}", rand::random::<u128>());
+        let (status, _) = tokio::sync::watch::channel(DeviceInstallStatus {
+            job_id: id.clone(),
+            release_key: key.to_owned(),
+            state: DeviceInstallState::Waiting,
+        });
+        let (cancel, cancelled) = tokio::sync::watch::channel(false);
+        jobs.insert(
+            id.clone(),
+            DeviceJob {
+                status: status.clone(),
+                cancel,
+            },
+        );
+        drop(jobs);
+        let (pieces, coordinator, context) = (self.clone(), coordinator.clone(), context.clone());
+        let (key, title, job) = (key.to_owned(), title.to_owned(), id.clone());
+        tokio::spawn(async move {
+            let set = |state| status.send_modify(|status| status.state = state);
+            let result = pieces
+                .run(
+                    &coordinator,
+                    &context,
+                    &key,
+                    &title,
+                    holders,
+                    place,
+                    &job,
+                    cancelled,
+                    &set,
+                )
+                .await;
+            set(match result {
+                Ok(game_id) => DeviceInstallState::Imported { game_id },
+                Err(reason) if reason.code == "InstallCancelled" => DeviceInstallState::Cancelled,
+                Err(reason) => DeviceInstallState::Failed { reason },
+            });
+        });
+        Ok(id)
+    }
+
+    /// The status of one install from devices.
+    pub(crate) fn status(&self, job: &str) -> Option<DeviceInstallStatus> {
+        let jobs = self.jobs.lock().expect("device installs mutex poisoned");
+        jobs.get(job).map(|job| job.status.borrow().clone())
+    }
+
+    /// Wait for the end of one install from devices.
+    pub(crate) async fn wait(&self, job: &str) -> Result<String, RpcFailure> {
+        let mut status = self
+            .jobs
+            .lock()
+            .expect("device installs mutex poisoned")
+            .get(job)
+            .map(|job| job.status.subscribe())
+            .ok_or_else(install_failed)?;
+        loop {
+            let state = status.borrow_and_update().state.clone();
+            match state {
+                DeviceInstallState::Imported { game_id } => return Ok(game_id),
+                DeviceInstallState::Failed { reason } => return Err(reason),
+                DeviceInstallState::Cancelled => return Err(cancelled_failure()),
+                _ => (),
+            }
+            if status.changed().await.is_err() {
+                return Err(install_failed());
+            }
+        }
+    }
+
+    /// Cancel one install from devices, waiting or running, and wait for it
+    /// to end. Its verified pieces go.
+    pub(crate) async fn cancel(&self, job: &str) -> Option<DeviceInstallStatus> {
+        if let Some(job) = self
+            .jobs
+            .lock()
+            .expect("device installs mutex poisoned")
+            .get(job)
+        {
+            let _ = job.cancel.send(true);
+        }
+        let _ = self.wait(job).await;
+        self.status(job)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn run<H: Holder + 'static>(
+        &self,
+        coordinator: &super::AcquisitionCoordinator,
+        context: &GameContext,
+        key: &str,
+        title: &str,
+        holders: Vec<Arc<H>>,
+        place: Place,
+        job: &str,
+        mut cancelled: tokio::sync::watch::Receiver<bool>,
+        set: &(dyn Fn(DeviceInstallState) + Send + Sync),
     ) -> Result<String, RpcFailure> {
         let hex = placement::ready_name(key).ok_or_else(install_failed)?;
         let cache = placement::create_base(
@@ -475,10 +676,50 @@ impl Pieces {
             placement::copied_release_cache(&context.root),
         )
         .map_err(|error| error.rpc())?;
-        let _turn = coordinator
-            .queue_turn(cache.join(hex), place, None)
-            .turn()
+        // ADR 0092: the line shows it under its job id; a restart forgets it.
+        let mut wait = coordinator.queue_turn(
+            cache.join(hex),
+            place,
+            super::Listed::Shown(super::Member::Job(job.to_owned())),
+        );
+        let mut turn = tokio::select! {
+            biased;
+            _ = cancelled.wait_for(|cancelled| *cancelled) => {
+                wait.end();
+                return Err(cancelled_failure());
+            }
+            turn = wait.turn() => turn,
+        };
+        let result = self
+            .transfer(
+                context,
+                &cache,
+                hex,
+                key,
+                title,
+                holders,
+                &mut cancelled,
+                &mut turn,
+                set,
+            )
             .await;
+        wait.end();
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn transfer<H: Holder + 'static>(
+        &self,
+        context: &GameContext,
+        cache: &Path,
+        hex: &str,
+        key: &str,
+        title: &str,
+        holders: Vec<Arc<H>>,
+        cancelled: &mut tokio::sync::watch::Receiver<bool>,
+        turn: &mut super::Turn,
+        set: &(dyn Fn(DeviceInstallState) + Send + Sync),
+    ) -> Result<String, RpcFailure> {
         // Every holder is asked; the first answer names the release's files,
         // and every holder whose files have the same contents serves.
         let answers = futures::future::join_all(holders.iter().map(|holder| async move {
@@ -512,48 +753,50 @@ impl Pieces {
             .iter()
             .map(|file| file.blake3.parse().map_err(|_| install_failed()))
             .collect::<Result<_, _>>()?;
-        let store = self.store(&context.root).await?;
-        let total = manifest.bytes();
-        let floor = Floor::new(&cache, None).map_err(|error| error.rpc())?;
-        // Verified pieces of an earlier try are kept in the store.
-        let mut wants = VecDeque::new();
-        let mut done = 0;
-        for (index, (file, hash)) in manifest.files.iter().zip(&hashes).enumerate() {
-            let have = match store.observe(*hash).stream().await {
-                Ok(mut stream) => {
-                    use futures::StreamExt;
-                    stream.next().await.map(|bitfield| bitfield.ranges)
+        let receive = receive_path(&context.root, hex);
+        let (store, store_dir, mut wants, done) = loop {
+            // One store folder per try: a store that was shut down can still
+            // finish deletes under its own paths, so a new store never
+            // reuses them. The newest kept folder resumes.
+            let store_dir = std::fs::read_dir(&receive)
+                .ok()
+                .and_then(|entries| {
+                    entries
+                        .filter_map(Result::ok)
+                        .filter(|entry| entry.path().is_dir())
+                        .max_by_key(|entry| entry.metadata().and_then(|m| m.modified()).ok())
+                        .map(|entry| entry.path())
+                })
+                .unwrap_or_else(|| receive.join(format!("{:016x}", rand::random::<u64>())));
+            std::fs::create_dir_all(&store_dir).map_err(|_| install_failed())?;
+            let store = FsStore::load(&store_dir)
+                .await
+                .map_err(|_| install_failed())?;
+            match kept_pieces(&store, &manifest, &hashes).await {
+                Some((wants, done)) => break (store, store_dir, wants, done),
+                // N1: the store says it holds bytes it cannot read (a
+                // restart during publication moved them away). Start again.
+                None => {
+                    eprintln!("korrid install sources: a receive store held unreadable pieces; it starts again");
+                    drop_store(store, &store_dir).await;
                 }
-                Err(_) => None,
-            };
-            let mut offset = 0;
-            while offset < file.bytes {
-                let length = PIECE_BYTES.min(file.bytes - offset);
-                if have
-                    .as_ref()
-                    .is_some_and(|have| chunk_ranges(offset, length).is_subset(have))
-                {
-                    done += length;
-                } else {
-                    wants.push_back(Want {
-                        file: index,
-                        offset,
-                        length,
-                    });
-                }
-                offset += length;
             }
-        }
+        };
+        let total = manifest.bytes();
+        let floor = Floor::new(cache, None).map_err(|error| error.rpc())?;
         if floor.room().map_err(|error| error.rpc())? < total - done {
             return Err(Failure::NoSpace.rpc());
         }
-        progress(Progress { done, total });
+        set(DeviceInstallState::Installing {
+            bytes_done: done,
+            bytes_total: total,
+        });
         let shared = Arc::new(Mutex::new(Shared {
-            wants,
+            wants: std::mem::take(&mut wants),
             in_flight: 0,
             done,
+            progress: false,
         }));
-        let progress = Arc::new(progress);
         let workers = serving.into_iter().map(|holder| {
             let (shared, store, manifest, hashes) = (
                 shared.clone(),
@@ -561,25 +804,24 @@ impl Pieces {
                 manifest.clone(),
                 hashes.clone(),
             );
-            let progress = progress.clone();
             let key = key.to_owned();
             async move {
                 let mut strikes = 0;
                 loop {
-                    let want = {
+                    let next = {
                         let mut shared = shared.lock().expect("install pieces mutex poisoned");
                         match shared.wants.pop_front() {
                             Some(want) => {
                                 shared.in_flight += 1;
-                                want
+                                Some(want)
                             }
                             None if shared.in_flight == 0 => return,
-                            None => {
-                                drop(shared);
-                                tokio::time::sleep(Duration::from_millis(20)).await;
-                                continue;
-                            }
+                            None => None,
                         }
+                    };
+                    let Some(want) = next else {
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                        continue;
                     };
                     let file = &manifest.files[want.file];
                     let fetched = tokio::time::timeout(
@@ -614,10 +856,7 @@ impl Pieces {
                     shared.in_flight -= 1;
                     if checked {
                         shared.done += want.length;
-                        progress(Progress {
-                            done: shared.done,
-                            total,
-                        });
+                        shared.progress = true;
                     } else {
                         // Another holder takes the piece.
                         shared.wants.push_front(want);
@@ -633,20 +872,70 @@ impl Pieces {
                 }
             }
         });
-        futures::future::join_all(workers).await;
-        let finished = {
-            let shared = shared.lock().expect("install pieces mutex poisoned");
-            shared.wants.is_empty() && shared.done == total
+        let report = {
+            let shared = shared.clone();
+            async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    let done = {
+                        let mut shared = shared.lock().expect("install pieces mutex poisoned");
+                        std::mem::take(&mut shared.progress).then_some(shared.done)
+                    };
+                    if let Some(done) = done {
+                        set(DeviceInstallState::Installing {
+                            bytes_done: done,
+                            bytes_total: total,
+                        });
+                    }
+                }
+            }
         };
+        // Cancel, from the person or from the line, drops every worker and
+        // so every piece fetch in flight.
+        let stopped = async {
+            tokio::select! {
+                _ = cancelled.wait_for(|cancelled| *cancelled) => (),
+                _ = turn.stop.wait_for(|stop| *stop == super::Stop::Cancel) => (),
+            }
+        };
+        let stopped = tokio::select! {
+            _ = futures::future::join_all(workers) => false,
+            () = stopped => true,
+            () = report => unreachable!("the report loop never ends"),
+        };
+        if stopped {
+            drop_store(store, &store_dir).await;
+            return Err(cancelled_failure());
+        }
+        let (finished, done) = {
+            let shared = shared.lock().expect("install pieces mutex poisoned");
+            (shared.wants.is_empty() && shared.done == total, shared.done)
+        };
+        set(DeviceInstallState::Installing {
+            bytes_done: done,
+            bytes_total: total,
+        });
         if !finished {
-            // Verified pieces stay in the store for the next try.
+            // Verified pieces stay in the receive store for the next try.
+            let _ = store.shutdown().await;
             return Err(failure(
                 "InstallSourceUnavailable",
                 "The devices that hold this release stopped answering.",
             ));
         }
-        self.publish(context, &store, &cache, key, title, &manifest, &hashes)
-            .await
+        let published = self
+            .publish(context, &store, cache, key, title, &manifest, &hashes)
+            .await;
+        #[cfg(test)]
+        if matches!(published, Err(ref failure) if failure.code == "TestCrash") {
+            // A crash leaves the store as it is.
+            let _ = store.shutdown().await;
+            return published;
+        }
+        // N1: whatever the end, the store's bytes have left it (they moved
+        // into the work folder); a store that names them must not stay.
+        drop_store(store, &store_dir).await;
+        published
     }
 
     /// Move the verified files into a work folder, check the release key,
@@ -684,6 +973,14 @@ impl Pieces {
             std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644))
                 .map_err(|_| install_failed())?;
         }
+        #[cfg(test)]
+        if let Some(fault) = *self.fault.lock().expect("fault mutex poisoned") {
+            drop(work);
+            return Err(match fault {
+                PublishFault::Fail => install_failed(),
+                PublishFault::Crash => failure("TestCrash", "korrid stopped."),
+            });
+        }
         let (context, key, title) = (context.clone(), key.to_owned(), title.to_owned());
         tokio::task::spawn_blocking(move || {
             let (system, identity) = context
@@ -711,12 +1008,66 @@ impl Pieces {
         .await
         .map_err(|_| install_failed())?
     }
+
+    #[cfg(test)]
+    pub(crate) fn fault(&self, fault: Option<PublishFault>) {
+        *self.fault.lock().expect("fault mutex poisoned") = fault;
+    }
+}
+
+/// The pieces that a receive store already holds and can read, and the
+/// pieces still wanted. `None` when the store reports bytes that cannot be
+/// read.
+async fn kept_pieces(
+    store: &FsStore,
+    manifest: &InstallManifest,
+    hashes: &[Hash],
+) -> Option<(VecDeque<Want>, u64)> {
+    use futures::StreamExt;
+    let mut wants = VecDeque::new();
+    let mut done = 0;
+    for (index, (file, hash)) in manifest.files.iter().zip(hashes).enumerate() {
+        let have = match store.observe(*hash).stream().await {
+            Ok(mut stream) => stream.next().await.map(|bitfield| bitfield.ranges),
+            Err(_) => return None,
+        };
+        let mut offset = 0;
+        let mut read_checked = false;
+        while offset < file.bytes {
+            let length = PIECE_BYTES.min(file.bytes - offset);
+            let ranges = chunk_ranges(offset, length);
+            if have.as_ref().is_some_and(|have| ranges.is_subset(have)) {
+                // A store that knows a file must be able to read what it
+                // holds: after a stop during publication it reports bytes
+                // whose file is gone. The first kept piece is read.
+                if !read_checked {
+                    store.export_bao(*hash, ranges).bao_to_vec().await.ok()?;
+                    read_checked = true;
+                }
+                done += length;
+            } else {
+                wants.push_back(Want {
+                    file: index,
+                    offset,
+                    length,
+                });
+            }
+            offset += length;
+        }
+        // A file the store calls complete whose pieces it cannot show.
+        if !read_checked && matches!(store.status(*hash).await.ok()?, BlobStatus::Complete { .. }) {
+            return None;
+        }
+    }
+    Some((wants, done))
 }
 
 struct Shared {
     wants: VecDeque<Want>,
     in_flight: usize,
     done: u64,
+    /// A piece arrived since the last report.
+    progress: bool,
 }
 
 /// A federation device as an install source, over signed peer HTTP on its

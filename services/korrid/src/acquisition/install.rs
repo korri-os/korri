@@ -33,6 +33,16 @@ pub(crate) enum Member {
     Job(String),
 }
 
+/// How an install that waits through a ticket shows in the line.
+pub(crate) enum Listed<'a> {
+    /// Not in `line()` (the netplay copy, until #554).
+    Hidden,
+    /// In `line()` and in the order file a restart reads.
+    Kept(&'a Path, Member),
+    /// In `line()` only: a restart forgets it.
+    Shown(Member),
+}
+
 /// Where in the line a new install goes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Place {
@@ -96,7 +106,10 @@ pub(super) struct Queue {
     pub(super) private_root: Option<PathBuf>,
     /// Startup recovery is still filling the line: no worker starts yet.
     pub(super) holding: bool,
-    written: Option<Vec<Member>>,
+    /// Installs the line shows but a restart forgets: an install from
+    /// devices, whose record schema is not decided (ADR 0092, #552).
+    pub(super) transient: std::collections::BTreeSet<PathBuf>,
+    pub(super) written: Option<Vec<Member>>,
 }
 
 pub(super) struct Running {
@@ -122,9 +135,16 @@ pub(super) struct Grant {
 
 impl Queue {
     /// Write the order when it changed: the running install, then the line.
-    /// A kept install that is in neither, because its task stopped with
-    /// korrid, keeps its place after them: only its end removes it.
+    /// Only `end` and explicit changes to the line call this; dropping a
+    /// place never does, so a korrid that stops keeps the order it had. A
+    /// kept install that is not in the line keeps its place from the saved
+    /// order. An install that a restart forgets (`transient`) is not saved.
     pub(super) fn persist(&mut self) {
+        // Startup recovery refills the line in cache order; the saved order
+        // is applied after it, and only then written.
+        if self.holding {
+            return;
+        }
         let Some(private_root) = self.private_root.clone() else {
             return;
         };
@@ -133,16 +153,19 @@ impl Queue {
             .iter()
             .map(|running| &running.base)
             .chain(self.waiting.iter())
+            .filter(|key| !self.transient.contains(*key))
             .filter_map(|key| self.members.get(key).cloned())
             .collect();
-        let kept: Vec<Member> = self
-            .written
-            .iter()
-            .flatten()
-            .filter(|member| !order.contains(member) && self.members.values().any(|m| m == *member))
-            .cloned()
-            .collect();
-        order.extend(kept);
+        let saved = self.written.clone().unwrap_or_default();
+        for (index, member) in saved.iter().enumerate() {
+            let remembered = self
+                .members
+                .iter()
+                .any(|(key, m)| m == member && !self.transient.contains(key));
+            if remembered && !order.contains(member) {
+                order.insert(index.min(order.len()), member.clone());
+            }
+        }
         if self.written.as_ref() == Some(&order) {
             return;
         }
@@ -333,17 +356,18 @@ impl TurnWait {
     pub(super) fn end(&self) {
         let mut queue = self.queue.lock().expect("acquisition queue mutex poisoned");
         queue.members.remove(&self.key);
+        queue.transient.remove(&self.key);
         queue.persist();
     }
 }
 
-/// Dropping a place leaves the line in memory. Only `end` removes a kept
-/// install from the order file, so a korrid that stops keeps its order.
+/// Dropping a place leaves the line in memory only. It never writes the
+/// order file: on a stop, tokio drops tasks in any order, and each write
+/// would see a different line. Only `end` removes a kept install from it.
 impl Drop for TurnWait {
     fn drop(&mut self) {
         let mut queue = self.queue.lock().expect("acquisition queue mutex poisoned");
         queue.tickets.remove(&self.key);
         queue.waiting.retain(|item| *item != self.key);
-        queue.persist();
     }
 }

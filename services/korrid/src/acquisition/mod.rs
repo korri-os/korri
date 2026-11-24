@@ -24,6 +24,7 @@ use indexmap::IndexSet;
 
 pub use game::GameContext;
 pub(crate) use game::{acquired_game_content, discovered_provider_game};
+pub(super) use install::Listed;
 pub(crate) use install::{Member, Place};
 use install::{Queue, Running, Stop, Turn, TurnWait};
 use std::{
@@ -117,6 +118,8 @@ impl AcquisitionCoordinator {
         registry: &PluginRegistry,
         games: Option<&GameContext>,
     ) -> Result<(), RpcFailure> {
+        // The person's order, read before recovery refills the line.
+        let order = install::read_order(private_root);
         {
             let mut queue = self.lock();
             queue.holding = true;
@@ -143,8 +146,9 @@ impl AcquisitionCoordinator {
         }
         {
             let mut queue = self.lock();
-            queue.sort_by_order(&install::read_order(private_root));
             queue.holding = false;
+            queue.written = Some(order.clone());
+            queue.sort_by_order(&order);
         }
         self.ensure_worker();
         artifacts
@@ -392,18 +396,32 @@ impl AcquisitionCoordinator {
 
     /// ADR 0016 and ADR 0092: a provider game job or a netplay copy joins
     /// the line. A `member` is kept across a restart in the order file.
-    pub(super) fn queue_turn(
-        &self,
-        key: PathBuf,
-        place: Place,
-        member: Option<(&Path, Member)>,
-    ) -> TurnWait {
+    pub(super) fn queue_turn(&self, key: PathBuf, place: Place, listed: Listed<'_>) -> TurnWait {
         let (sender, grants) = tokio::sync::mpsc::unbounded_channel();
-        {
+        let key = {
             let mut queue = self.lock();
+            // Two installs never share a place: a second install under a
+            // path that is already in the line (the same release from
+            // devices and from netplay) waits behind the first under its
+            // own key, instead of taking the first one's turn.
+            let mut key = key;
+            let base = key.clone();
+            let mut count = 0;
+            while queue.tickets.contains_key(&key)
+                || queue.waiting.contains(&key)
+                || queue.running.as_ref().is_some_and(|run| run.base == key)
+            {
+                count += 1;
+                key = base.join(format!(".turn-{count}"));
+            }
             queue.tickets.insert(key.clone(), sender);
-            if let Some((private_root, member)) = member {
-                queue.remember(private_root, &key, member);
+            match listed {
+                Listed::Hidden => (),
+                Listed::Kept(private_root, member) => queue.remember(private_root, &key, member),
+                Listed::Shown(member) => {
+                    queue.members.insert(key.clone(), member);
+                    queue.transient.insert(key.clone());
+                }
             }
             match place {
                 Place::Back => {
@@ -412,7 +430,8 @@ impl AcquisitionCoordinator {
                 }
                 Place::Front => queue.place_front(vec![key.clone()]),
             }
-        }
+            key
+        };
         self.ensure_worker();
         TurnWait {
             key,
@@ -506,9 +525,9 @@ impl AcquisitionCoordinator {
                             break;
                         }
                     }
-                    let mut queue = self.lock();
-                    queue.running = None;
-                    queue.persist();
+                    // The install wrote its end itself; a task that a stop
+                    // dropped writes nothing, so the saved order stays.
+                    self.lock().running = None;
                     continue;
                 }
             };

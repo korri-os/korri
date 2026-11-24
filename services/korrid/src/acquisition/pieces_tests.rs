@@ -3,7 +3,7 @@
 use super::{
     game::GameContext,
     pieces::{
-        may_install, InstallManifestRequest, InstallPieceRequest, PeerHolder, PeerRoute, Progress,
+        may_install, InstallManifestRequest, InstallPieceRequest, PeerHolder, PeerRoute,
         PIECE_BYTES,
     },
     placement, sleep, AcquisitionCoordinator, Place,
@@ -74,6 +74,10 @@ export const systems = {
 struct Behaviour {
     pieces: Arc<AtomicUsize>,
     gone: Arc<AtomicBool>,
+    /// The device goes away once it has served this many pieces.
+    lose_after: Arc<AtomicUsize>,
+    /// Each piece waits this long before it is served.
+    delay_ms: Arc<AtomicUsize>,
 }
 async fn behave(
     axum::extract::State(behaviour): axum::extract::State<Behaviour>,
@@ -84,9 +88,17 @@ async fn behave(
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
     let piece = request.uri().path() == "/peer-installs-piece";
+    if piece {
+        let delay = behaviour.delay_ms.load(Ordering::SeqCst) as u64;
+        tokio::time::sleep(Duration::from_millis(delay)).await;
+    }
     let response = next.run(request).await;
     if piece && response.status().is_success() {
-        behaviour.pieces.fetch_add(1, Ordering::SeqCst);
+        let served = behaviour.pieces.fetch_add(1, Ordering::SeqCst) + 1;
+        let limit = behaviour.lose_after.load(Ordering::SeqCst);
+        if limit > 0 && served >= limit {
+            behaviour.gone.store(true, Ordering::SeqCst);
+        }
     }
     response
 }
@@ -230,36 +242,24 @@ async fn an_install_takes_pieces_from_two_holders_and_survives_losing_one() {
     second.hold(&key, &[("game (copy).gba", &rom)]);
 
     let holders = vec![first.holder_for(&receiver), second.holder_for(&receiver)];
-    let lost = Arc::new(AtomicBool::new(false));
-    let seen = Arc::new(std::sync::Mutex::new(Vec::<Progress>::new()));
-    let first_behaviour = first.behaviour.clone();
-    let first_task = first.task.as_ref().unwrap().abort_handle();
-    let (lose, record) = (lost.clone(), seen.clone());
-    let game = receiver
-        .coordinator
-        .pieces()
-        .install(
+    // Lose the first holder once it has served two pieces.
+    first.behaviour.lose_after.store(2, Ordering::SeqCst);
+    let pieces = receiver.coordinator.pieces();
+    let job = pieces
+        .start(
             &receiver.coordinator,
             &receiver.context,
             &key,
             "Game",
             holders,
             Place::Front,
-            move |progress| {
-                record.lock().unwrap().push(progress);
-                // Lose the first holder once it has served some pieces.
-                if first_behaviour.pieces.load(Ordering::SeqCst) >= 2
-                    && !lose.swap(true, Ordering::SeqCst)
-                {
-                    first_behaviour.gone.store(true, Ordering::SeqCst);
-                    first_task.abort();
-                }
-            },
         )
-        .await
         .unwrap();
-
-    assert!(lost.load(Ordering::SeqCst), "the first holder was lost");
+    let game = pieces.wait(&job).await.unwrap();
+    assert!(
+        first.behaviour.gone.load(Ordering::SeqCst),
+        "the first holder was lost"
+    );
     let (from_first, from_second) = (
         first.behaviour.pieces.load(Ordering::SeqCst),
         second.behaviour.pieces.load(Ordering::SeqCst),
@@ -270,9 +270,10 @@ async fn an_install_takes_pieces_from_two_holders_and_survives_losing_one() {
         from_first + from_second >= 13,
         "every piece came from a holder: {from_first} + {from_second}"
     );
-    let last = *seen.lock().unwrap().last().unwrap();
-    assert_eq!(last.done, last.total);
-    assert_eq!(last.total, rom.len() as u64);
+    match pieces.status(&job).unwrap().state {
+        super::pieces::DeviceInstallState::Imported { game_id } => assert_eq!(game_id, game),
+        other => panic!("{other:?}"),
+    }
 
     // The install is the release: the first answer named it.
     let ready = placement::copied_release_cache(&receiver.context.root)
@@ -337,7 +338,6 @@ async fn a_cue_with_its_tracks_installs_as_one_collection() {
             "Disc game",
             vec![first.holder_for(&receiver)],
             Place::Back,
-            |_| {},
         )
         .await
         .unwrap();
@@ -369,7 +369,6 @@ async fn a_holder_whose_bytes_are_not_the_release_installs_nothing() {
             "Game",
             vec![holder.holder_for(&receiver)],
             Place::Back,
-            |_| {},
         )
         .await
         .unwrap_err();
@@ -571,4 +570,195 @@ fn walk_files(path: &Path, seen: &mut impl FnMut(&Path, u64)) {
             seen(&entry.path(), metadata.len());
         }
     }
+}
+
+fn ready(device: &Device, key: &str) -> PathBuf {
+    placement::copied_release_cache(&device.context.root).join(placement::ready_name(key).unwrap())
+}
+
+async fn installing_past(pieces: &super::pieces::Pieces, job: &str, bytes: u64) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Some(super::pieces::DeviceInstallState::Installing { bytes_done, .. }) =
+                pieces.status(job).map(|status| status.state)
+            {
+                if bytes_done >= bytes {
+                    return;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+/// M2: an install from devices is in the line under its job id, the order
+/// file never names it, and cancel during a piece fetch stops it: no ready
+/// folder, no receive store, no place in the line.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_install_from_devices_shows_in_the_line_and_cancel_stops_a_piece_fetch() {
+    let (rom, key) = release(8 * PIECE_BYTES as usize);
+    let holder = Device::new(10, true).await;
+    let receiver = Device::new(11, false).await;
+    holder.hold(&key, &[("Game.gba", &rom)]);
+    holder.behaviour.delay_ms.store(150, Ordering::SeqCst);
+    let pieces = receiver.coordinator.pieces();
+    let job = pieces
+        .start(
+            &receiver.coordinator,
+            &receiver.context,
+            &key,
+            "Game",
+            vec![holder.holder_for(&receiver)],
+            Place::Back,
+        )
+        .unwrap();
+    installing_past(pieces, &job, PIECE_BYTES).await;
+    assert_eq!(
+        receiver.coordinator.line(),
+        [super::Member::Job(job.clone())]
+    );
+    let order = super::install::order_path(&receiver.context.private_root);
+    if let Ok(bytes) = fs::read(&order) {
+        let saved: Vec<super::Member> = serde_json::from_slice(&bytes).unwrap();
+        assert!(saved.is_empty(), "a restart forgets it: {saved:?}");
+    }
+    // The next piece fetch is in flight (each takes 150 ms); cancel now.
+    let served = holder.behaviour.pieces.load(Ordering::SeqCst);
+    let status = pieces.cancel(&job).await.unwrap();
+    assert!(
+        matches!(status.state, super::pieces::DeviceInstallState::Cancelled),
+        "{status:?}"
+    );
+    assert!(
+        holder.behaviour.pieces.load(Ordering::SeqCst) < 8,
+        "{served}"
+    );
+    assert!(!ready(&receiver, &key).exists());
+    assert!(!super::pieces::receive_path(
+        &receiver.context.root,
+        placement::ready_name(&key).unwrap()
+    )
+    .exists());
+    assert!(receiver.coordinator.line().is_empty());
+    assert!(receiver
+        .context
+        .discovery
+        .published()
+        .unwrap()
+        .library
+        .is_empty());
+}
+
+/// N2: a second install of a release that is already in the line joins the
+/// first: one job, one transfer, the same result for both callers.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_second_install_of_the_same_release_joins_the_first() {
+    let (rom, key) = release(3 * PIECE_BYTES as usize);
+    let holder = Device::new(12, true).await;
+    let receiver = Device::new(13, false).await;
+    holder.hold(&key, &[("Game.gba", &rom)]);
+    holder.behaviour.delay_ms.store(20, Ordering::SeqCst);
+    let pieces = receiver.coordinator.pieces();
+    let start = || {
+        pieces.start(
+            &receiver.coordinator,
+            &receiver.context,
+            &key,
+            "Game",
+            vec![holder.holder_for(&receiver)],
+            Place::Front,
+        )
+    };
+    let (first, second) = (start().unwrap(), start().unwrap());
+    assert_eq!(first, second);
+    let (a, b) = tokio::join!(pieces.wait(&first), pieces.wait(&second));
+    assert_eq!(a.unwrap(), b.unwrap());
+    assert_eq!(holder.behaviour.pieces.load(Ordering::SeqCst), 3);
+
+    // Below the jobs, the line never lets two installs share one place:
+    // the same path waits under its own key (the netplay copy and a
+    // devices install of one release).
+    let path = receiver.context.root.join("cache").join("x".repeat(64));
+    let one = receiver
+        .coordinator
+        .queue_turn(path.clone(), Place::Back, super::Listed::Hidden);
+    let two = receiver
+        .coordinator
+        .queue_turn(path, Place::Back, super::Listed::Hidden);
+    assert_ne!(one.key, two.key);
+}
+
+/// N1: publication fails after the files left the receive store. The store
+/// goes, so the next try installs the release instead of failing forever.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_publication_does_not_leave_the_release_stuck() {
+    let (rom, key) = release(2 * PIECE_BYTES as usize + 99);
+    let holder = Device::new(14, true).await;
+    let receiver = Device::new(15, false).await;
+    holder.hold(&key, &[("Game.gba", &rom)]);
+    let pieces = receiver.coordinator.pieces();
+    let install = || {
+        pieces.install(
+            &receiver.coordinator,
+            &receiver.context,
+            &key,
+            "Game",
+            vec![holder.holder_for(&receiver)],
+            Place::Back,
+        )
+    };
+    pieces.fault(Some(super::pieces::PublishFault::Fail));
+    assert_eq!(install().await.unwrap_err().code, "InstallFailed");
+    let receive =
+        super::pieces::receive_path(&receiver.context.root, placement::ready_name(&key).unwrap());
+    assert!(!receive.exists(), "the store that named moved bytes went");
+    pieces.fault(None);
+    install().await.unwrap();
+    assert_eq!(
+        fs::read(ready(&receiver, &key).join("Game.gba")).unwrap(),
+        rom
+    );
+}
+
+/// N1: korrid stops during publication. The work folder goes, but the
+/// receive store still reports the file complete. The next try finds that
+/// the data cannot be read, starts again and installs the release.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stop_during_publication_does_not_leave_the_release_stuck() {
+    let (rom, key) = release(2 * PIECE_BYTES as usize + 99);
+    let holder = Device::new(16, true).await;
+    let receiver = Device::new(17, false).await;
+    holder.hold(&key, &[("Game.gba", &rom)]);
+    let pieces = receiver.coordinator.pieces();
+    let install = || {
+        pieces.install(
+            &receiver.coordinator,
+            &receiver.context,
+            &key,
+            "Game",
+            vec![holder.holder_for(&receiver)],
+            Place::Back,
+        )
+    };
+    pieces.fault(Some(super::pieces::PublishFault::Crash));
+    assert_eq!(install().await.unwrap_err().code, "TestCrash");
+    assert!(super::pieces::receive_path(
+        &receiver.context.root,
+        placement::ready_name(&key).unwrap()
+    )
+    .exists());
+    let served = holder.behaviour.pieces.load(Ordering::SeqCst);
+    pieces.fault(None);
+    install().await.unwrap();
+    assert_eq!(
+        fs::read(ready(&receiver, &key).join("Game.gba")).unwrap(),
+        rom
+    );
+    assert_eq!(
+        holder.behaviour.pieces.load(Ordering::SeqCst),
+        2 * served,
+        "every piece came again"
+    );
 }

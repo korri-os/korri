@@ -157,7 +157,7 @@ pub(crate) async fn turn(
             placement::copied_release_cache(root)
                 .join(placement::ready_name(key).expect("validated release key")),
             super::Place::Front,
-            None,
+            super::Listed::Hidden,
         )
         .turn()
         .await;

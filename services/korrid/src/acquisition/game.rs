@@ -514,10 +514,10 @@ impl GameAcquisition {
             turn: Some(coordinator.queue_turn(
                 cache.join(format!(".job-{}", record.job_id)),
                 place,
-                Some((
+                super::Listed::Kept(
                     &context.private_root,
                     super::Member::Job(record.job_id.clone()),
-                )),
+                ),
             )),
             provider,
             owner,
