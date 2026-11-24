@@ -89,7 +89,8 @@ export component VelvetPick inherits Rectangle {
         width: Math.min(root.box-w, Tokens.screen.detail-fact * root.u * 22);
         share: root.share;
     }
-    if root.note != "": VelvetWords {
+    note-words := VelvetWords {
+        visible: root.note != "";
         x: root.box-x;
         y: root.progress ? root.bar-y + root.gap * 0.7 : root.buttons-y + buttons-row.block + root.gap * 0.6;
         width: root.box-w;
@@ -97,9 +98,12 @@ export component VelvetPick inherits Rectangle {
         size: Tokens.screen.detail-fact * root.u;
         wraps: true;
     }
+    // A short stage gives the note the room before the facts: the note says what can be
+    // done (why an install cannot happen, how far it is), the facts are a readout.
     if root.cinema: VelvetFacts {
         x: Tokens.screen.pad-x * root.u;
         y: parent.height - Tokens.screen.pad-y * root.u - self.block;
+        visible: root.note == "" || note-words.y + note-words.preferred-height + root.gap * 0.5 <= self.y;
         width: parent.width - 2 * Tokens.screen.pad-x * root.u;
         facts: root.foot-facts;
         badge: root.foot-badge;
