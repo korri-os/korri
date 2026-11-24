@@ -196,6 +196,15 @@ pub(crate) fn acquired_game_content(
 }
 
 impl GameAcquisition {
+    pub(super) fn yield_to(&self, source: std::sync::Arc<dyn super::play::PlaySource>) {
+        self.engine.gate.yield_to(source);
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))] // #553: Velvet's list of installs.
+    pub(super) fn taking_now(&self) -> Option<super::InstallYield> {
+        self.engine.gate.taking_now()
+    }
+
     #[cfg(test)]
     pub(super) fn with_engine(engine: DownloadEngine) -> Self {
         Self {
@@ -312,7 +321,14 @@ impl GameAcquisition {
             .lock()
             .expect("jobs mutex poisoned")
             .get(job_id)
-            .map(|job| job.lock().expect("job mutex poisoned").status.clone())
+            .map(|job| {
+                let mut status = job.lock().expect("job mutex poisoned").status.clone();
+                // Only a download yields to play (#556).
+                if !matches!(status.state, AcquireJobState::Downloading { .. }) {
+                    status.yielding = None;
+                }
+                status
+            })
             .ok_or_else(|| {
                 failure(
                     "AcquisitionUnknownJob",
@@ -432,6 +448,7 @@ impl GameAcquisition {
                 system: None,
                 message: None,
                 state: AcquireJobState::Imported { game_id },
+                yielding: None,
             };
             self.insert(&key, status.clone(), cancel, done);
             return Ok(status);
@@ -516,6 +533,7 @@ impl GameAcquisition {
             system: Some(record.system.clone()),
             message: None,
             state: AcquireJobState::Queued,
+            yielding: None,
         };
         let (cancel, cancelled) = watch::channel(false);
         let (done_tx, done) = watch::channel(false);
@@ -1020,6 +1038,7 @@ impl Pipeline {
                                 bytes_total: progress.total,
                                 bytes_per_second: progress.rate,
                             };
+                            job.status.yielding = progress.pace;
                         }
                     },
                 ) => Some(downloaded),

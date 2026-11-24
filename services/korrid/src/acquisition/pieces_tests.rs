@@ -86,8 +86,9 @@ async fn behave(
     request: axum::extract::Request,
     next: Next,
 ) -> Response {
+    // A lost device: not 503, which is a source's "busy" (#556).
     if behaviour.gone.load(Ordering::SeqCst) {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        return StatusCode::BAD_GATEWAY.into_response();
     }
     let piece = request.uri().path() == "/peer-installs-piece";
     if request.uri().path() == "/peer-rpc" {
@@ -1223,4 +1224,172 @@ async fn a_failed_netplay_install_answers_copy_failed() {
     .unwrap_err();
     assert_eq!(failure.code, "CopyFailed");
     holder.lose();
+}
+
+fn yielding(
+    pieces: &super::pieces::Pieces,
+    job: &str,
+) -> Option<(super::YieldPace, super::YieldReason)> {
+    pieces
+        .status(job)
+        .and_then(|status| status.yielding)
+        .map(|y| (y.pace, y.reason))
+}
+
+async fn until(what: &str, mut check: impl FnMut() -> bool) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !check() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("{what}"));
+}
+
+/// #556: an install from devices pauses while a game runs on the installing
+/// device, says so in its status and in the line's pace, and resumes by
+/// itself when the game ends.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_install_pauses_when_a_game_starts_and_resumes_when_it_ends() {
+    use super::{play::TestPlay, YieldPace, YieldReason};
+    let (rom, key) = release(10 * PIECE_BYTES as usize);
+    let holder = Device::new(37, true).await;
+    let receiver = Device::new(38, false).await;
+    holder.hold(&key, &[("Game.gba", &rom)]);
+    holder.behaviour.delay_ms.store(20, Ordering::SeqCst);
+    let play = Arc::new(TestPlay::default());
+    receiver.coordinator.yield_to(play.clone());
+    let pieces = receiver.coordinator.pieces();
+    let job = pieces
+        .start(
+            &receiver.coordinator,
+            &receiver.context,
+            &key,
+            "Game",
+            vec![holder.holder_for(&receiver)],
+            Place::Back,
+        )
+        .unwrap();
+    installing_past(pieces, &job, PIECE_BYTES).await;
+    play.set(|play| play.game = true);
+    until("the install reports the pause", || {
+        yielding(pieces, &job) == Some((YieldPace::Paused, YieldReason::Game))
+    })
+    .await;
+    assert_eq!(
+        receiver
+            .coordinator
+            .install_yield()
+            .map(|y| (y.pace, y.reason)),
+        Some((YieldPace::Paused, YieldReason::Game))
+    );
+    // A piece that was in flight may still land; then nothing more.
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    let served = holder.behaviour.pieces.load(Ordering::SeqCst);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(holder.behaviour.pieces.load(Ordering::SeqCst), served);
+    assert!(served < 10, "{served}");
+    play.set(|play| play.game = false);
+    pieces.wait(&job).await.unwrap();
+    assert_eq!(pieces.status(&job).unwrap().yielding, None);
+    assert_eq!(
+        fs::read(ready(&receiver, &key).join("Game.gba")).unwrap(),
+        rom
+    );
+    holder.lose();
+}
+
+/// #556: a serving device on battery below the threshold refuses a piece
+/// with "busy". The receiver takes the piece from another source; with no
+/// other source, the install waits, says why, and goes on once the device
+/// charges. It never fails for it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_serving_device_below_the_battery_threshold_is_a_busy_source() {
+    use super::{play::TestPlay, YieldPace, YieldReason};
+    use korri_surface_treaty::SurfaceBattery;
+    let (rom, key) = release(4 * PIECE_BYTES as usize);
+    let low = Device::new(39, true).await;
+    let other = Device::new(40, true).await;
+    let receiver = Device::new(41, false).await;
+    low.hold(&key, &[("Game.gba", &rom)]);
+    other.hold(&key, &[("Game.gba", &rom)]);
+    let battery = Arc::new(TestPlay::default());
+    battery.set(|play| {
+        play.battery = Some(SurfaceBattery {
+            percent: Some(super::play::LOW_BATTERY_PERCENT - 1.0),
+            charging: false,
+        })
+    });
+    low.coordinator.yield_to(battery.clone());
+
+    // The holder's own answer.
+    let manifest = low
+        .coordinator
+        .pieces()
+        .manifest(&low.context, &key)
+        .await
+        .unwrap();
+    let request = InstallPieceRequest {
+        release_key: key.clone(),
+        blake3: manifest.files[0].blake3.clone(),
+        offset: 0,
+        length: PIECE_BYTES,
+    };
+    let owner = AuthorizationContext::Peer(Principal::OwnerDevice {
+        device_public_key: "peer".into(),
+        owner_statement: "verified upstream".into(),
+        owner_public_key: "owner".into(),
+    });
+    let response = super::pieces::piece_response(&low.state, &owner, &request).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    // Another source serves every piece.
+    let pieces = receiver.coordinator.pieces();
+    pieces
+        .install(
+            &receiver.coordinator,
+            &receiver.context,
+            &key,
+            "Game",
+            vec![low.holder_for(&receiver), other.holder_for(&receiver)],
+            Place::Back,
+        )
+        .await
+        .unwrap();
+    assert_eq!(low.behaviour.pieces.load(Ordering::SeqCst), 0);
+    assert!(other.behaviour.pieces.load(Ordering::SeqCst) >= 4);
+
+    // The only source is busy: the install waits and says why.
+    let alone = Device::new(42, false).await;
+    let job = alone
+        .coordinator
+        .pieces()
+        .start(
+            &alone.coordinator,
+            &alone.context,
+            &key,
+            "Game",
+            vec![low.holder_for(&alone)],
+            Place::Back,
+        )
+        .unwrap();
+    let waiting = alone.coordinator.pieces();
+    until("the install says its sources are busy", || {
+        yielding(waiting, &job) == Some((YieldPace::Paused, YieldReason::SourcesBusy))
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        matches!(
+            waiting.status(&job).unwrap().state,
+            super::pieces::DeviceInstallState::Installing { .. }
+        ),
+        "{:?}",
+        waiting.status(&job)
+    );
+    battery.set(|play| play.battery.as_mut().unwrap().charging = true);
+    waiting.wait(&job).await.unwrap();
+    assert_eq!(fs::read(ready(&alone, &key).join("Game.gba")).unwrap(), rom);
+    low.lose();
+    other.lose();
 }

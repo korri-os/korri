@@ -158,6 +158,8 @@ pub(crate) struct Pieces {
     hashing: Arc<tokio::sync::Mutex<()>>,
     /// Installs from devices, by job id. Memory only (see `DeviceJob`).
     jobs: Arc<Mutex<BTreeMap<String, DeviceJob>>>,
+    /// ADR 0092 (#556): taking and serving pieces yield to play.
+    gate: super::play::Gate,
     #[cfg(test)]
     fault: Arc<Mutex<Option<PublishFault>>>,
 }
@@ -189,6 +191,10 @@ fn remove_holder_store(path: &Path) {
 }
 
 impl Pieces {
+    pub(crate) fn gate(&self) -> &super::play::Gate {
+        &self.gate
+    }
+
     /// The store, opened once. A store that cannot be opened is rebuilt.
     async fn store(&self, root: &Path) -> Result<FsStore, RpcFailure> {
         let mut stores = self.stores.lock().await;
@@ -510,6 +516,9 @@ pub(crate) struct DeviceInstallStatus {
     pub job_id: String,
     pub release_key: String,
     pub state: DeviceInstallState,
+    /// Set while the install yields to play (#556); none at full pace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub yielding: Option<super::InstallYield>,
 }
 
 /// One install from devices. It lives in memory only: a restart forgets
@@ -666,6 +675,7 @@ impl Pieces {
             job_id: id.clone(),
             release_key: key.to_owned(),
             state: DeviceInstallState::Waiting,
+            yielding: None,
         });
         let (cancel, cancelled) = tokio::sync::watch::channel(false);
         jobs.insert(
@@ -683,12 +693,14 @@ impl Pieces {
         let (key, title, job) = (key.to_owned(), title.to_owned(), id.clone());
         tokio::spawn(async move {
             let set = |state| status.send_modify(|status| status.state = state);
+            let yielding = |pace| status.send_modify(|status| status.yielding = pace);
             let result = pieces
                 .run(
-                    &context, &cache, &key, &title, holders, wait, cancelled, &set,
+                    &context, &cache, &key, &title, holders, wait, cancelled, &set, &yielding,
                 )
                 .await;
             let mut jobs = pieces.jobs.lock().expect("device installs mutex poisoned");
+            yielding(None);
             set(match result {
                 Ok(game_id) => DeviceInstallState::Imported { game_id },
                 Err(reason) if reason.code == "InstallCancelled" => DeviceInstallState::Cancelled,
@@ -806,6 +818,7 @@ impl Pieces {
         mut wait: super::TurnWait,
         mut cancelled: tokio::sync::watch::Receiver<bool>,
         set: &(dyn Fn(DeviceInstallState) + Send + Sync),
+        yielding: &(dyn Fn(Option<super::InstallYield>) + Send + Sync),
     ) -> Result<String, RpcFailure> {
         let hex = placement::ready_name(key).ok_or_else(install_failed)?;
         let mut turn = tokio::select! {
@@ -827,6 +840,7 @@ impl Pieces {
                 &mut cancelled,
                 &mut turn,
                 set,
+                yielding,
             )
             .await;
         wait.end();
@@ -845,6 +859,7 @@ impl Pieces {
         cancelled: &mut tokio::sync::watch::Receiver<bool>,
         turn: &mut super::Turn,
         set: &(dyn Fn(DeviceInstallState) + Send + Sync),
+        yielding: &(dyn Fn(Option<super::InstallYield>) + Send + Sync),
     ) -> Result<String, RpcFailure> {
         // Every holder is asked; the first answer names the release's files,
         // and every holder whose files have the same contents serves.
@@ -938,6 +953,9 @@ impl Pieces {
             in_flight: 0,
             done,
             progress: false,
+            serving: serving.len(),
+            busy: 0,
+            pace: None,
         }));
         let workers = serving.into_iter().map(|holder| {
             let (shared, store, manifest, hashes) = (
@@ -947,9 +965,16 @@ impl Pieces {
                 hashes.clone(),
             );
             let key = key.to_owned();
+            let gate = self.gate.clone();
             async move {
                 let mut strikes = 0;
+                let leave = |shared: &mut Shared| shared.serving -= 1;
                 loop {
+                    // #556: installs yield to play on this device.
+                    gate.take(PIECE_BYTES, true, &mut |pace| {
+                        shared.lock().expect("install pieces mutex poisoned").pace = pace;
+                    })
+                    .await;
                     let next = {
                         let mut shared = shared.lock().expect("install pieces mutex poisoned");
                         match shared.wants.pop_front() {
@@ -957,7 +982,10 @@ impl Pieces {
                                 shared.in_flight += 1;
                                 Some(want)
                             }
-                            None if shared.in_flight == 0 => return,
+                            None if shared.in_flight == 0 => {
+                                leave(&mut shared);
+                                return;
+                            }
                             None => None,
                         }
                     };
@@ -976,6 +1004,22 @@ impl Pieces {
                         }),
                     )
                     .await;
+                    if matches!(&fetched, Ok(Err(failure)) if failure.code == super::play::busy().code)
+                    {
+                        // A busy source (it plays, or its battery is low) is
+                        // no failure: another source takes the piece, and
+                        // this one is asked again later.
+                        {
+                            let mut shared =
+                                shared.lock().expect("install pieces mutex poisoned");
+                            shared.in_flight -= 1;
+                            shared.wants.push_front(want);
+                            shared.busy += 1;
+                        }
+                        tokio::time::sleep(super::play::BUSY_REST).await;
+                        shared.lock().expect("install pieces mutex poisoned").busy -= 1;
+                        continue;
+                    }
                     let checked = match fetched {
                         Ok(Ok(encoded)) => {
                             // The BAO stream starts with the file's size.
@@ -1008,6 +1052,7 @@ impl Pieces {
                                 "korrid install sources: {} left the install",
                                 holder.label()
                             );
+                            leave(&mut shared);
                             return;
                         }
                     }
@@ -1017,12 +1062,20 @@ impl Pieces {
         let report = {
             let shared = shared.clone();
             async move {
+                let mut reported = None;
                 loop {
                     tokio::time::sleep(Duration::from_millis(50)).await;
-                    let done = {
+                    let (done, pace) = {
                         let mut shared = shared.lock().expect("install pieces mutex poisoned");
-                        std::mem::take(&mut shared.progress).then_some(shared.done)
+                        (
+                            std::mem::take(&mut shared.progress).then_some(shared.done),
+                            shared.yielding(),
+                        )
                     };
+                    if pace != reported {
+                        reported = pace;
+                        yielding(pace);
+                    }
                     if let Some(done) = done {
                         set(DeviceInstallState::Installing {
                             bytes_done: done,
@@ -1062,10 +1115,16 @@ impl Pieces {
         }
         // Cancel is heard while the files move; once they are checked and
         // published, the install ends as it is.
+        // A game that runs here keeps the disk and the processor: the files
+        // move and are checked after it (#556).
         let published = tokio::select! {
             biased;
             () = cancel_asked(cancelled, &mut turn.stop) => Err(cancelled_failure()),
-            work = self.export(&store, cache, &manifest, &hashes) => work,
+            work = async {
+                self.gate.take(0, true, &mut |pace| yielding(pace)).await;
+                yielding(None);
+                self.export(&store, cache, &manifest, &hashes).await
+            } => work,
         };
         let published = match published {
             Ok(work) => self.record(context, work, key, title).await,
@@ -1219,6 +1278,23 @@ struct Shared {
     done: u64,
     /// A piece arrived since the last report.
     progress: bool,
+    /// Sources still in the install, and those that rest after "busy".
+    serving: usize,
+    busy: usize,
+    /// How installs on this device yield to play now.
+    pace: Option<super::InstallYield>,
+}
+
+impl Shared {
+    fn yielding(&self) -> Option<super::InstallYield> {
+        use super::{InstallYield, YieldPace, YieldReason};
+        self.pace.or_else(|| {
+            (self.serving > 0 && self.busy == self.serving).then_some(InstallYield {
+                pace: YieldPace::Paused,
+                reason: YieldReason::SourcesBusy,
+            })
+        })
+    }
 }
 
 /// A federation device as an install source, over signed peer HTTP on its
@@ -1286,6 +1362,9 @@ impl PeerHolder {
         };
         if response.status() == reqwest::StatusCode::FORBIDDEN {
             return Err(refused());
+        }
+        if response.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+            return Err(super::play::busy());
         }
         if !response.status().is_success() {
             return Err(unreachable());
@@ -1383,7 +1462,17 @@ pub(crate) async fn piece_response(
     let Ok(games) = state.game_context() else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    match state.acquisition.pieces().piece(&games, request).await {
+    // #556: a device that plays serves slowly; one on low battery serves
+    // nothing, and the receiver asks another source.
+    let pieces = state.acquisition.pieces();
+    if !pieces.gate.serve(request.length.min(PIECE_BYTES)).await {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [(axum::http::header::RETRY_AFTER, "5")],
+        )
+            .into_response();
+    }
+    match pieces.piece(&games, request).await {
         Ok(encoded) => (
             [
                 (axum::http::header::CONTENT_TYPE, "application/octet-stream"),

@@ -47,6 +47,14 @@ impl Receiver {
     pub(crate) fn busy(&self) -> bool {
         self.0.lock().expect("netplay receiver").run().is_some()
     }
+    /// ADR 0092 (#556): a netplay session plays here. Preparation, which
+    /// installs the release, is not play.
+    pub(crate) fn playing(&self) -> bool {
+        matches!(
+            *self.0.lock().expect("netplay receiver"),
+            State::Active { .. }
+        )
+    }
     fn begin(&self, status: NetplayStatus) -> Result<(String, watch::Receiver<bool>), RpcFailure> {
         let mut local = self.0.lock().expect("netplay receiver");
         if local.run().is_some() {

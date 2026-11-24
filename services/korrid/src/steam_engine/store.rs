@@ -253,6 +253,7 @@ impl SteamStore {
             system: Some("steam".into()),
             message: None,
             state: AcquireJobState::Queued,
+            yielding: None,
         };
         let job = Arc::new(StoreJob {
             status: Mutex::new(status.clone()),
@@ -336,6 +337,7 @@ impl SteamStore {
                 system: None,
                 message: None,
                 state: AcquireJobState::Queued,
+                yielding: None,
             }),
             stop: AtomicBool::new(false),
         });

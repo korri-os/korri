@@ -9,6 +9,7 @@ mod install;
 pub(crate) mod netplay;
 pub(crate) mod pieces;
 pub(crate) mod placement;
+pub(crate) mod play;
 mod policy;
 mod sleep;
 mod space;
@@ -27,6 +28,7 @@ pub(crate) use game::{acquired_game_content, discovered_provider_game};
 pub(super) use install::Listed;
 pub(crate) use install::{Member, Place};
 use install::{Queue, Running, Stop, Turn, TurnWait};
+pub use play::{InstallYield, YieldPace, YieldReason};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
@@ -89,6 +91,28 @@ pub(crate) struct GameArtifacts {
 impl AcquisitionCoordinator {
     pub(crate) fn pieces(&self) -> &pieces::Pieces {
         &self.pieces
+    }
+
+    /// ADR 0092 (#556): every install of this device, and the pieces it
+    /// serves, yield to the play that `source` reports.
+    pub(crate) fn yield_to(&self, source: Arc<dyn play::PlaySource>) {
+        self.pieces.gate().yield_to(source.clone());
+        self.engine.gate.yield_to(source.clone());
+        self.games.yield_to(source);
+    }
+
+    /// How the installs of this device yield to play now: none while they
+    /// run at full pace or nothing installs.
+    #[cfg_attr(not(test), allow(dead_code))] // #553: Velvet's list of installs.
+    pub(crate) fn install_yield(&self) -> Option<InstallYield> {
+        [
+            self.pieces.gate().taking_now(),
+            self.engine.gate.taking_now(),
+            self.games.taking_now(),
+        ]
+        .into_iter()
+        .flatten()
+        .max_by_key(|pace| pace.pace == YieldPace::Paused)
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Queue> {

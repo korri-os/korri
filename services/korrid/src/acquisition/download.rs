@@ -20,6 +20,8 @@ pub(super) struct DownloadEngine {
     stall_window: Duration,
     retry_delay: Duration,
     addresses: policy::AddressPolicy,
+    /// ADR 0092 (#556): game and artifact downloads yield to play.
+    pub(super) gate: super::play::Gate,
     /// Test-only file system space, so the free-space floor can be reached.
     #[cfg(test)]
     space: Option<space::Probe>,
@@ -37,6 +39,7 @@ impl Default for DownloadEngine {
             stall_window: Duration::from_secs(60),
             retry_delay: Duration::from_secs(2),
             addresses: policy::AddressPolicy::Public,
+            gate: Default::default(),
             #[cfg(test)]
             space: None,
             #[cfg(test)]
@@ -236,7 +239,24 @@ pub(super) struct Progress {
     pub done: u64,
     pub total: Option<u64>,
     pub rate: Option<f64>,
+    /// How the download yields to play now (#556).
+    pub pace: Option<super::InstallYield>,
 }
+
+/// Whether a response's bytes can be continued later with `Range`: the
+/// server answered a range, or says it serves them.
+fn ranges_served(response: &Response) -> bool {
+    response.status() == StatusCode::PARTIAL_CONTENT
+        || response
+            .headers()
+            .get(header::ACCEPT_RANGES)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.eq_ignore_ascii_case("bytes"))
+}
+
+/// How many times one download asks again after a pause for play broke its
+/// connection.
+const PAUSE_RESUMES: u32 = 10;
 
 impl DownloadEngine {
     #[cfg(test)]
@@ -245,6 +265,7 @@ impl DownloadEngine {
             stall_window,
             retry_delay: Duration::from_millis(1),
             addresses: policy::AddressPolicy::AllowLoopback,
+            gate: Default::default(),
             space: None,
             names: Default::default(),
             secrets_need_https: false,
@@ -700,9 +721,39 @@ impl DownloadEngine {
         mut kept: impl FnMut(Option<&Validator>),
         mut progress: impl FnMut(Progress),
     ) -> Result<DownloadedGame, Failure> {
-        let result = self
-            .transfer_game(request, hosts, staged, validator, &mut kept, &mut progress)
-            .await;
+        // #556: a pause for play can outlast the connection. A download that
+        // can resume asks again for the rest, from the validator it kept.
+        let mut validator = validator.cloned();
+        let mut resumes = 0;
+        let result = loop {
+            let mut paused = false;
+            let mut seen = None;
+            let result = self
+                .transfer_game(
+                    request,
+                    hosts,
+                    staged,
+                    validator.as_ref(),
+                    &mut |kept_validator: Option<&Validator>| {
+                        seen = kept_validator.cloned();
+                        kept(kept_validator)
+                    },
+                    &mut progress,
+                    &mut paused,
+                )
+                .await;
+            if seen.is_some() {
+                validator = seen;
+            }
+            match result {
+                Err(Failure::Network | Failure::Stalled)
+                    if paused && validator.is_some() && resumes < PAUSE_RESUMES =>
+                {
+                    resumes += 1;
+                }
+                result => break result,
+            }
+        };
         match result {
             Ok((bytes, lead)) => Ok(DownloadedGame {
                 path: staged.to_path_buf(),
@@ -725,6 +776,7 @@ impl DownloadEngine {
         validator: Option<&Validator>,
         kept: &mut impl FnMut(Option<&Validator>),
         progress: &mut impl FnMut(Progress),
+        paused: &mut bool,
     ) -> Result<(u64, Vec<u8>), Failure> {
         let url = Url::parse(&request.url).map_err(|_| Failure::UnsafeUrl)?;
         let existing = fs::symlink_metadata(staged)
@@ -795,6 +847,11 @@ impl DownloadEngine {
         if start == 0 {
             kept(Validator::of(response.headers()).as_ref());
         }
+        // A pause would cost the bytes of a download that cannot resume: it
+        // slows instead (#556). Resuming needs a GET, a validator and ranges.
+        let resumable = request.form.is_none()
+            && (start > 0 || Validator::of(response.headers()).is_some())
+            && ranges_served(&response);
         let mut output = OpenOptions::new()
             .write(true)
             .create(true)
@@ -819,9 +876,33 @@ impl DownloadEngine {
             done,
             total,
             rate: None,
+            pace: None,
         });
         let mut tick = tokio::time::interval(self.stall_window.min(Duration::from_millis(200)));
+        let (mut pace, mut taken) = (None, 0);
         loop {
+            let waited = {
+                let mut report = |now| {
+                    if now != pace {
+                        pace = now;
+                        progress(Progress {
+                            done,
+                            total,
+                            rate: None,
+                            pace: now,
+                        });
+                    }
+                };
+                self.gate
+                    .take(std::mem::take(&mut taken), resumable, &mut report)
+                    .await
+            };
+            if waited {
+                *paused = true;
+                window_start = Instant::now();
+                window_bytes = done;
+                samples = VecDeque::from([(Instant::now(), done)]);
+            }
             let chunk = tokio::select! {
                 chunk = response.chunk() => Some(chunk.map_err(transfer)?),
                 _ = tick.tick() => None,
@@ -830,6 +911,7 @@ impl DownloadEngine {
                 let Some(chunk) = chunk else {
                     break;
                 };
+                taken = chunk.len() as u64;
                 floor.reserve(chunk.len() as u64)?;
                 done += chunk.len() as u64;
                 if lead.len() < 512 {
@@ -861,6 +943,7 @@ impl DownloadEngine {
                 done,
                 total,
                 rate: (elapsed > 0.0).then_some((done - bytes) as f64 / elapsed.max(f64::EPSILON)),
+                pace,
             });
         }
         if done == 0 {
@@ -889,20 +972,29 @@ impl DownloadEngine {
                     done: bytes,
                     total: Some(bytes),
                     rate: None,
+                    pace: None,
                 });
                 return Ok(verified);
             }
             fs::remove_file(&verified)?;
         }
         let mut last = Failure::Network;
-        for attempt in 0..=5 {
-            if attempt > 0 {
+        let (mut attempt, mut resumes) = (0, 0);
+        while attempt <= 5 {
+            if attempt > 0 || resumes > 0 {
                 tokio::time::sleep(self.retry_delay).await;
             }
-            match self.attempt(file, &part, &mut progress).await {
+            let mut paused = false;
+            match self.attempt(file, &part, &mut progress, &mut paused).await {
                 Ok(()) => {
                     fs::rename(&part, &verified)?;
                     return Ok(verified);
+                }
+                // #556: a pause for play broke the connection; it is no
+                // failed attempt.
+                Err(Failure::Network | Failure::Stalled) if paused && resumes < PAUSE_RESUMES => {
+                    resumes += 1;
+                    continue;
                 }
                 Err(
                     error @ (Failure::UnsafeUrl
@@ -913,6 +1005,7 @@ impl DownloadEngine {
                 ) => return Err(error),
                 Err(error) => last = error,
             }
+            attempt += 1;
         }
         Err(last)
     }
@@ -922,6 +1015,7 @@ impl DownloadEngine {
         file: &ArtifactFile,
         part: &Path,
         progress: &mut impl FnMut(Progress),
+        paused: &mut bool,
     ) -> Result<(), Failure> {
         let (mut hash, mut done) = if part.exists() {
             hash_file_async(part).await?
@@ -968,9 +1062,35 @@ impl DownloadEngine {
             done,
             total,
             rate: None,
+            pace: None,
         });
         let mut tick = tokio::time::interval(self.stall_window.min(Duration::from_millis(200)));
+        // The artifact's hash checks resumed bytes; only ranges are needed.
+        let resumable = ranges_served(&response);
+        let (mut pace, mut taken) = (None, 0);
         loop {
+            let waited = {
+                let mut report = |now| {
+                    if now != pace {
+                        pace = now;
+                        progress(Progress {
+                            done,
+                            total,
+                            rate: None,
+                            pace: now,
+                        });
+                    }
+                };
+                self.gate
+                    .take(std::mem::take(&mut taken), resumable, &mut report)
+                    .await
+            };
+            if waited {
+                *paused = true;
+                window_start = Instant::now();
+                window_bytes = done;
+                samples = VecDeque::from([(Instant::now(), done)]);
+            }
             let chunk = tokio::select! {
                 chunk = response.chunk() => Some(chunk.map_err(|error| if error.is_timeout() { Failure::Stalled } else { Failure::Network })?),
                 _ = tick.tick() => None,
@@ -979,6 +1099,7 @@ impl DownloadEngine {
                 let Some(chunk) = chunk else {
                     break;
                 };
+                taken = chunk.len() as u64;
                 output.write_all(&chunk)?;
                 hash.update(&chunk);
                 done += chunk.len() as u64;
@@ -1003,6 +1124,7 @@ impl DownloadEngine {
                 done,
                 total,
                 rate: (elapsed > 0.0).then_some((done - bytes) as f64 / elapsed.max(f64::EPSILON)),
+                pace,
             });
         }
         output.sync_all()?;

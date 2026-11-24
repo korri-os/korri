@@ -97,6 +97,30 @@ export interface AcquireCancelRequest {
 	jobId: string;
 }
 
+/** How an install yields: it goes slower, or it waits. */
+export enum YieldPace {
+	Slowed = "Slowed",
+	Paused = "Paused",
+}
+
+/** Why an install yields. */
+export enum YieldReason {
+	/** A game runs on this device, also one that it streams to others. */
+	Game = "Game",
+	/** A netplay session runs on this device. */
+	Netplay = "Netplay",
+	/** This device watches a stream. */
+	Stream = "Stream",
+	/** Every source refused for now: it plays, or its battery is low. */
+	SourcesBusy = "SourcesBusy",
+}
+
+/** An install that yields to play, and why (ADR 0092, #556). */
+export interface InstallYield {
+	pace: YieldPace;
+	reason: YieldReason;
+}
+
 /**
  * Legacy `AcquireJobStatus` without `stagedPath`/`placedPath`: paths never
  * leave korrid, and the game id is the handle for a placed game.
@@ -109,6 +133,11 @@ export interface AcquireJobStatus {
 	system?: string;
 	message?: string;
 	state: AcquireJobState;
+	/**
+	 * ADR 0092 (#556): set while the download yields to play on this
+	 * device; absent at full pace.
+	 */
+	yielding?: InstallYield;
 }
 
 /** Legacy `AcquireStatusRequest`. */

@@ -557,6 +557,20 @@ tracks) is one collection, so netplay plays it too (#282). A netplay that ends
 before its install cancels the install it started; an install that was
 already in the line goes on. No single-file release route remains.
 
+Installs yield to play (ADR 0092, #556, `acquisition/play.rs`). On the
+installing device, every install (pieces from devices, provider and artifact
+downloads) pauses while a game or a netplay session runs there, also a game
+that the device streams to others. While the device watches a stream, installs
+slow to 2 MiB/s, and pause while the viewer's last sample shows a dropped frame
+or a round trip of 40 ms or more. A download that cannot resume (a POST, no
+validator, or a server that serves no ranges) slows instead of pausing. A
+device that serves pieces slows to 2 MiB/s while it plays or runs on battery,
+and below 20% charge it answers every piece with 503 "busy": the receiver asks
+another source, and with none it waits. A paused install looks again every
+second and resumes by itself. `DeviceInstallStatus.yielding` and
+`AcquireJobStatus.yielding` say `{ "pace": "Slowed" | "Paused", "reason":
+"Game" | "Netplay" | "Stream" | "SourcesBusy" }`.
+
 While a job downloads or unpacks, korrid holds a logind `sleep` inhibitor in
 `block` mode. The screen may blank, but the device does not suspend. Shutdown
 is not blocked. Without logind, korrid logs the failure and continues.

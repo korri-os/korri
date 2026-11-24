@@ -15,6 +15,17 @@ struct Reservation {
     hosting_confirmed: bool,
 }
 impl Holder {
+    /// ADR 0092 (#556): this device hosts netplay for its live session
+    /// `launch`, so installs yield to it.
+    pub(crate) async fn hosts(&self, launch: &str) -> bool {
+        self.reservation
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|reservation| {
+                reservation.launch_id == launch && reservation.hosting_confirmed
+            })
+    }
     pub(crate) async fn stream_play(
         &self,
         host: &host::HostRuntime,

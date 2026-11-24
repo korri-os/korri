@@ -715,3 +715,78 @@ mod resume {
         assert!(run.kept.is_empty());
     }
 }
+
+/// #556: a provider download pauses while a game runs on this device and
+/// finishes after the game ends.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_provider_download_pauses_for_a_game_and_finishes_after_it() {
+    use super::play::{TestPlay, YieldPace, YieldReason};
+    use std::sync::{Arc, Mutex};
+    let body: Vec<u8> = (0..64 * 1024).map(|index| (index % 251) as u8).collect();
+    let server = HttpFixture::start([(
+        "/game.gba",
+        Route::ok("application/octet-stream", body.clone())
+            .ranges("\"v1\"")
+            .header("Accept-Ranges", "bytes")
+            .paced(4096, Duration::from_millis(15)),
+    )]);
+    let engine = engine();
+    let play = Arc::new(TestPlay::default());
+    engine.gate.yield_to(play.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let task = {
+        let (engine, request) = (
+            engine.clone(),
+            GameRequest::get(server.url(HOST, "/game.gba")),
+        );
+        let (directory, seen) = (dir.path().to_path_buf(), seen.clone());
+        tokio::spawn(async move {
+            engine
+                .fetch_game(&request, &hosts(), &directory, |progress| {
+                    seen.lock().unwrap().push((progress.done, progress.pace))
+                })
+                .await
+                .map(|game| game.bytes)
+        })
+    };
+    let done = || {
+        seen.lock()
+            .unwrap()
+            .iter()
+            .map(|(done, _)| *done)
+            .max()
+            .unwrap_or(0)
+    };
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while done() == 0 {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .unwrap();
+    play.set(|play| play.game = true);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !seen.lock().unwrap().iter().any(|(_, pace)| {
+            pace.is_some_and(|pace| {
+                pace.pace == YieldPace::Paused && pace.reason == YieldReason::Game
+            })
+        }) {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let paused_at = done();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(done(), paused_at, "no byte was taken while the game ran");
+    assert!(paused_at < body.len() as u64);
+    play.set(|play| play.game = false);
+    let bytes = tokio::time::timeout(Duration::from_secs(10), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(bytes, body.len() as u64);
+    assert_eq!(seen.lock().unwrap().last().unwrap().1, None);
+}

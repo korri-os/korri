@@ -230,6 +230,10 @@ pub struct AcquireJobStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     pub state: AcquireJobState,
+    /// ADR 0092 (#556): set while the download yields to play on this
+    /// device; absent at full pace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub yielding: Option<super::InstallYield>,
 }
 
 #[typeshare]

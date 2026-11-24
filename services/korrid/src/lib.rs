@@ -2103,6 +2103,8 @@ struct AppState {
 
 impl AppState {
     fn recover_acquisition(&self) {
+        // ADR 0092 (#556): installs yield to play on this device.
+        self.acquisition.yield_to(acquisition::play::source(self));
         if let Ok((root, registry)) = self.acquisition_context() {
             // ADR 0092: provider installs resume only where a library can
             // record them. The registry is the one already read.
