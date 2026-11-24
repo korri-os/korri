@@ -97,33 +97,30 @@ connects. A trusted controller reconnects by itself when switched on.
 
 ## USB-C: lifeline or gamepad
 
-`tabs6-typec-auto.service` currently observes and keeps the port DEVICE with
-VBUS off. Automatic HOST is blocked: live tests did not recover the s2mm005
-source flag with our boost on, and STATUS1/MUIC cannot distinguish our output
-from incoming power. The daemon starts at boot and remains running. It never
-enables boost, even with a source-qualified Kishi. `usb-role/typec-phase-b.md`
-records the measurements and the evidence needed to unblock automatic HOST.
+The Korri product kernel owns the USB-C data role through the read-only
+`s2mm005-read-only` driver. Three fresh qualifying samples select host while
+the Kishi pass-through charges the tablet, without enabling boost. Charger
+unplug selects device on the next sample. The standard `/sys/class/typec`
+port exposes the observed attachment and roles. See `usb-role/typec-kernel.md`
+for exact interlocks and limits. The console retains manual role control.
 
 ```sh
 tabs6-usb-role                 # role, VBUS, attached devices
-tabs6-usb-role device          # stop automatic policy; off/device, rebind gadget
-tabs6-usb-role host            # stop automatic policy; fresh checks, then host
-systemctl start tabs6-typec-auto  # resume safe observe mode, starting off/device
+tabs6-usb-role host            # stop watcher; unbind driver; existing manual battery-host checks
+tabs6-usb-role device          # verify boost off, restore gadget, rebind automatic kernel policy
 ```
 
-Manual host still requires `Discharging`, three source samples, no incoming
-VBUS and no configured gadget. It stops automatic monitoring: the operator
-must select device before changing cables. Run it only over Wi-Fi SSH.
-Off/device actuation failures stop the unit, request off/device and require an
-explicit restart. Suspend is blocked while automatic policy runs. This costs
-idle power but avoids leaving boost unmonitored during sleep.
+Manual host still requires Discharging, three source samples, no incoming
+VBUS and no configured gadget. It is an unmonitored operator override: select
+`device` before changing cables. A failed manual attempt stays unbound until
+`device` verifies boost-off and restores policy. Reboot also restores policy.
 
-The read-only Phase A observer remains available in `tabs6-typec-status`.
-`usb-role/typec-phase-b.md` records the measured policy and its remaining
-hardware limits. `usb-role/usb-role.test.py` runs the actual helper and Rust
-daemon against temporary sysfs and register files, including charger transitions
-and failures. No s2mm005 commands, interrupt acknowledgements, firmware or flash
-writes are used.
+There is no automatic user-space role writer or chip-status daemon.
+`tabs6-typec-role-watch` watches only the selected role and restarts the gadget,
+InputPlumber and inputd after kernel detach. This temporary workaround never
+writes chip registers or the role. The old Phase A diagnostic observer is not
+started and works only with the kernel driver unbound. Existing charge-current
+maintenance and boot boost-off remain unchanged.
 
 ## Build
 

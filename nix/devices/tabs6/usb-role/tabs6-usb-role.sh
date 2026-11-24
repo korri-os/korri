@@ -1,46 +1,14 @@
-# tabs6-usb-role: turn the Tab S6 USB-C port between the gadget lifeline
-# (device role) and a USB host that powers the port (a gamepad, keyboard, hub).
-#
-#   tabs6-usb-role [status]   the role, VBUS and attached USB devices
-#   tabs6-usb-role host       power the port, then become a USB host
-#   tabs6-usb-role sink-host  automatic-only host data role, no register writes
-#   tabs6-usb-role device     become the gadget again, VBUS off, rebind the gadget
-#   tabs6-usb-role boot-role  device role, before the gadget binds (boot)
-#   tabs6-usb-role boot-vbus  VBUS off (boot)
-#
-# Ported from the reference port's tools/usb-role (docs/USB_HOST.md). The
-# port is dual-role in the device tree (dr_mode = "otg", usb-role-switch) and
-# dwc3 lets userspace drive the switch. The fixed read-only s2mm005 checks
-# in tabs6-typec-auto provide permission; this helper owns every effect.
-# A bus-powered device gets no power from
-# the role switch alone: VBUS comes from the SM5705 charger's boost, which has
-# no kernel driver, so it is set over I2C here. Register map from the vendor
-# driver, cross-checked against the live part by the port (USB_HOST.md 2):
-#
-#   0x0c CNTL       bits 2:0   operation mode: 5 = CHG_ON, 7 = USB_OTG
-#   0x14 CHGCNTL6   bits 3:2   OTG current limit: 2 = 900 mA
-#   0x20 FLEDCNTL6  bits 3:0   boost output: 5 = 4500 mV, 0xb = 5100 mV
-#
-# VBUS is never sourced while anything else may be powering the port. The
-# manual host path still requires Discharging. The automatic VBUS-on path
-# remains blocked in the daemon. The separate sink-host path only selects a
-# data role while Charging with CNTL mode 5, and never writes registers.
-# Every host transition requires readable status and an unconfigured UDC.
-#
-# The test (usb-role.test.py) runs this file against a temporary sysfs tree.
-# Paths and timings therefore come from the environment:
-#   TABS6_SYSFS                    sysfs root (/sys)
-#   TABS6_USB_GADGET_UNIT          unit that binds the gadget; restarted after
-#                                  the port returns to device role
-#   TABS6_I2C_DEV                  test override for the resolved device node
-#   TABS6_USB_ROLE_WAIT_S          boot-*: how long to wait for the switch and
-#                                  the I2C bus (20)
+# Operator-only VBUS/role helper and kernel-role detach workaround.
+# The product kernel owns the role. host/device are refused while its
+# read-only s2mm005 driver is bound. Manual commands unbind it first.
+# Chip writes exist ONLY in manual host/device and the unchanged boot-vbus.
+# Register grounding and operator safety: typec.md and typec-phase-b.md.
 set -eu
 
 SYSFS=${TABS6_SYSFS:-/sys}
 GADGET_UNIT=${TABS6_USB_GADGET_UNIT:-}
 I2C_DEV=${TABS6_I2C_DEV:-}
-CHECKER=${TABS6_TYPEC_AUTO:-tabs6-typec-auto}
+CHECKER=${TABS6_TYPEC_MANUAL:-tabs6-typec-manual}
 LOCK=${TABS6_USB_ROLE_LOCK:-/run/lock/tabs6-usb-role.lock}
 WAIT_S=${TABS6_USB_ROLE_WAIT_S:-20}
 
@@ -101,7 +69,7 @@ power_refusal() {
 		return
 	fi
 	status=$(cat "$FUELGAUGE/status") || { echo "fuel gauge read failed"; return; }
-	if [ "$status" = Charging ] || { [ "${TABS6_AUTOMATIC:-0}" != 1 ] && [ "$status" != Discharging ]; }; then
+	if [ "$status" != Discharging ]; then
 		echo "the fuel gauge says $status: something is powering the port"
 		return
 	fi
@@ -151,14 +119,11 @@ vbus_on() {
 		echo "tabs6-usb-role: not powering the port: $why" >&2
 		return 1
 	}
-	# Automatic callers have already qualified three samples. Manual callers
-	# must qualify too, and can never bypass the fixed read-only checks.
-	if [ "${TABS6_AUTOMATIC:-0}" != 1 ]; then
-		for _ in 1 2; do
-			"$CHECKER" --check-host || return 1
-			sleep 0.3
-		done
-	fi
+	# Manual callers must qualify three fresh source samples.
+	for _ in 1 2; do
+		"$CHECKER" --check-host || return 1
+		sleep 0.3
+	done
 	"$CHECKER" --check-host || return 1
 	rmw $REG_FLEDCNTL6 0x0f $BST_OUT_5100MV || return 1
 	rmw $REG_CHGCNTL6 0x0c $((OTG_CURRENT_900MA << 2)) || return 1
@@ -196,20 +161,6 @@ to_host() {
 	fi
 }
 
-# Only the data role changes. Both fresh interlocks include CNTL mode 5;
-# this path never writes charger registers, even on rollback.
-to_sink_host() {
-	local r
-	[ "${TABS6_AUTOMATIC:-0}" = 1 ] || die "sink-host is automatic-only"
-	if ! host_attached && "$CHECKER" --check-sink-host && r=$(role_file) && echo host >"$r" && "$CHECKER" --check-sink-host; then
-		log "role host, sinking power, CNTL mode 5 verified (no register writes)"
-	else
-		log "sink-host interlock/readback failed; returning to device role"
-		data_device || true
-		return 1
-	fi
-}
-
 data_device() {
 	local r failed=0
 	if r=$(role_file); then
@@ -232,13 +183,10 @@ to_device() {
 	return "$failed"
 }
 
-# InputPlumber 0.75.2 can retain a dead evdev source across Kishi power loss.
-# Retire that provider while the host controller is absent, before any new
-# qualification can enumerate the Kishi. Manual role commands stay unchanged.
-to_sink_device() {
+# No role or chip writes. Triggered only by the read-only role watcher.
+# Wait for the kernel's host-controller teardown before retiring providers.
+detached() {
 	local ready=0
-	[ "${TABS6_AUTOMATIC:-0}" = 1 ] || die "sink-device is automatic-only"
-	to_device || return 1
 	for _ in $(seq 1 30); do
 		if [ "$(role)" = device ] && [ "$(usb_devices)" = 0 ]; then
 			ready=1
@@ -246,11 +194,14 @@ to_sink_device() {
 		fi
 		sleep 0.1
 	done
-	[ "$ready" = 1 ] || { log "host controller teardown not verified; staying device"; return 1; }
+	[ "$ready" = 1 ] || { log "host controller teardown not verified"; return 1; }
+	if [ -n "$GADGET_UNIT" ]; then
+		systemctl restart --no-block "$GADGET_UNIT" || return 1
+	fi
 	if timeout --signal=KILL 10s systemctl restart inputplumber.service korri-inputd.service; then
-		log "Kishi input providers restarted with USB absent; staying device"
+		log "Kishi input providers restarted after kernel detach (no role/chip writes)"
 	else
-		log "Kishi input provider teardown failed; staying device"
+		log "Kishi input provider teardown failed"
 		return 1
 	fi
 }
@@ -301,18 +252,46 @@ status() {
 	[ ! -r "$FUELGAUGE/status" ] || echo "fuel gauge: $(cat "$FUELGAUGE/status")"
 }
 
-# A manual choice stops automatic policy until explicitly restarted. Stop
-# before locking: ExecStopPost uses the same serialized off/device path.
-case "${1:-status}" in
-host|device)
-	if [ "${TABS6_AUTOMATIC:-0}" != 1 ]; then
-		systemctl stop tabs6-typec-auto.service
+# The client remains registered after unbind. Resolve its existing OF
+# compatible, not an adapter number or a new persisted override flag.
+kernel_client() {
+	local client found=""
+	for client in "$SYSFS"/bus/i2c/devices/*; do
+		[ -r "$client/of_node/compatible" ] || continue
+		if tr '\0' '\n' <"$client/of_node/compatible" | grep -qx 'samsung,s2mm005-read-only'; then
+			[ -z "$found" ] || die "multiple s2mm005 clients"
+			found=$client
+		fi
+	done
+	echo "$found"
+}
+
+kernel_yield() {
+	local client
+	client=$(kernel_client) || return 1
+	[ -n "$client" ] || return 0
+	# Stop only the workaround, not policy. Driver remove synchronously cancels
+	# sampling and requests DEVICE before it releases the role switch.
+	systemctl stop tabs6-typec-role-watch.service || return 1
+	if [ -e "$client/driver" ]; then
+		echo "${client##*/}" >"$client/driver/unbind" || return 1
+		log "kernel policy unbound for manual operator override"
 	fi
-	;;
-esac
+}
+
+kernel_resume() {
+	local client
+	client=$(kernel_client) || return 1
+	[ -n "$client" ] || return 0
+	if [ ! -e "$client/driver" ]; then
+		echo "${client##*/}" >"$SYSFS/bus/i2c/drivers/s2mm005-read-only/bind" || return 1
+		log "kernel policy rebound; qualification starts from zero"
+	fi
+	systemctl start tabs6-typec-role-watch.service
+}
+
 case "${1:-status}" in
-host|sink-host|sink-device|device|boot-vbus)
-	# boot-vbus can precede tmpfiles, which normally creates /run/lock.
+host|device|boot-vbus)
 	mkdir -p "${LOCK%/*}"
 	exec 9>"$LOCK"
 	flock -x 9
@@ -321,14 +300,25 @@ esac
 
 case "${1:-status}" in
 status) status ;;
-host) to_host ;;
-sink-host) to_sink_host ;;
-sink-device) to_sink_device ;;
-device) to_device ;;
-boot-role) boot_role ;;
+host)
+	kernel_yield || die "could not release kernel role owner"
+	if ! to_host; then
+		log "manual host failed; run device to verify boost-off and resume kernel policy"
+		exit 1
+	fi
+	;;
+device)
+	kernel_yield || die "could not release kernel role owner"
+	to_device && kernel_resume
+	;;
+detached) detached ;;
+boot-role)
+	[ -z "$(kernel_client)" ] || die "kernel owns boot data role"
+	boot_role
+	;;
 boot-vbus) boot_vbus ;;
 *)
-	echo "usage: tabs6-usb-role [status|host|sink-host|sink-device|device|boot-role|boot-vbus]" >&2
+	echo "usage: tabs6-usb-role [status|host|device|detached|boot-role|boot-vbus]" >&2
 	exit 2
 	;;
 esac

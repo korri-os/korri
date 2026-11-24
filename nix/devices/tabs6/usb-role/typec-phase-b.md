@@ -1,6 +1,15 @@
 # Phase B: permanent Kishi V2 with optional pass-through charger
 
-## Current policy: charging host data role only (2026-11-24)
+## Current owner: read-only kernel policy
+
+The Korri product now uses `s2mm005-read-only`, not `tabs6-typec-auto`.
+`typec-kernel.md` describes the exact unchanged sink-host interlocks, 100 ms
+sampling, standard Type-C port, read-only resource access, user-space detach
+workaround and manual override through driver unbind/rebind. There is no
+user-space automatic policy or fallback. The policy/history below records
+prior user-space implementation and measurements, not current instructions.
+
+## Previous user-space policy: charging host data role only (2026-11-24)
 
 `tabs6-typec-auto` may select the **host data role with boost off**. Automatic
 VBUS sourcing remains blocked by the unchanged runtime interlock below.

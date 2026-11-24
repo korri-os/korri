@@ -62,7 +62,6 @@ let
       "tabs6-bt-addr"
       "tabs6-ufs-write-through"
       "tabs6-grow-root"
-      "tabs6-usb-role-boot"
       "tabs6-usb-role-boot-vbus"
     ]
     # rmtfs keeps every modem EFS write in RAM: modemst1/2 and fsg stay unwritten.
@@ -70,13 +69,9 @@ let
     && config.networking.wireless.iwd.settings.DriverQuirks.DefaultInterface == "ath10k_snoc"
     && config.networking.wireless.iwd.settings.General.AddressRandomization == "disabled"
     && config.zramSwap.enable
-    # Automatic policy uses the manual helper; manual commands stop the unit.
-    && config.systemd.services.tabs6-typec-auto.serviceConfig.Restart == "no"
-    && config.systemd.services.tabs6-typec-auto.environment.TABS6_AUTOMATIC == "1"
-    && lib.hasSuffix "tabs6-usb-role device" config.systemd.services.tabs6-typec-auto.serviceConfig.ExecStopPost
-    && lib.hasInfix "--what=sleep --mode=block" config.systemd.services.tabs6-typec-auto.serviceConfig.ExecStart
-    && lib.elem "tabs6-usb-role-boot-vbus.service" config.systemd.services.tabs6-typec-auto.after;
-  roleBoot = c.systemd.services.tabs6-usb-role-boot;
+    # No old user-space chip polling or automatic role writer remains.
+    && !(config.systemd.services ? tabs6-typec-auto)
+    && !(config.systemd.services ? tabs6-typec-status);
 in
 assert common c;
 assert common console;
@@ -146,7 +141,13 @@ assert lib.all (
 assert c.systemd.services.usb-gadget.environment.KORRI_USB_GADGET_NAME == "tabs6";
 assert c.systemd.network.networks."10-usb-gadget".address == [ "10.42.7.1/24" ];
 assert c.tabs6.usbRole.gadgetUnit == "usb-gadget";
-assert lib.elem "usb-gadget.service" roleBoot.before;
+assert !(c.systemd.services ? tabs6-usb-role-boot);
+assert c.systemd.services ? tabs6-typec-role-watch;
+assert !(console.systemd.services ? tabs6-typec-role-watch);
+assert lib.hasInfix "tabs6-typec-role-watch"
+  c.systemd.services.tabs6-typec-role-watch.serviceConfig.ExecStart;
+assert c.systemd.services.tabs6-typec-role-watch.serviceConfig.ReadOnlyPaths == [ "/sys" ];
+assert lib.elem "CONFIG_TYPEC_S2MM005_READ_ONLY=y" resolvedProductConfig;
 assert lib.elem "tabs6-usb-gadget.service" console.systemd.services.tabs6-usb-role-boot.before;
 # Display and input facts.
 assert c.services.korriLinuxHost.compositor.backend == "drm";

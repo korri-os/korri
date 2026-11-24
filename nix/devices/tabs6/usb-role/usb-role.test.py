@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 import unittest
 from pathlib import Path
 
@@ -77,7 +78,6 @@ esac
 """
 
 CNTL, CHGCNTL6, FLEDCNTL6 = "0x0c", "0x14", "0x20"
-
 
 class UsbRole(unittest.TestCase):
     def setUp(self):
@@ -150,7 +150,7 @@ class UsbRole(unittest.TestCase):
         env = {
             "PATH": f"{self.bin}:{os.environ['PATH']}",
             "TABS6_SYSFS": str(self.sys),
-            "TABS6_TYPEC_AUTO": os.environ["TABS6_TEST_AUTO"],
+            "TABS6_TYPEC_MANUAL": os.environ["TABS6_TEST_MANUAL"],
             "TABS6_USB_ROLE_LOCK": str(self.tmp / "lock"),
             "TABS6_TEST_REGS": str(self.regs),
             "TABS6_I2C_DEV": str(self.i2c),
@@ -189,128 +189,6 @@ class UsbRole(unittest.TestCase):
         self.reg("charger", 0x29)
         self.gauge("Charging")
 
-    def test_sink_host_changes_only_data_role_without_register_writes(self):
-        self.charging_kishi()
-        r = self.run_role("sink-host", TABS6_AUTOMATIC=1)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.role(), "host")
-        self.assertEqual(self.reg(CNTL), 0xF5)
-        self.assertEqual(self.writes(), [])
-        self.assertNotIn("stop tabs6-typec-auto.service", self.systemctl())
-
-    def test_sink_host_post_switch_mode_change_or_error_restores_gadget(self):
-        for fault in ("cntl-after-switch", "fail-after-switch"):
-            with self.subTest(fault=fault):
-                self.charging_kishi()
-                self.reg(CNTL, 0xF5)
-                (self.regs / fault).write_text("247\n")
-                r = self.run_role("sink-host", TABS6_AUTOMATIC=1)
-                self.assertNotEqual(r.returncode, 0)
-                self.assertIn("returning to device role", r.stdout)
-                self.assertEqual(self.role(), "device")
-                self.assertEqual(self.writes(), [])
-                self.assertIn("restart --no-block usb-gadget.service", self.systemctl())
-                (self.regs / fault).unlink()
-
-    def test_sink_host_requires_fresh_reads_and_no_configured_pc(self):
-        self.charging_kishi()
-        self.udc("configured")
-        r = self.run_role("sink-host", TABS6_AUTOMATIC=1)
-        self.assertNotEqual(r.returncode, 0)
-        self.assertEqual(self.role(), "device")
-        self.udc("not attached")
-        (self.regs / "offline").touch()
-        r = self.run_role("sink-host", TABS6_AUTOMATIC=1)
-        self.assertNotEqual(r.returncode, 0)
-        self.assertEqual(self.role(), "device")
-        self.assertEqual(self.writes(), [])
-
-    def test_real_daemon_sink_host_unplug_errors_and_pc_lifeline(self):
-        helper = self.bin / "tabs6-usb-role"
-        helper.write_text(f"#!{shutil.which('bash')}\nexec bash {SCRIPT} \"$@\"\n")
-        helper.chmod(0o755)
-        self.charging_kishi()
-        env = self.env(TABS6_USB_ROLE_HELPER=helper)
-        with (self.tmp / "daemon.log").open("w+") as log:
-            proc = subprocess.Popen([os.environ["TABS6_TEST_AUTO"]], env=env,
-                                    stdout=log, stderr=subprocess.STDOUT)
-            def wait_role(expected):
-                deadline = time.monotonic() + 3
-                while time.monotonic() < deadline:
-                    self.assertIsNone(proc.poll(), (self.tmp / "daemon.log").read_text())
-                    if self.role() == expected:
-                        return
-                    time.sleep(0.01)
-                self.fail((self.tmp / "daemon.log").read_text())
-            try:
-                wait_role("host")
-                self.assertEqual(self.reg(CNTL) & 7, 5)
-                # Unplug charger: fail closed even before gauge catches up.
-                self.reg("muic", 0)
-                wait_role("device")
-                time.sleep(0.2)
-                self.assertIn("restart inputplumber.service korri-inputd.service", self.systemctl())
-                self.gauge("Discharging")
-                (self.regs / "func").write_text("0x0e 0x24 0xff 0x8f\n")
-                time.sleep(1.2)
-                self.assertEqual(self.role(), "device")
-                self.charging_kishi()
-                wait_role("host")
-                failure = self.regs / "fail-transfer-w2@0x33-0x00-0x20"
-                failure.touch()
-                wait_role("device")
-                time.sleep(0.4)
-                self.assertEqual(self.role(), "device")
-                failure.unlink()
-                wait_role("host")
-                # Kishi/charger removed, then PC attached in UFP role.
-                (self.regs / "func").write_text("0x00 0x44 0xff 0x88\n")
-                wait_role("device")
-                self.charging_kishi()
-                (self.regs / "func").write_text("0x15 0x24 0xff 0x99\n")
-                self.udc("configured")
-                time.sleep(1.2)
-                self.assertEqual(self.role(), "device")
-                self.assertIn("restart --no-block usb-gadget.service", self.systemctl())
-                self.assertEqual(self.reg(CNTL) & 7, 5)
-                self.assertFalse(any(int(w.split()[1]) & 7 == 7
-                                     for w in self.writes() if w.startswith("0x0c ")))
-                # A provider teardown failure stops automatic policy, not
-                # another host attempt. The device lifeline stays selected.
-                self.udc("not attached")
-                self.charging_kishi()
-                wait_role("host")
-                (self.regs / "provider-failure").touch()
-                self.reg("muic", 0)
-                self.assertNotEqual(proc.wait(timeout=4), 0)
-                self.assertEqual(self.role(), "device")
-                self.assertEqual(self.reg(CNTL) & 7, 5)
-            finally:
-                proc.terminate()
-                proc.wait(timeout=5)
-
-    def test_sink_detach_restarts_providers_only_after_device_and_boost_off(self):
-        for failed in (False, True):
-            with self.subTest(failed=failed):
-                self.set_role("host")
-                self.reg(CNTL, 0xF5)
-                if failed:
-                    (self.regs / "provider-failure").touch()
-                r = self.run_role("sink-device", TABS6_AUTOMATIC=1)
-                self.assertEqual(r.returncode == 0, not failed, r.stderr)
-                self.assertEqual(self.role(), "device")
-                self.assertEqual(self.reg(CNTL) & 7, 5)
-                self.assertIn("provider-restart role=device cntl=245",
-                              (self.regs / "order").read_text())
-
-    def test_sink_detach_refuses_provider_restart_with_host_devices_remaining(self):
-        (self.sys / "bus/usb/devices/1-1").mkdir()
-        self.set_role("host")
-        r = self.run_role("sink-device", TABS6_AUTOMATIC=1)
-        self.assertNotEqual(r.returncode, 0)
-        self.assertEqual(self.role(), "device")
-        self.assertNotIn("restart inputplumber.service korri-inputd.service", self.systemctl())
-
     def test_host_powers_the_port_then_switches(self):
         r = self.run_role("host")
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -345,7 +223,7 @@ class UsbRole(unittest.TestCase):
         self.assertEqual(self.role(), "device")
         self.assertEqual(self.reg(CNTL), 0xF5)
         self.assertEqual(self.reg(FLEDCNTL6), 0xA5)
-        self.assertEqual(self.systemctl(), ["stop tabs6-typec-auto.service", "stop tabs6-typec-auto.service", "restart --no-block usb-gadget.service"])
+        self.assertEqual(self.systemctl(), ["restart --no-block usb-gadget.service"])
 
     def test_status(self):
         (self.sys / "bus/usb/devices/1-1").mkdir()
@@ -491,13 +369,6 @@ class UsbRole(unittest.TestCase):
                 self.assertEqual(self.writes(), [])
                 self.assertEqual(self.role(), "device")
 
-    def test_automatic_gauge_policy_uses_non_charging_with_all_other_checks(self):
-        for status in ("Full", "Not charging", "Unknown"):
-            self.gauge(status)
-            r = self.run_role("host", TABS6_AUTOMATIC=1)
-            self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(self.run_role("device", TABS6_AUTOMATIC=1).returncode, 0)
-
     def test_empty_or_unreadable_gauge_denies_host(self):
         for status in ("", None):
             self.gauge(status)
@@ -521,64 +392,95 @@ class UsbRole(unittest.TestCase):
             self.assertEqual(self.role(), "device")
             (self.regs / condition).unlink()
 
-    def test_real_daemon_replays_kishi_charger_and_fault_transitions(self):
+    def test_manual_override_unbinds_before_existing_checks_and_device_rebinds(self):
+        driver = self.sys / "bus/i2c/drivers/s2mm005-read-only"
+        driver.mkdir(parents=True)
+        client = self.sys / "bus/i2c/devices/6-0033"
+        (client / "of_node").mkdir(parents=True)
+        (client / "of_node/compatible").write_bytes(b"samsung,s2mm005-read-only\0")
+        (client / "driver").symlink_to(driver, target_is_directory=True)
+        os.mkfifo(driver / "unbind")
+        os.mkfifo(driver / "bind")
+        self.set_role("host")
+        def unbind():
+            with (driver / "unbind").open() as f:
+                self.assertEqual(f.read().strip(), "6-0033")
+            self.set_role("device")  # the real driver's remove path
+            (client / "driver").unlink()
+            (self.regs / "order").write_text("kernel-remove role=device\n")
+        worker = threading.Thread(target=unbind, daemon=True)
+        worker.start()
+        r = self.run_role("host")
+        worker.join(timeout=2)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.role(), "host")
+        self.assertEqual(self.reg(CNTL) & 7, 7)
+        self.assertIn("stop tabs6-typec-role-watch.service", self.systemctl())
+        self.assertTrue((self.regs / "order").read_text().startswith("kernel-remove role=device"))
+        self.assertFalse((client / "driver").exists())
+        def bind():
+            with (driver / "bind").open() as f:
+                self.assertEqual(f.read().strip(), "6-0033")
+            self.assertEqual(self.role(), "device")
+            self.assertEqual(self.reg(CNTL) & 7, 5)
+            (client / "driver").symlink_to(driver, target_is_directory=True)
+        worker = threading.Thread(target=bind, daemon=True)
+        worker.start()
+        r = self.run_role("device")
+        worker.join(timeout=2)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue((client / "driver").exists())
+        self.assertIn("start tabs6-typec-role-watch.service", self.systemctl())
+
+    def test_detach_workaround_only_restarts_after_kernel_teardown(self):
+        self.set_role("device")
+        self.reg(CNTL, 5)
+        r = self.run_role("detached")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.role(), "device")
+        self.assertIn("restart inputplumber.service korri-inputd.service", self.systemctl())
+        (self.sys / "bus/usb/devices/1-1").mkdir()
+        before = self.systemctl()
+        r = self.run_role("detached")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.systemctl(), before)
+        self.assertEqual(self.writes(), [])
+
+    def test_real_role_watcher_restarts_on_host_to_device_without_role_or_chip_writes(self):
         helper = self.bin / "tabs6-usb-role"
-        helper.write_text(f"#!{shutil.which('bash')}\nexec bash {SCRIPT} \"$@\"\n")
+        helper.write_text(f'#!{shutil.which("bash")}\nexec bash {SCRIPT} "$@"\n')
         helper.chmod(0o755)
-        env = self.env(TABS6_USB_ROLE_HELPER=helper)
-        trace = [dict(part.split("=", 1) for part in line.split())
-                 for line in Path(os.environ["TABS6_TEST_TRACE"]).read_text().splitlines()]
-        def replay(index):
-            row = trace[index]
-            func = " ".join("0x" + row["func"][i:i+2] for i in range(0, 8, 2))
-            (self.regs / "func").write_text(func + "\n")
-            self.reg("muic", int(row["muic_vbus"], 16))
-            self.reg("charger", int(row["chg_status"], 16))
-            self.gauge(row["gauge"].strip('"'))
-        with (self.tmp / "daemon.log").open("w+") as log:
-            proc = subprocess.Popen([os.environ["TABS6_TEST_AUTO"]], env=env,
+        self.set_role("host")
+        self.reg(CNTL, 5)
+        with (self.tmp / "watch.log").open("w") as log:
+            proc = subprocess.Popen([os.environ["TABS6_TEST_WATCH"]],
+                                    env=self.env(TABS6_USB_ROLE_HELPER=helper),
                                     stdout=log, stderr=subprocess.STDOUT)
-            def wait_off(limit=1):
-                start = time.monotonic()
-                while (self.role() != "device" or self.reg(CNTL) & 7 != 5) and time.monotonic() - start < limit:
-                    self.assertIsNone(proc.poll(), (self.tmp / "daemon.log").read_text())
-                    time.sleep(0.01)
-                self.assertEqual(self.role(), "device", (self.tmp / "daemon.log").read_text())
-                self.assertEqual(self.reg(CNTL) & 7, 5)
-                return time.monotonic() - start
             try:
-                # Even a permanently attached source-qualified Kishi must
-                # not grant automatic HOST until direction is proven.
-                time.sleep(1.3)
+                time.sleep(0.15)
                 self.assertIsNone(proc.poll())
+                self.assertEqual(self.systemctl(), [])
+                # A transient unreadable role must not erase the last host.
+                role_path = self.sys / "class/usb_role/a600000.usb-role-switch/role"
+                role_path.unlink()
+                time.sleep(0.15)
+                self.assertIsNone(proc.poll())
+                self.set_role("device")
+                deadline = time.monotonic() + 2
+                while "restart inputplumber.service korri-inputd.service" not in self.systemctl():
+                    self.assertIsNone(proc.poll(), (self.tmp / "watch.log").read_text())
+                    self.assertLess(time.monotonic(), deadline)
+                    time.sleep(0.01)
                 self.assertEqual(self.role(), "device")
-                self.assertNotIn("0x0c 247", self.writes())
-                self.assertIn("mode=observe automatic_host=blocked", (self.tmp / "daemon.log").read_text())
-                self.assertIn("staying_device=true", (self.tmp / "daemon.log").read_text())
-                (self.regs / "devices").write_text("0x08 0x00 0x00\n")
-                time.sleep(1.0)
-                self.assertEqual(self.role(), "device")
-                self.assertNotIn("0x0c 247", self.writes())
-                for index in (5, 6, 7, 8, 9, 11, 12):
-                    replay(index)
-                    time.sleep(0.32)
-                    self.assertEqual(self.role(), "device")
-                    self.assertNotIn("0x0c 247", self.writes())
-                # Unexpected boost or a late role completion must be undone,
-                # never inherited as permission by observe mode.
-                self.set_role("host")
-                self.reg(CNTL, 0xF7)
-                off_time = wait_off()
-                self.assertLess(off_time, 1.0)
-                (self.regs / "fail-transfer-w2@0x33-0x00-0x20").touch()
-                self.set_role("host")
-                self.assertLess(wait_off(), 1.0)
-                self.assertNotIn("0x0c 247", self.writes())
-                print(f"daemon observe: unexpected boost off/device={off_time:.3f}s; never enabled HOST")
+                self.assertEqual(self.writes(), [])
+                time.sleep(0.15)
+                self.assertEqual(self.systemctl().count("restart inputplumber.service korri-inputd.service"), 1)
             finally:
                 proc.terminate()
                 proc.wait(timeout=5)
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

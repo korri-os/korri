@@ -17,14 +17,14 @@ pkgs.runCommand "tabs6-usb-role-check"
   ''
     shellcheck -s bash ${./tabs6-usb-role.sh} ${../bluetooth/tabs6-bt-pair.sh}
     cp ${./.}/*.rs ${./.}/*.txt .
-    rustfmt --edition 2021 --check typec-status.rs typec-auto.rs typec.rs
+    rustfmt --edition 2021 --check typec-status.rs typec-manual.rs typec-role-watch.rs typec.rs
     rustc --edition=2021 -D warnings --test typec-status.rs -o typec-status-tests
     ./typec-status-tests
     rustc --edition=2021 -D warnings typec-status.rs -o typec-status
-    rustc --edition=2021 -D warnings --test typec-auto.rs -o typec-auto-tests
-    ./typec-auto-tests
-    rustc --edition=2021 -D warnings typec-auto.rs -o tabs6-typec-auto
-    export TABS6_TEST_AUTO="$PWD/tabs6-typec-auto"
+    rustc --edition=2021 -D warnings typec-manual.rs -o tabs6-typec-manual
+    rustc --edition=2021 -D warnings typec-role-watch.rs -o tabs6-typec-role-watch
+    export TABS6_TEST_MANUAL="$PWD/tabs6-typec-manual"
+    export TABS6_TEST_WATCH="$PWD/tabs6-typec-role-watch"
     export TABS6_TEST_TRACE=${./phase-a-transition.txt}
     python3 ${./usb-role.test.py} ${./tabs6-usb-role.sh}
     # Arguments must never open an alternate register/firmware path.

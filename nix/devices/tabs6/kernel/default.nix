@@ -62,6 +62,7 @@ let
   # MCC45TR/nabu-linux-kernel 7.2.2 (README.md). Product only, with its
   # device tree node (dts/sm8150-samsung-gts6lwifi-venus.dtsi).
   ++ lib.optionals product [
+    ./patches/usb-typec-wire-s2mm005.patch
     ./patches/media-iris-sm8150-legacy-vpu5.patch
     ./patches/media-iris-gen1-encoder-for-sunshine.patch
   ];
@@ -77,6 +78,9 @@ let
       install -m644 ${./drivers/panel-samsung-ana38401.c} drivers/gpu/drm/panel/panel-samsung-ana38401.c
     ''
     + lib.optionalString product ''
+      install -m644 ${./drivers/s2mm005.c} drivers/usb/typec/s2mm005.c
+      install -m644 ${./drivers/s2mm005-policy.h} drivers/usb/typec/s2mm005-policy.h
+      cat ${./dts/sm8150-samsung-gts6lwifi-typec.dtsi} >> arch/arm64/boot/dts/qcom/${dtbName}.dts
       cat ${./dts/sm8150-samsung-gts6lwifi-venus.dtsi} >> arch/arm64/boot/dts/qcom/${dtbName}.dts
       cat ${./dts/sm8150-samsung-gts6lwifi-sdcard.dtsi} >> arch/arm64/boot/dts/qcom/${dtbName}.dts
     '';

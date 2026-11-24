@@ -1,6 +1,6 @@
-# Automatic VBUS sourcing stays blocked. Charging + sink-ready/DFP permits
-# only the host data role, without charger writes. All effects are serialized.
-# Every boot starts device/boost-off. See typec-phase-b.md.
+# The product kernel owns the data role. User space only maintains boot
+# boost-off and the temporary provider restart workaround after kernel detach.
+# The console retains its operator-only host/device path. See typec-phase-b.md.
 #
 # Korri's product USB gadget (nix/product/usb-gadget.nix) owns the gadget
 # itself. It has no notion of a role switch or of VBUS, because every other
@@ -19,6 +19,7 @@ let
     runtimeInputs = [
       pkgs.coreutils
       pkgs.i2c-tools
+      pkgs.gnugrep
       pkgs.util-linux
       typecStatus
       config.systemd.package
@@ -42,65 +43,28 @@ in
     boot.kernelModules = [ "i2c-dev" ];
     environment.systemPackages = [ usbRole ];
 
-    # Phase A observer only. No role changes, register data writes, interrupt
-    # acknowledgement or firmware loading. Existing charge/boot services stay.
-    systemd.services.tabs6-typec-status = {
-      description = "Tab S6 USB-C read-only Phase A observer";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "systemd-modules-load.service" ];
-      path = [
-        pkgs.i2c-tools
-        pkgs.libgpiod
-        pkgs.coreutils
-      ];
-      serviceConfig = {
-        ExecStart = lib.getExe typecStatus;
-        Restart = "on-failure";
-        RestartSec = 5;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        NoNewPrivileges = true;
-        CapabilityBoundingSet = "";
-        RestrictAddressFamilies = [ "AF_UNIX" ];
-      };
-    };
-
-    systemd.services.tabs6-typec-auto = {
-      description = "Tab S6 USB-C charging host data role (automatic VBUS sourcing blocked)";
+    # No I2C status daemon: the s2mm005 client now owns address 0x33.
+    # This process only reads the selected role and runs the detach workaround.
+    systemd.services.tabs6-typec-role-watch = lib.mkIf (!config.tabs6.console.enable) {
+      description = "Tab S6 kernel USB role detach input workaround";
       wantedBy = [ "multi-user.target" ];
       after = [
-        "tabs6-usb-role-boot.service"
-        "tabs6-usb-role-boot-vbus.service"
-        "${cfg.gadgetUnit}.service"
+        "usb-gadget.service"
+        "systemd-modules-load.service"
       ];
-      path = [
-        pkgs.coreutils
-        pkgs.i2c-tools
-      ];
-      environment = {
-        TABS6_USB_ROLE_HELPER = lib.getExe usbRole;
-        TABS6_USB_GADGET_UNIT = "${cfg.gadgetUnit}.service";
-        TABS6_AUTOMATIC = "1";
-      };
+      environment.TABS6_USB_ROLE_HELPER = lib.getExe usbRole;
       serviceConfig = {
-        # Keep suspend from leaving boost on while sampling is stopped.
-        ExecStart = "${config.systemd.package}/bin/systemd-inhibit --what=sleep --mode=block --who=tabs6-typec-auto --why=USB-VBUS-safety ${typecStatus}/bin/tabs6-typec-auto";
-        ExecStopPost = "${lib.getExe usbRole} device";
-        # A failure requires an explicit restart, never another enable attempt.
-        Restart = "no";
-        TimeoutStopSec = 5;
+        ExecStart = "${typecStatus}/bin/tabs6-typec-role-watch";
+        Restart = "on-failure";
+        RestartSec = 1;
         ProtectSystem = "strict";
         ProtectHome = true;
         NoNewPrivileges = true;
-        ReadWritePaths = [
-          "/sys"
-          "/run/lock"
-        ];
+        ReadOnlyPaths = [ "/sys" ];
       };
     };
 
-    systemd.services.tabs6-usb-role-boot = {
+    systemd.services.tabs6-usb-role-boot = lib.mkIf config.tabs6.console.enable {
       description = "Tab S6 USB-C role: gadget at boot";
       wantedBy = [ "sysinit.target" ];
       before = [

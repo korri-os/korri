@@ -1,0 +1,27 @@
+/* Product only. Stock DTBO: s2mm005 on se15, SM5705 charger/MUIC on se4.
+ * IRQ TLMM gpio123 is deliberately NOT requested: it may stay asserted and
+ * the driver must never acknowledge/clear it. See usb-role/typec.md.
+ */
+&i2c15 {
+	typec@33 {
+		compatible = "samsung,s2mm005-read-only";
+		reg = <0x33>;
+		samsung,sm5705-i2c = <&i2c4>;
+		power-supplies = <&sm5705_fg>;
+
+		port {
+			s2mm005_usb: endpoint {
+				remote-endpoint = <&dwc3_typec>;
+			};
+		};
+	};
+};
+
+&usb_1_dwc3 {
+	usb-role-switch-default-mode = "peripheral";
+	port {
+		dwc3_typec: endpoint {
+			remote-endpoint = <&s2mm005_usb>;
+		};
+	};
+};

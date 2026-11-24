@@ -1,4 +1,13 @@
-# Tab S6 Type-C, stage 1
+# Tab S6 Type-C register grounding
+
+## Current owner
+
+The Korri product uses the read-only kernel `s2mm005-read-only` driver for
+data-role policy and the standard Type-C class. See `typec-kernel.md` for
+resource choices, interlocks, manual unbind/rebind and tests. The Phase A
+observer below is historical diagnostic work; it is no longer a boot service
+and cannot access 0x33 while the kernel driver is bound. All register and
+firmware safety limits below still apply.
 
 ## Safety boundary
 
@@ -46,7 +55,7 @@ observer resolves adapters by their `of_node` controller name, rejecting
 missing or duplicate matches. GPIO chip lookup also uses its OF node, the
 SM8150 TLMM at 0x3100000, not a gpiochip number.
 
-## Choice
+## Phase A choice (superseded)
 
 Use a small std-only Rust userspace observer, I2C_RDWR reads through i2ctransfer
 and gpio-cdev edges through libgpiod. This avoids introducing a kernel driver
@@ -55,7 +64,7 @@ Only enabling the existing GENI I2C adapter requires a kernel change. Status
 is logged every 250 ms plus IRQ edges; no Type-C policy runs in Phase A.
 
 Cost: subprocess reads are not atomic across the two chips, and this observer
-is not a production role-switch policy. Phase B must not use cached log data
+is not a production role-switch policy. Later policy must not use cached log data
 as permission to power the port. It needs a fresh, consistent safety snapshot
 immediately before each enable and fail-closed handling while power is on.
 
