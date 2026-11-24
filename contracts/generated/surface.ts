@@ -97,6 +97,12 @@ export type SurfaceInstallBlock = "noRunner" | "notEnoughSpace" | "noSource" | "
 export type SurfaceInstallHere = { _tag: "Offered" } | { _tag: "NeedsPlugin"; pluginTitle: string } | { _tag: "Checking" } | { _tag: "Installing"; installId: string } | { _tag: "Unavailable"; reason: SurfaceInstallBlock; bytes?: number };
 
 /**
+ * How an install yields to play (ADR 0092, #556). The surface words it.
+ * `slowed`: it goes on at a lower pace. `paused`: it waits.
+ */
+export type SurfaceInstallPace = "slowed" | "paused";
+
+/**
  * Where one install stands (ADR 0092). One install runs at a time.
  *
  * - `Waiting`: in the line, behind the one that runs. `bytes` is the size
@@ -104,11 +110,22 @@ export type SurfaceInstallHere = { _tag: "Offered" } | { _tag: "NeedsPlugin"; pl
  * - `Installing`: the one that runs. `progress.total` is the size; absent
  * while the size is unknown (unpacking). `secondsLeft` is Korri's
  * prediction of the time left; absent until Korri has measured a speed.
+ * `yielding` says that it is slowed or paused for play, and why; absent
+ * at full pace.
  * - `Failed`: it stopped, and `reason` says why in user-facing words. Its
  * verified pieces may stay so that a new try resumes; `CancelInstall`
  * throws it away.
  */
-export type SurfaceInstallState = { _tag: "Waiting"; bytes?: number } | { _tag: "Installing"; progress: SurfaceProgress; secondsLeft?: number } | { _tag: "Failed"; reason: string };
+export type SurfaceInstallState = { _tag: "Waiting"; bytes?: number } | { _tag: "Installing"; progress: SurfaceProgress; secondsLeft?: number; yielding?: SurfaceInstallYield } | { _tag: "Failed"; reason: string };
+
+/**
+ * Why an install yields (ADR 0092, #556). `game`: a game runs on this
+ * device, also one it streams to others. `netplay`: a netplay session runs
+ * on this device. `stream`: this device watches a stream. `sourcesBusy`:
+ * every device that serves it refused for now, because it plays or its
+ * battery is low.
+ */
+export type SurfaceInstallYieldReason = "game" | "netplay" | "stream" | "sourcesBusy";
 
 /**
  * The launch settings editor for one game, opened from a game action and
@@ -620,6 +637,15 @@ export interface SurfaceInstall {
 	 * stands.
 	 */
 	streamMeanwhile?: true;
+}
+
+/**
+ * An install that yields to play: how, and why. Grounded in the install
+ * sources' `InstallYield { pace, reason }` (acquisition/pieces.rs, #556).
+ */
+export interface SurfaceInstallYield {
+	pace: SurfaceInstallPace;
+	reason: SurfaceInstallYieldReason;
 }
 
 /**

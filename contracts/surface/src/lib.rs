@@ -287,6 +287,41 @@ pub enum SurfaceInstallHere {
     },
 }
 
+/// How an install yields to play (ADR 0092, #556). The surface words it.
+/// `slowed`: it goes on at a lower pace. `paused`: it waits.
+#[typeshare(serialized_as = "SurfaceInstallPaceWire")]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SurfaceInstallPace {
+    Slowed,
+    Paused,
+}
+
+/// Why an install yields (ADR 0092, #556). `game`: a game runs on this
+/// device, also one it streams to others. `netplay`: a netplay session runs
+/// on this device. `stream`: this device watches a stream. `sourcesBusy`:
+/// every device that serves it refused for now, because it plays or its
+/// battery is low.
+#[typeshare(serialized_as = "SurfaceInstallYieldReasonWire")]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SurfaceInstallYieldReason {
+    Game,
+    Netplay,
+    Stream,
+    SourcesBusy,
+}
+
+/// An install that yields to play: how, and why. Grounded in the install
+/// sources' `InstallYield { pace, reason }` (acquisition/pieces.rs, #556).
+#[typeshare]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceInstallYield {
+    pub pace: SurfaceInstallPace,
+    pub reason: SurfaceInstallYieldReason,
+}
+
 /// Where one install stands (ADR 0092). One install runs at a time.
 ///
 /// - `Waiting`: in the line, behind the one that runs. `bytes` is the size
@@ -294,6 +329,8 @@ pub enum SurfaceInstallHere {
 /// - `Installing`: the one that runs. `progress.total` is the size; absent
 ///   while the size is unknown (unpacking). `secondsLeft` is Korri's
 ///   prediction of the time left; absent until Korri has measured a speed.
+///   `yielding` says that it is slowed or paused for play, and why; absent
+///   at full pace.
 /// - `Failed`: it stopped, and `reason` says why in user-facing words. Its
 ///   verified pieces may stay so that a new try resumes; `CancelInstall`
 ///   throws it away.
@@ -309,6 +346,8 @@ pub enum SurfaceInstallState {
         progress: SurfaceProgress,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         seconds_left: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        yielding: Option<SurfaceInstallYield>,
     },
     Failed {
         reason: String,
@@ -2587,12 +2626,17 @@ mod tests {
                     total: Some(4.0),
                 },
                 seconds_left: Some(300.0),
+                yielding: Some(SurfaceInstallYield {
+                    pace: SurfaceInstallPace::Paused,
+                    reason: SurfaceInstallYieldReason::SourcesBusy,
+                }),
             },
             play_when_ready: Some(SurfaceTrue),
             stream_meanwhile: Some(SurfaceTrue),
         };
         let wire = json!({"id": "i", "title": "Anguna", "gameId": "g",
-            "state": {"_tag": "Installing", "progress": {"done": 1.0, "total": 4.0}, "secondsLeft": 300.0},
+            "state": {"_tag": "Installing", "progress": {"done": 1.0, "total": 4.0}, "secondsLeft": 300.0,
+                "yielding": {"pace": "paused", "reason": "sourcesBusy"}},
             "playWhenReady": true, "streamMeanwhile": true});
         assert_eq!(serde_json::to_value(&install).unwrap(), wire);
         assert_eq!(

@@ -18,7 +18,8 @@ use crate::{
     RpcFailure,
 };
 use korri_surface_treaty::{
-    SurfaceInstallBlock, SurfaceInstallHere, SurfaceInstallState, SurfaceProgress, SurfaceTrue,
+    SurfaceInstallBlock, SurfaceInstallHere, SurfaceInstallPace, SurfaceInstallState,
+    SurfaceInstallYield, SurfaceInstallYieldReason, SurfaceProgress, SurfaceTrue,
 };
 
 /// The install manager with configured answers, recording what it was asked.
@@ -363,6 +364,7 @@ fn running(access: &Configured, done: u64, total: u64) {
             done,
             total: Some(total),
             bytes_per_second: None,
+            yielding: None,
         },
     }];
 }
@@ -401,6 +403,7 @@ async fn a_slow_play_here_asks_once_whether_to_stream_meanwhile_and_waiting_keep
     let SurfaceInstallState::Installing {
         progress,
         seconds_left: Some(left),
+        ..
     } = asked.state
     else {
         panic!("a prediction: {:?}", asked.state)
@@ -524,6 +527,10 @@ async fn the_list_runs_first_waits_next_and_failed_last_and_each_can_go() {
                 done: 10,
                 total: Some(100),
                 bytes_per_second: Some(9.0),
+                yielding: Some(SurfaceInstallYield {
+                    pace: SurfaceInstallPace::Slowed,
+                    reason: SurfaceInstallYieldReason::Game,
+                }),
             },
         },
         LineEntry {
@@ -558,7 +565,12 @@ async fn the_list_runs_first_waits_next_and_failed_last_and_each_can_go() {
                 done: 10.0,
                 total: Some(100.0)
             },
-            seconds_left: Some(10.0)
+            seconds_left: Some(10.0),
+            // Slowed for a game here: the model says how and why.
+            yielding: Some(SurfaceInstallYield {
+                pace: SurfaceInstallPace::Slowed,
+                reason: SurfaceInstallYieldReason::Game,
+            }),
         }
     );
     assert_eq!(

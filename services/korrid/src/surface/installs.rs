@@ -30,7 +30,7 @@ use std::{
 use futures::future::BoxFuture;
 use korri_surface_treaty::{
     SurfaceAction, SurfaceGameDownload, SurfaceInstall, SurfaceInstallBlock, SurfaceInstallHere,
-    SurfaceInstallState, SurfaceProgress, SurfaceStatus, SurfaceTrue,
+    SurfaceInstallState, SurfaceInstallYield, SurfaceProgress, SurfaceStatus, SurfaceTrue,
 };
 
 use super::{
@@ -104,6 +104,8 @@ pub enum LineState {
         total: Option<u64>,
         /// The speed the install source measured, when it reports one.
         bytes_per_second: Option<f64>,
+        /// Slowed or paused for play, and why (#556); None at full pace.
+        yielding: Option<SurfaceInstallYield>,
     },
     Failed {
         reason: String,
@@ -459,30 +461,30 @@ impl Installs {
             };
             shown.push(entry.member.clone());
             let install_state = match (&entry.state, job) {
-                (LineState::Running { done, total, .. }, Some(job)) => {
-                    SurfaceInstallState::Installing {
-                        progress: SurfaceProgress {
-                            done: *done as f64,
-                            total: total.map(|total| total as f64),
-                        },
-                        seconds_left: total.and_then(|total| seconds_left(*done, total, job.speed)),
-                    }
-                }
                 (
                     LineState::Running {
                         done,
                         total,
                         bytes_per_second,
+                        yielding,
                     },
-                    None,
-                ) => SurfaceInstallState::Installing {
-                    progress: SurfaceProgress {
-                        done: *done as f64,
-                        total: total.map(|total| total as f64),
-                    },
-                    seconds_left: total
-                        .and_then(|total| seconds_left(*done, total, *bytes_per_second)),
-                },
+                    job,
+                ) => {
+                    // A device install measures its own speed; a provider
+                    // download reports one.
+                    let speed = match job {
+                        Some(job) => job.speed,
+                        None => *bytes_per_second,
+                    };
+                    SurfaceInstallState::Installing {
+                        progress: SurfaceProgress {
+                            done: *done as f64,
+                            total: total.map(|total| total as f64),
+                        },
+                        seconds_left: total.and_then(|total| seconds_left(*done, total, speed)),
+                        yielding: *yielding,
+                    }
+                }
                 (LineState::Waiting { bytes }, _) => SurfaceInstallState::Waiting {
                     bytes: bytes.map(|bytes| bytes as f64),
                 },

@@ -5582,11 +5582,13 @@ fn line_state(state: &acquisition::ArtifactState) -> Option<surface::installs::L
             done: *bytes_done,
             total: *bytes_total,
             bytes_per_second: *bytes_per_second,
+            yielding: None,
         },
         A::Unpacking => L::Running {
             done: 0,
             total: None,
             bytes_per_second: None,
+            yielding: None,
         },
         A::Failed { reason } => L::Failed {
             reason: reason.message.clone(),
@@ -5638,6 +5640,8 @@ impl surface::installs::InstallsAccess for InstallFacts {
                                 done: bytes_done,
                                 total: Some(bytes_total),
                                 bytes_per_second: None,
+                                // #556: `status.yielding` once it lands.
+                                yielding: None,
                             },
                             _ => return None,
                         };
@@ -5654,6 +5658,7 @@ impl surface::installs::InstallsAccess for InstallFacts {
                             done: 0,
                             total: None,
                             bytes_per_second: None,
+                            yielding: None,
                         },
                         J::Downloading {
                             bytes_done,
@@ -5663,6 +5668,8 @@ impl surface::installs::InstallsAccess for InstallFacts {
                             done: bytes_done,
                             total: bytes_total,
                             bytes_per_second,
+                            // #556: the provider job's yield once it lands.
+                            yielding: None,
                         },
                         J::Imported { .. } | J::Failed { .. } | J::Cancelled => return None,
                     };
