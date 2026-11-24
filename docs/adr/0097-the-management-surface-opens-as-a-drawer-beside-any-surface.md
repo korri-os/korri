@@ -29,16 +29,25 @@ surface.
   the person came for, or a short list of what matters now. Anything deeper
   pulls the drawer fully open.
 - While the drawer is open, the surface behind cannot be used and is dimmed
-  heavily. It is never resized. Whether it also slides aside or stays in
-  place under the drawer is decided on a mockup.
+  heavily. It is never resized and it does not move: the drawer covers it.
+  The owner tried both forms on a mockup and chose this one.
 - All input goes to the drawer while it is open. Back goes up one level and
   then closes it. Closing keeps what the person typed. When it closes, the
   surface behind has its focus where the person left it.
 - One host action opens the drawer, and no surface can block it. It replaces
   the L1 + R1 surface cycle, which was a testing aid and never a product
-  decision. Choosing a surface is a view inside the drawer. Which button
-  opens the drawer is not decided: Guide is wanted, and Guide already opens
-  the gameplay overlay in a game (ADR 0053) and a surface's own menu.
+  decision. Choosing a surface is a view inside the drawer. 
+- Guide opens the drawer. A tap of Guide stays the surface's own, as today.
+  Holding Guide always opens the drawer. A surface that has no menu of its
+  own lets the tap open the drawer too. F2 does the same on a keyboard. The
+  hold is the way out that no surface can block, so first-time setup teaches
+  it.
+- The drawer is a strip of two columns. Part open shows one of them; fully
+  open shows both. Neither column changes between the stops, so the move from
+  one stop to the other swaps no content and the focus stays where it is.
+- The drawer has few words. A row is a name and its present value. A value
+  is drawn as a mark where a mark says it faster. No sentence stands where a
+  row would do.
 - A surface may ask the host to open the drawer at one capability. This is a
   new request in the treaty.
 - A surface may draw every capability itself and need the drawer for nothing.
@@ -84,5 +93,10 @@ surface.
   less common choice, taken for small specialised surfaces.
 - A hidden panel is found less often than visible navigation. A surface that
   shows no way in relies on the person knowing the button.
-- Which edge the drawer comes from is a design choice not yet made. Velvet's
-  own sheets come from the right.
+- The mockup draws the drawer from the left edge, so that its first column
+  stays where it is and the second appears beside it, as in the Xbox guide.
+  Velvet's own sheets come from the right. The owner has not ruled on the
+  edge.
+- Sony swapped tap and hold on its system button between two consoles and
+  met years of complaints. A tap of Guide therefore keeps its present
+  meaning in every surface.
