@@ -482,6 +482,8 @@ fn linux_viewer_reads_sysfs_device_tree_and_reports_read_failures() {
     for compatible in [
         b"device\0qcom,sm8550\0".as_slice(),
         b"qcom,sm8250\0".as_slice(),
+        b"samsung,gts6lwifi\0qcom,sm8150p\0qcom,sm8150\0".as_slice(),
+        b"oneplus,enchilada\0qcom,sdm845\0".as_slice(),
     ] {
         std::fs::write(&path, compatible).unwrap();
         assert_eq!(

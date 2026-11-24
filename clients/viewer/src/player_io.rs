@@ -14,20 +14,20 @@ pub(crate) struct PlayerIo {
     _mapping: Option<CString>,
     audio_device: Option<CString>,
     vaapi: bool,
-    /// Moonlight's `-platform v4l2request`, the handheld path.
-    request: bool,
+    /// A handheld presenter, not the PC SDL or VA-API presenter.
+    handheld: bool,
     /// The carried C audio renderers, or their Rust port (#391 step F).
     audio_output: audio_output::Kind,
-    #[cfg(v4l2request)]
+    #[cfg(v4l2_handheld)]
     _inputs: Vec<CString>,
 }
 impl PlayerIo {
     pub(crate) fn new(o: &Options, _: Platform) -> Result<Self> {
         let mapping = o.mapping.as_deref().map(CString::new).transpose()?;
         let audio_device = o.audio_device.as_deref().map(CString::new).transpose()?;
-        #[cfg(v4l2request)]
-        if o.platform == "v4l2request" {
-            return Self::request(o, mapping, audio_device);
+        #[cfg(v4l2_handheld)]
+        if o.handheld() {
+            return Self::handheld(o, mapping, audio_device);
         }
         // The X11 VA-API presenter's EGL code for this stream (#391 step F):
         // its first frame calls it, after this.
@@ -59,9 +59,9 @@ impl PlayerIo {
             _mapping: mapping,
             audio_device,
             vaapi,
-            request: false,
+            handheld: false,
             audio_output: o.audio_output,
-            #[cfg(v4l2request)]
+            #[cfg(v4l2_handheld)]
             _inputs: Vec::new(),
         };
         ensure!(
@@ -93,22 +93,22 @@ impl PlayerIo {
         ensure!(result == 0, "input initialization failed");
         Ok(io)
     }
-    /// Moonlight's `-platform v4l2request`: the v4l2request decoder, SDL
+    /// Moonlight's handheld platforms: decoder-owned presentation, SDL
     /// audio, and evdev input from korrid's explicit nodes. Moonlight refuses
     /// an audio device only on its SDL platform; SDL audio ignores it here.
-    #[cfg(v4l2request)]
-    fn request(
+    #[cfg(v4l2_handheld)]
+    fn handheld(
         o: &Options,
         mapping: Option<CString>,
         audio_device: Option<CString>,
     ) -> Result<Self> {
         ensure!(
             x11_window_fits(o.x11_window, false),
-            "the Rust X11 window serves X11 VA-API, and v4l2request makes its own window"
+            "the Rust X11 window serves X11 VA-API, and this handheld decoder makes its own window"
         );
         ensure!(
             o.filled_picture == crate::egl_presenter::Filled::PutSurface,
-            "-filledpicture egl serves X11 VA-API, and v4l2request shows its own pictures"
+            "-filledpicture egl serves X11 VA-API, and this handheld decoder shows its own pictures"
         );
         let inputs = o
             .inputs
@@ -117,12 +117,17 @@ impl PlayerIo {
             .collect::<Result<Vec<_>, _>>()?;
         // SAFETY: called under stream's connection lock, before the core and
         // the decoder's display thread start.
-        unsafe { ffi::picture_init_request(i32::from(o.auto_window_resize)) };
+        unsafe {
+            ffi::picture_init_handheld(
+                i32::from(o.platform == "v4l2request"),
+                i32::from(o.auto_window_resize),
+            )
+        };
         let io = Self {
             _mapping: mapping,
             audio_device,
             vaapi: false,
-            request: true,
+            handheld: true,
             audio_output: o.audio_output,
             _inputs: inputs,
         };
@@ -150,7 +155,7 @@ impl PlayerIo {
     /// stream (#476): X11 VA-API and the SDL fallback fit each new size in
     /// their window. The handheld path keeps the size it started with.
     pub(crate) fn follows_new_sizes(&self) -> bool {
-        !self.request
+        !self.handheld
     }
     /// The size of the picture that the presenter showed last; none before
     /// the first. The presenters run on the stream's thread, inside `poll`.
@@ -217,7 +222,7 @@ impl PlayerIo {
 }
 /// Whether the X11 window that `-x11window` names fits a stream whose
 /// picture is X11 VA-API's (`vaapi`) or not: SDL's (`-platform x11`, or a
-/// VA-API start that failed) and v4l2request's make no X11 window, so only a
+/// VA-API start that failed) and the handheld decoders make no X11 window, so only a
 /// named `-x11window rust` is refused there. The build's default, the Rust
 /// window where it is built (#391 step F4), goes unused.
 fn x11_window_fits(named: Option<crate::x11_window::Kind>, vaapi: bool) -> bool {

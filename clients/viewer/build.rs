@@ -10,13 +10,13 @@ fn main() {
     // Android carries none of the Linux picture and I/O C code. android.nix
     // builds the same core as static archives for the session part alone.
     let android = os == "android";
-    // The handheld path (Moonlight's v4l2request decoder) is aarch64 Linux
-    // only. It needs FFmpeg with the V4L2 Request hwaccel; default.nix
+    // The handheld paths (v4l2request and v4l2m2m) are aarch64 Linux
+    // only. The former needs the V4L2 Request hwaccel; default.nix
     // supplies it.
-    let request = os == "linux" && env::var("CARGO_CFG_TARGET_ARCH").unwrap() == "aarch64";
-    println!("cargo::rustc-check-cfg=cfg(v4l2request)");
-    if request {
-        println!("cargo::rustc-cfg=v4l2request");
+    let handheld = os == "linux" && env::var("CARGO_CFG_TARGET_ARCH").unwrap() == "aarch64";
+    println!("cargo::rustc-check-cfg=cfg(v4l2_handheld)");
+    if handheld {
+        println!("cargo::rustc-cfg=v4l2_handheld");
     }
     let headers = if android {
         vec![format!("{include}/Limelight.h")]
@@ -94,10 +94,10 @@ fn main() {
         .define("HAVE_SDL", None)
         .define("HAVE_ALSA", None)
         .define("HAVE_PULSE", None);
-    if request {
+    if handheld {
         c.define("HAVE_V4L2M2M", None);
     }
-    let handheld: &[&str] = if request { &["libdrm"] } else { &[] };
+    let handheld_libs: &[&str] = if handheld { &["libdrm"] } else { &[] };
     let mut includes = Vec::new();
     let mut linked = Vec::new();
     for lib in [
@@ -115,7 +115,7 @@ fn main() {
         "libudev",
     ]
     .iter()
-    .chain(handheld)
+    .chain(handheld_libs)
     {
         let library = pkg_config::Config::new().probe(lib).unwrap();
         for path in library.include_paths {
@@ -251,7 +251,7 @@ fn main() {
     {
         c.file(format!("picture/{file}"));
     }
-    if request {
+    if handheld {
         c.file("picture/video/v4l2m2m.c");
     }
     for file in [

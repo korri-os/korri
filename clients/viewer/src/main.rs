@@ -19,8 +19,10 @@ fn run() -> Result<()> {
         println!(
             "korri-viewer 0.1.0 ({LICENCE})\nUsage: korri-viewer stream|pair [Moonlight arguments] HOST\nPC picture, sound and input. -viewonly disables input device discovery; the window's own keyboard and mouse still forward, as in Moonlight."
         );
-        #[cfg(v4l2request)]
-        println!("Handheld picture: -platform v4l2request, with -input <device> up to 6 times.");
+        #[cfg(v4l2_handheld)]
+        println!(
+            "Handheld picture: -platform v4l2request or -platform v4l2m2m, with -input <device> up to 6 times."
+        );
         return Ok(());
     }
     let lifecycle = lifecycle::from_args(&mut args)?;

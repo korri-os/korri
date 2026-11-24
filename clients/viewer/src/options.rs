@@ -30,7 +30,7 @@ pub struct Options {
     pub audio_device: Option<String>,
     pub verbose: bool,
     pub auto_window_resize: bool,
-    /// Explicit evdev nodes, only with `-platform v4l2request`.
+    /// Explicit evdev nodes, only on handheld platforms.
     pub inputs: Vec<String>,
     /// The network core that streams (`-networkcore`, #391 step E).
     pub network_core: crate::network_core::Kind,
@@ -51,18 +51,22 @@ pub struct Options {
 }
 
 /// Moonlight's `MAX_INPUTS` (config.h).
-#[cfg(v4l2request)]
+#[cfg(v4l2_handheld)]
 const MAX_INPUTS: usize = 6;
-#[cfg(v4l2request)]
-const PLATFORMS: &[&str] = &["x11", "x11_vaapi", "sdl", "auto", "v4l2request"];
-#[cfg(not(v4l2request))]
+#[cfg(v4l2_handheld)]
+const PLATFORMS: &[&str] = &["x11", "x11_vaapi", "sdl", "auto", "v4l2request", "v4l2m2m"];
+#[cfg(not(v4l2_handheld))]
 const PLATFORMS: &[&str] = &["x11", "x11_vaapi", "sdl", "auto"];
-#[cfg(v4l2request)]
+#[cfg(v4l2_handheld)]
 const UNSUPPORTED: &str = "";
-#[cfg(not(v4l2request))]
+#[cfg(not(v4l2_handheld))]
 const UNSUPPORTED: &str = " (explicit input devices and handheld paths are not in this slice)";
 
 impl Options {
+    pub(crate) fn handheld(&self) -> bool {
+        matches!(self.platform.as_str(), "v4l2request" | "v4l2m2m")
+    }
+
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self> {
         Self::parse_for(args, true)
     }
@@ -212,7 +216,7 @@ impl Options {
                         _ => unreachable!(),
                     }
                 }
-                #[cfg(v4l2request)]
+                #[cfg(v4l2_handheld)]
                 "input" => {
                     let value = args
                         .next()
@@ -226,8 +230,8 @@ impl Options {
         // Moonlight opens explicit nodes on its embedded platforms. On PC,
         // korrid passes none and this viewer keeps udev discovery only.
         ensure!(
-            o.inputs.is_empty() || o.platform == "v4l2request",
-            "explicit input devices need -platform v4l2request"
+            o.inputs.is_empty() || o.handheld(),
+            "explicit input devices need -platform v4l2request or v4l2m2m"
         );
         ensure!(
             (!with_host || !o.host.is_empty()) && !o.keydir.as_os_str().is_empty(),
@@ -473,8 +477,9 @@ mod tests {
             ("width", "-1"),
             ("port", "65536"),
             ("codec", "vp9"),
-            #[cfg(not(v4l2request))]
+            #[cfg(not(v4l2_handheld))]
             ("platform", "v4l2request"),
+            #[cfg(not(v4l2_handheld))]
             ("platform", "v4l2m2m"),
         ] {
             assert!(
@@ -494,34 +499,36 @@ mod tests {
         }
     }
 
-    #[cfg(v4l2request)]
+    #[cfg(v4l2_handheld)]
     #[test]
     fn handheld_arguments_from_korrid() {
-        let parse = |extra: &[&str]| {
-            let mut args = vec!["stream", "-platform", "v4l2request", "-keydir", "/k"];
-            args.extend_from_slice(extra);
-            args.push("host");
-            Options::parse(args.into_iter().map(str::to_owned))
-        };
-        let o = parse(&[
-            "-mapping",
-            "/m",
-            "-windowed",
-            "-autowindowresize",
-            "-input",
-            "/dev/input/event3",
-            "-input",
-            "/dev/input/event7",
-        ])
-        .unwrap();
-        assert_eq!(o.platform, "v4l2request");
-        assert_eq!(o.inputs, ["/dev/input/event3", "/dev/input/event7"]);
-        assert!(o.auto_window_resize && !o.fullscreen && !o.viewonly);
-        assert!(parse(&["-viewonly"]).unwrap().inputs.is_empty());
-        let six: Vec<&str> = ["-input", "/dev/input/event1"].repeat(6);
-        assert_eq!(parse(&six).unwrap().inputs.len(), 6);
-        let seven = ["-input", "/dev/input/event1"].repeat(7);
-        assert!(parse(&seven).is_err());
+        for platform in ["v4l2request", "v4l2m2m"] {
+            let parse = |extra: &[&str]| {
+                let mut args = vec!["stream", "-platform", platform, "-keydir", "/k"];
+                args.extend_from_slice(extra);
+                args.push("host");
+                Options::parse(args.into_iter().map(str::to_owned))
+            };
+            let o = parse(&[
+                "-mapping",
+                "/m",
+                "-windowed",
+                "-autowindowresize",
+                "-input",
+                "/dev/input/event3",
+                "-input",
+                "/dev/input/event7",
+            ])
+            .unwrap();
+            assert_eq!(o.platform, platform);
+            assert_eq!(o.inputs, ["/dev/input/event3", "/dev/input/event7"]);
+            assert!(o.auto_window_resize && !o.fullscreen && !o.viewonly);
+            assert!(parse(&["-viewonly"]).unwrap().inputs.is_empty());
+            let six: Vec<&str> = ["-input", "/dev/input/event1"].repeat(6);
+            assert_eq!(parse(&six).unwrap().inputs.len(), 6);
+            let seven = ["-input", "/dev/input/event1"].repeat(7);
+            assert!(parse(&seven).is_err());
+        }
         let pc = Options::parse(
             [
                 "stream",
