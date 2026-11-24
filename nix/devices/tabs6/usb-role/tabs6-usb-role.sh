@@ -3,6 +3,7 @@
 #
 #   tabs6-usb-role [status]   the role, VBUS and attached USB devices
 #   tabs6-usb-role host       power the port, then become a USB host
+#   tabs6-usb-role sink-host  automatic-only host data role, no register writes
 #   tabs6-usb-role device     become the gadget again, VBUS off, rebind the gadget
 #   tabs6-usb-role boot-role  device role, before the gadget binds (boot)
 #   tabs6-usb-role boot-vbus  VBUS off (boot)
@@ -21,9 +22,10 @@
 #   0x20 FLEDCNTL6  bits 3:0   boost output: 5 = 4500 mV, 0xb = 5100 mV
 #
 # VBUS is never sourced while anything else may be powering the port. The
-# manual host path still requires Discharging. Automatic host follows the
-# measured Phase B gauge != Charging policy plus the independent source and
-# incoming-power checks. Both require readable status and an unconfigured UDC.
+# manual host path still requires Discharging. The automatic VBUS-on path
+# remains blocked in the daemon. The separate sink-host path only selects a
+# data role while Charging with CNTL mode 5, and never writes registers.
+# Every host transition requires readable status and an unconfigured UDC.
 #
 # The test (usb-role.test.py) runs this file against a temporary sysfs tree.
 # Paths and timings therefore come from the environment:
@@ -194,19 +196,39 @@ to_host() {
 	fi
 }
 
-to_device() {
+# Only the data role changes. Both fresh interlocks include CNTL mode 5;
+# this path never writes charger registers, even on rollback.
+to_sink_host() {
+	local r
+	[ "${TABS6_AUTOMATIC:-0}" = 1 ] || die "sink-host is automatic-only"
+	if ! host_attached && "$CHECKER" --check-sink-host && r=$(role_file) && echo host >"$r" && "$CHECKER" --check-sink-host; then
+		log "role host, sinking power, CNTL mode 5 verified (no register writes)"
+	else
+		log "sink-host interlock/readback failed; returning to device role"
+		data_device || true
+		return 1
+	fi
+}
+
+data_device() {
 	local r failed=0
-	# Always request off first, but still select device if I2C is unavailable.
-	vbus_off || failed=1
 	if r=$(role_file); then
 		if [ "$(cat "$r")" != device ]; then echo device >"$r" || failed=1; fi
 	else
 		failed=1
 	fi
-	if [ "$failed" = 0 ]; then log "role device, VBUS off (readback verified)"; fi
 	if [ -n "$GADGET_UNIT" ]; then
 		systemctl restart --no-block "$GADGET_UNIT" || failed=1
 	fi
+	return "$failed"
+}
+
+to_device() {
+	local failed=0
+	# Always request off first, but still select device if I2C is unavailable.
+	vbus_off || failed=1
+	data_device || failed=1
+	if [ "$failed" = 0 ]; then log "role device, VBUS off (readback verified)"; fi
 	return "$failed"
 }
 
@@ -266,7 +288,7 @@ host|device)
 	;;
 esac
 case "${1:-status}" in
-host|device|boot-vbus)
+host|sink-host|device|boot-vbus)
 	# boot-vbus can precede tmpfiles, which normally creates /run/lock.
 	mkdir -p "${LOCK%/*}"
 	exec 9>"$LOCK"
@@ -277,11 +299,12 @@ esac
 case "${1:-status}" in
 status) status ;;
 host) to_host ;;
+sink-host) to_sink_host ;;
 device) to_device ;;
 boot-role) boot_role ;;
 boot-vbus) boot_vbus ;;
 *)
-	echo "usage: tabs6-usb-role [status|host|device|boot-role|boot-vbus]" >&2
+	echo "usage: tabs6-usb-role [status|host|sink-host|device|boot-role|boot-vbus]" >&2
 	exit 2
 	;;
 esac

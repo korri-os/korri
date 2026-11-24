@@ -1,6 +1,46 @@
 # Phase B: permanent Kishi V2 with optional pass-through charger
 
-## Current policy: observe and stay DEVICE (2026-11-22 live safety block)
+## Current policy: charging host data role only (2026-11-24)
+
+`tabs6-typec-auto` may select the **host data role with boost off**. Automatic
+VBUS sourcing remains blocked by the unchanged runtime interlock below.
+Manual `tabs6-usb-role host` retains its existing behavior.
+
+Grounding: the live Kishi pass-through trial measured PD_State 21
+(`SNK_Ready`), ATTACH_DONE=1, IS_SOURCE=0 and IS_DFP=1 in 13,213 of 13,233
+samples. Selecting only dwc3 `host`, without touching SM5705 boost, enumerated
+1532:0712 and carried shell input while the gauge read Charging at +0.8–1.1 A.
+CNTL stayed 0x05. This board sources VBUS only through SM5705 mode 7, never
+through the dwc3 role switch. `sink-host-charging.txt` preserves eight further
+read-only observer samples taken before implementation, including STATUS1=29.
+That STATUS1 value still denies **sourcing**; it is not a data-role interlock.
+
+The separate sink-host policy needs three consecutive fresh reads with **all**
+of these values: state 21, attached, source=0, DFP=1, MUIC VBUS=01, gauge
+Charging, CNTL mode 5. It selects device on every other sample or read error.
+The serialized automatic-only `sink-host` helper checks fresh status before
+and after the role write. It never writes charger registers, including on a
+failed post-switch interlock. A failed check logs the failure, restores the
+device data role, and rebinds the gadget. The daemon also requests its existing
+off/device cleanup on failure. Unexpected boost, service stop and restart keep
+the existing off/device recovery.
+
+Charger unplug must remove the host controller by returning to device role.
+Replug must requalify from zero. This full data-role cycle matters: the live
+manual-host experiment left the host controller up across charger unplug and
+InputPlumber retained a dead source, then failed the evdev re-add with EBUSY.
+Role cycling is the first fix, not an InputPlumber service restart. Live
+acceptance must prove that controls return without a reboot. A normal PC
+reports UFP rather than DFP and keeps the gadget lifeline in device role.
+
+Tests replay Phase A's charger transitions (which do **not** yet carry the
+complete qualifying signature), the new charging trace, charger unplug,
+60 seconds of unplugged samples, read failures and the PC/UFP path. The real
+daemon/helper tests prove host/device/host cycling, no sourcing writes, gadget
+rebind, and post-switch mode-change/read-error rollback without register writes.
+
+## Previous policy: observe and stay DEVICE (2026-11-22 live safety block)
+
 
 Automatic HOST is **blocked**. `tabs6-typec-auto` runs at boot and remains
 running, but never invokes the helper's `host` command. It starts off/device,

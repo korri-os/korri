@@ -1,5 +1,5 @@
-# Automatic HOST is blocked pending independent power-direction evidence.
-# The running observer and manual override share one serialized effect path.
+# Automatic VBUS sourcing stays blocked. Charging + sink-ready/DFP permits
+# only the host data role, without charger writes. All effects are serialized.
 # Every boot starts device/boost-off. See typec-phase-b.md.
 #
 # Korri's product USB gadget (nix/product/usb-gadget.nix) owns the gadget
@@ -67,7 +67,7 @@ in
     };
 
     systemd.services.tabs6-typec-auto = {
-      description = "Tab S6 USB-C safety observer (automatic HOST blocked)";
+      description = "Tab S6 USB-C charging host data role (automatic VBUS sourcing blocked)";
       wantedBy = [ "multi-user.target" ];
       after = [
         "tabs6-usb-role-boot.service"
