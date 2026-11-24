@@ -19,8 +19,8 @@ let
     # Installed, it wraps nothing until its device modifier is enabled
     # (ADR 0009).
     "gamescope"
-    # Owner decision 2026-10-23: stream play's viewer is preinstalled and removable.
-    "moonlight"
+    # ADR 0099: Moonlight Embedded is removed. ARM devices have no viewer
+    # in their default set until a supported Rust picture path ships.
     "retroarch"
     "nestopia"
     "snes9x"

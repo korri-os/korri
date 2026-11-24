@@ -12,6 +12,9 @@ let
   selected = import ./plugin-selection.nix {
     plugins = published;
   };
+  selectedNames = import ./plugin-selection.nix {
+    plugins = lib.genAttrs (builtins.attrNames published) (name: name);
+  };
   names = [
     "rg353m"
     "rgds"
@@ -64,10 +67,8 @@ assert lib.all (
 assert lib.all (
   name: lib.elem (toString published.korri-plugin-tailscale) (map toString selected.${name})
 ) names;
-# Stream play's removable viewer ships on every product image.
-assert lib.all (
-  name: lib.elem (toString published.korri-plugin-moonlight) (map toString selected.${name})
-) names;
+# ADR 0099: no product image selects the removed Moonlight client.
+assert lib.all (name: !(lib.elem "korri-plugin-moonlight" selectedNames.${name})) names;
 # The RG DS played Tetris DS through the runtime-installed melonDS plugin.
 # Seed a receipt for the same runner, as on the other DS-capable defaults.
 assert lib.all

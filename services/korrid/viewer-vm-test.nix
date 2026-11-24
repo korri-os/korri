@@ -17,10 +17,9 @@
   hostModule,
   hostPackage,
   # The real `@korri:viewer`, the same plugin with one byte of its treaty
-  # changed, and `@korri:moonlight`, all built by the plugins repository.
+  # changed, both built by the plugins repository.
   viewerPlugin,
   otherContractPlugin,
-  moonlightPlugin,
 }:
 let
   host = hostPackage.overrideAttrs { doCheck = false; };
@@ -44,10 +43,6 @@ let
     {
       id = "@korri:viewer";
       package = viewerPlugin;
-    }
-    {
-      id = "@korri:moonlight";
-      package = moonlightPlugin;
     }
   ];
   korridUid = 976;
@@ -118,11 +113,10 @@ pkgs.testers.runNixOSTest {
       virtualisation.memorySize = 4096;
       virtualisation.cores = 4;
       virtualisation.diskSize = 8192;
-      # Signed closures of all three plugins, for offline seeding.
+      # Signed closures of both plugins, for offline seeding.
       virtualisation.additionalPaths = [
         viewerPlugin
         otherContractPlugin
-        moonlightPlugin
         (receiptFor otherContractPlugin)
       ];
       hardware.graphics.enable = true;
@@ -301,7 +295,6 @@ pkgs.testers.runNixOSTest {
         return json.loads(machine.succeed(f"cat {package}/manifest.json"))
 
     viewer = manifest("${viewerPlugin}")["files"]
-    moonlight = manifest("${moonlightPlugin}")["files"]
     replies = 0
 
     def ask(action, launch, timeout=120):
@@ -328,16 +321,6 @@ pkgs.testers.runNixOSTest {
         assert reply["ok"], reply
         return reply.get("result")
 
-    def stop_moonlight(launch):
-        # korrid confirms a Moonlight stop only after its unit has left
-        # deactivating (#472), so the first request must succeed and the unit
-        # must be inactive or failed at once. `systemctl is-active` alone
-        # already fails while the unit is still deactivating (#480).
-        ok("stop", launch)
-        state = machine.succeed(f"systemctl show korri-game-{launch}.service -p ActiveState --value").strip()
-        print(f"Moonlight unit {launch} after its first stop: {state}")
-        assert state in ("inactive", "failed"), state
-
     def tree():
         return json.loads(machine.succeed("swaymsg -s /run/korri-compositor/sway-ipc.sock -t get_tree -r"))
 
@@ -358,10 +341,10 @@ pkgs.testers.runNixOSTest {
     machine.succeed("systemctl start korri-shell.service")
     machine.wait_until_succeeds("swaymsg -s /run/korri-compositor/sway-ipc.sock -t get_tree | grep -q korri-shell")
 
-    with subtest("the plugin host installs and enables both viewers"):
+    with subtest("the plugin host installs and enables the viewer"):
         enabled = json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json"))
         ids = sorted(package["id"] for package in enabled)
-        assert ids == ["@korri:moonlight", "@korri:viewer"], ids
+        assert ids == ["@korri:viewer"], ids
         machine.wait_for_unit("korri-viewer-setup.service")
         machine.succeed("test \"$(stat -c '%U %a' /home/korri/.config/moonlight)\" = 'korri 700'")
 
@@ -442,30 +425,14 @@ pkgs.testers.runNixOSTest {
         assert ok("status", korri_launch) == "Stopped"
         assert focused(tree()) is None or focused(tree()).get("app_id") == "korri-shell"
 
-    with subtest("with @korri:viewer disabled, the same selection gives Moonlight"):
+    with subtest("a disabled viewer fails without starting a fallback client"):
         machine.succeed("korri-plugin disable @korri:viewer")
-        moonlight_launch = "11111111111111111111111111111111"
-        moonlight_unit = f"korri-game-{moonlight_launch}.service"
-        ok("start", moonlight_launch, timeout=180)
-        assert f"launch {moonlight_launch} uses @korri:moonlight" in journal()
-        command = machine.succeed(f"systemctl show {moonlight_unit} -p ExecStart --value")
-        assert moonlight["moonlight"] in command and "--lifecycle-socket" not in command, command
-        assert machine.succeed(f"systemctl show {moonlight_unit} -p RuntimeDirectory --value").strip() == ""
-        assert ok("status", moonlight_launch) == "Running"
-        assert "KORRI_LIVE_RUNNER_ID" not in machine.succeed(f"systemctl show {moonlight_unit} -p Environment --value")
+        missing_launch = "11111111111111111111111111111111"
+        reply = ask("start", missing_launch)
+        assert not reply["ok"] and "@korri:viewer is not enabled" in reply["error"], reply
+        machine.fail(f"systemctl is-active korri-game-{missing_launch}.service")
 
-    with subtest("after a korrid restart the running Moonlight unit, not the new choice, answers"):
-        # Both plugins are enabled again, so a start would now choose
-        # @korri:viewer, and a new korrid process knows no launch.
-        machine.succeed("korri-plugin enable @korri:viewer")
-        machine.succeed("systemctl restart viewer-probe.service")
-        machine.wait_for_unit("viewer-probe.service")
-        assert ok("status", moonlight_launch) == "Running"
-        stop_moonlight(moonlight_launch)
-        machine.fail(f"systemctl is-active {moonlight_unit}")
-        machine.succeed("korri-plugin disable @korri:viewer")
-
-    with subtest("a viewer built from another contract is refused, and Moonlight stays"):
+    with subtest("a viewer built from another contract fails without a fallback client"):
         name = machine.succeed("korri-plugin unit-name @korri:viewer").strip()
         machine.succeed("install -m 0600 ${receiptFor otherContractPlugin} /var/lib/korri-plugin-host/" + name + "/selection.json")
         machine.succeed("ln -sfn ${otherContractPlugin} /nix/var/nix/gcroots/korri-plugin-host/" + name + "/active")
@@ -478,17 +445,9 @@ pkgs.testers.runNixOSTest {
         assert machine.succeed(f"sha256sum < {other[0]['files']['treaty']}").split()[0] == theirs
         ours = machine.succeed(f"sha256sum < {viewer['treaty']}").split()[0]
         refused_launch = "22222222222222222222222222222222"
-        ok("start", refused_launch, timeout=180)
-        log = journal()
-        print(log)
+        reply = ask("start", refused_launch)
         refusal = f"korrid refuses @korri:viewer: it was built from a different viewer contract (its treaty is sha256 {theirs}, korrid's is sha256 {ours})"
-        assert refusal in log, log
-        assert f"launch {refused_launch} uses @korri:moonlight" in log
-        stop_moonlight(refused_launch)
-        # Without Moonlight the refusal is the start's own error.
-        machine.succeed("korri-plugin disable @korri:moonlight")
-        reply = ask("start", "33333333333333333333333333333333")
         assert not reply["ok"] and refusal in reply["error"], reply
-        machine.fail("systemctl is-active korri-game-33333333333333333333333333333333.service")
+        machine.fail(f"systemctl is-active korri-game-{refused_launch}.service")
   '';
 }

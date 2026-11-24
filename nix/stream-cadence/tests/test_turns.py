@@ -107,7 +107,7 @@ class ViewerTurns(test_plugin_viewer.PluginViewerInTheFixture):
         fixture_pid = session.processes["fixture"].pid
         for side in ("A", "B"):
             session.handle({"operation": "begin"})
-            program = Path(self.directory.name) / side / "bin" / "moonlight"
+            program = Path(self.directory.name) / side / "bin" / "korri-viewer"
             program.parent.mkdir(parents=True)
             program.write_text(
                 f"#!{sys.executable}\n"

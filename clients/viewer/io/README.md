@@ -12,7 +12,7 @@ Source: Moonlight Embedded `775444287305849ebdf4736c75298ad0713e2d5d`, with
 `korri-plugins`' `services/moonlight/patches/` at
 `2094c1e77471` applied in order. This is the same source as the picture slice.
 Only patch 0014 changes the input files: it retains Korri's ownership of the
-gamepad quit chord through `KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT`. No patch
+gamepad quit chord through `KORRI_VIEWER_DISABLE_GAMEPAD_QUIT`. No patch
 changes these three audio backends.
 
 ## Exact adaptations

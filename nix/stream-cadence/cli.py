@@ -46,7 +46,6 @@ from score import (
     number_one,
     packet_to_display,
     score,
-    stamps,
 )
 from viewer import FRAME_TIMES, RECORDING, decode_path, egl_gave_up
 from sender import PROVENANCE, patch_stack, steady_refresh_mhz
@@ -743,7 +742,7 @@ def viewer_place(plugin: bool, sender_fixture: bool, same_device: bool) -> str:
 NIX_STORE = Path("/nix/store")
 PACKAGE_OPTION = "--viewer-package"
 # Where the plugin's viewer package holds the controller mapping that korrid
-# gives the viewer: `mapping` in plugins/moonlight/plugin.nix of the plugins
+# gives the viewer: `mapping` in plugins/viewer/plugin.nix of the plugins
 # repository. An installed plugin names the file in its manifest; a copied
 # package has no manifest.
 PRODUCT_MAPPING = "share/moonlight/korri-inputplumber-gamecontrollerdb.txt"
@@ -761,14 +760,14 @@ def product_package(path: str, option: str = PACKAGE_OPTION) -> dict:
         raise Refusal(
             f"{option} {path} is not a store path on this host: give the package itself, a directory directly under {NIX_STORE}. Bring it here with nix copy from a device or a cache that holds it."
         )
-    for needed in ("bin/moonlight", PRODUCT_MAPPING):
+    for needed in ("bin/korri-viewer", PRODUCT_MAPPING):
         if not (package / needed).is_file():
             raise Refusal(
                 f"{option} {path} is no product viewer package: it has no {needed}."
             )
     return {
         "package": str(package),
-        "moonlight": str(package / "bin" / "moonlight"),
+        "moonlight": str(package / "bin" / "korri-viewer"),
         "mapping": str(package / PRODUCT_MAPPING),
     }
 
@@ -849,7 +848,7 @@ def viewer_ran(
     return {
         "kind": STAND_IN,
         "place": place,
-        "moonlight": stand_in + "/bin/moonlight",
+        "moonlight": stand_in + "/bin/korri-viewer",
         "release_version": None,
         "package": None,
     }
@@ -1121,286 +1120,6 @@ def summary(record: dict) -> str:
         f"unreadable_frames={source['unreadable_frames']} "
         f"max_unreadable_frames={source['max_unreadable_frames']}"
     )
-
-
-def run_case(
-    args: argparse.Namespace,
-    remote: Remote,
-    motion: str,
-    directory: Path,
-    certificate: str,
-    requested: float | None,
-    index: int,
-) -> dict:
-    record: dict = {
-        "label": directory.name,
-        "primary_clock": "receive_ms",
-        "warmup_seconds": args.warmup,
-    }
-    facts = remote.request("discover")
-    record["discovered"] = facts
-    facts["valid"] = False
-    # These are the immutable closure roots submitted to nix copy, not GC roots.
-    facts["imported_store_paths"] = args.imported_store_paths
-    facts["run_index"] = index
-    display = facts["display"]
-    refresh = display["refresh_hz"]
-    fps = requested if requested is not None else refresh
-    facts["requested_fps"] = fps
-    facts["max_torn_frames"] = args.max_torn_frames
-    facts["max_unreadable_frames"] = args.max_unreadable_frames
-    client = None
-    video, receive = directory / "recording.video", directory / "times.csv"
-    samples = []
-    latest = ""
-    try:
-        if facts.get("watched_display"):
-            # A person may be looking at the sender's display. Nothing wakes it.
-            raise Refusal(facts["watched_display"])
-        host, port, app, _ = sender_stream(args, remote, facts, certificate, motion)
-        before = clock(remote)
-        facts["clock_bridge_before"] = before
-        width, height = (
-            args.resolution
-            if args.resolution
-            else (display["mode"]["width"], display["mode"]["height"])
-        )
-        facts["requested_resolution"] = {"width": width, "height": height}
-        facts["requested_codec"] = args.codec
-        facts["requested_bitrate"] = args.bitrate
-        env = dict(
-            os.environ,
-            LD_PRELOAD=os.environ["CADENCE_SHIM"],
-            CADENCE_DUMP=str(video),
-            CADENCE_FRAME_TIMES=str(receive),
-        )
-        command = [
-            "moonlight",
-            "stream",
-            host,
-            "-port",
-            str(port),
-            "-platform",
-            "fake",
-            "-viewonly",
-            "-width",
-            str(width),
-            "-height",
-            str(height),
-            "-fps",
-            str(round(fps)),
-            "-codec",
-            args.codec,
-            "-app",
-            app,
-            "-keydir",
-            str(args.keydir),
-        ]
-        if args.bitrate:
-            command += ["-bitrate", str(args.bitrate)]
-        start = time.monotonic()
-        deadline = None
-        with (directory / "client.log").open("w") as log:
-            client = subprocess.Popen(
-                command, stdout=log, stderr=subprocess.STDOUT, env=env
-            )
-            while True:
-                if client.poll() is not None:
-                    raise Refusal(
-                        f"Moonlight exited early ({client.returncode}); read client.log"
-                    )
-                sample = remote.request("sample")
-                latest = sample["journal"]
-                samples.append(
-                    {"host_ns": time.monotonic_ns(), "threads": sample["threads"]}
-                )
-                pacing = session_log(latest)
-                facts.update(pacing)
-                if args.require_vblank_lock:
-                    if pacing["pacing"] == "fallback":
-                        raise Refusal(
-                            "Required vblank lock fell back or hit its safety guard; stopped immediately"
-                        )
-                    if deadline is not None and pacing["pacing"] != "locked":
-                        raise Refusal(
-                            "Required vblank lock marker is missing at the first received frame; stopped immediately"
-                        )
-                if receive.exists():
-                    with receive.open() as stream:
-                        stream.readline()
-                        first = stream.readline()
-                    if first and deadline is None:
-                        first_ms = int(first.strip().split(",")[3])
-                        if not start - 1 <= first_ms / 1000 <= time.monotonic() + 1:
-                            raise Refusal(
-                                "Receive timestamp is outside host MONOTONIC; client clock bridge is invalid"
-                            )
-                        duration = (
-                            args.warmup
-                            + math.floor(args.seconds / args.window) * args.window
-                        )
-                        deadline = first_ms / 1000 + duration + max(2, args.window / 2)
-                    if deadline is not None and time.monotonic() >= deadline:
-                        break
-                if deadline is None and time.monotonic() - start > 45:
-                    raise Refusal(
-                        "No received frame within startup deadline; check client.log and journal.log"
-                    )
-                time.sleep(0.2)
-            stop_client(client)
-            if client.returncode != 0:
-                raise Refusal(
-                    f"Moonlight exited with {client.returncode}; recording is invalid"
-                )
-        after = clock(remote)
-        facts["clock_bridge_after"] = after
-        evidence = remote.request("evidence")
-        (directory / "motion.log").write_text(evidence["motion_log"])
-        facts["run_folder_bytes"] = evidence["run_folder_bytes"]
-        (directory / "journal.log").write_text(latest)
-        facts.update(session_log(latest))
-        if not facts["encoder"] or not facts["capture_backend"]:
-            raise Refusal(
-                "Fresh session journal has no encoder or capture backend; cannot attest which installed path streamed"
-            )
-        parsed = stamps(receive)
-        ids = decode(video, directory / "decode.log")
-        to_host, uncertainty = bridge(before, after)
-        facts["bridge_uncertainty_ms"] = uncertainty
-        source = score(
-            ids,
-            parsed,
-            evidence["motion_log"],
-            to_host,
-            warmup=args.warmup,
-            seconds=args.seconds,
-            window=args.window,
-            fps=fps,
-            refresh=refresh,
-            max_unreadable_frames=args.max_unreadable_frames,
-        )
-        source["label"] = directory.name
-        source["bridge_uncertainty_ms"] = uncertainty
-        facts["torn_limit_pass"] = args.max_torn_frames is None or all(
-            values["torn_frames"] <= args.max_torn_frames
-            for values in source["windows"]
-        )
-        record.update(
-            video=str(video),
-            times=str(receive),
-            decoded_frames=len(ids),
-            decode_errors=0,
-            decode_warnings=0,
-            source_counter=source,
-        )
-        facts["valid"] = True
-    except (KeyboardInterrupt, SystemExit):
-        facts["error"] = "Run interrupted; measurement is invalid"
-        raise
-    except InvalidMeasurement as error:
-        error.report["label"] = directory.name
-        error.report["bridge_uncertainty_ms"] = facts["bridge_uncertainty_ms"]
-        record["source_counter"] = error.report
-        record.update(
-            video=str(video),
-            times=str(receive),
-            decoded_frames=error.report["decoded_frames"],
-            decode_errors=0,
-            decode_warnings=0,
-        )
-        facts["error"] = str(error)
-    except Exception as error:
-        facts["error"] = str(error)
-    finally:
-        try:
-            stop_client(client)
-        finally:
-            (directory / "threads.json").write_text(json.dumps(samples, indent=2))
-            if latest:
-                (directory / "journal.log").write_text(latest)
-            try:
-                facts["restore"] = remote.close()
-            except Exception as error:
-                facts["restore"] = {
-                    "pass": False,
-                    "certificate_revoked": None,
-                    "run_folder_removed": None,
-                    "pids_unchanged": {},
-                    "errors": [str(error)],
-                }
-            facts["host_run_folder_bytes"] = sum(
-                p.stat().st_size for p in directory.rglob("*") if p.is_file()
-            )
-            if not facts["restore"]["pass"]:
-                facts["valid"] = False
-                facts["error"] = (
-                    "Device restore check failed. Stop device work and inspect restore evidence."
-                )
-            (directory / "result.json").write_text(json.dumps(record, indent=2) + "\n")
-            if "source_counter" in record:
-                print(summary(record), flush=True)
-            if not args.keep_recording and facts["valid"]:
-                video.unlink(missing_ok=True)
-            if not facts["restore"]["pass"]:
-                raise Refusal(facts["error"])
-    return record
-
-
-def run(args: argparse.Namespace) -> int:
-    target, options = ssh_target(args.device, args.ssh_port, args.ssh_option)
-    args.ssh_target = target
-    architecture = execute(
-        ["ssh", *options, target, "uname -m"], timeout=20
-    ).stdout.strip()
-    agent, motion, args.imported_store_paths = tools(
-        architecture, target, options, ("motion",), args.build_store
-    )
-    args.out = (
-        args.out.resolve()
-        if args.out
-        else Path(tempfile.mkdtemp(prefix="stream-cadence-"))
-    )
-    args.out.mkdir(parents=True, exist_ok=True)
-    args.keydir = args.keydir.expanduser().resolve()
-    args.keydir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    results: list[dict] = []
-    with (args.keydir / "lock").open("a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise Refusal(
-                "Another cadence run uses this client certificate; wait for it to finish"
-            ) from error
-        certificate = keypair(args.keydir)
-        print("Results:", args.out, flush=True)
-        for fps in args.fps or [None]:
-            for index in range(args.runs):
-                directory = args.out / f"run-{len(results) + 1}"
-                directory.mkdir()
-                remote = Remote(
-                    ["ssh", *options, target, agent], directory / "device-agent.log"
-                )
-                try:
-                    result = run_case(
-                        args, remote, motion, directory, certificate, fps, index
-                    )
-                    results.append(result)
-                    if not result["discovered"]["valid"]:
-                        raise Refusal(result["discovered"]["error"])
-                except Exception:
-                    if not remote.closed:
-                        # EOF also triggers device cleanup if initialization refused.
-                        if remote.process.stdin and not remote.process.stdin.closed:
-                            remote.process.stdin.close()
-                        remote.process.wait(timeout=20)
-                        remote.log.close()
-                    raise
-                finally:
-                    (args.out / "results.json").write_text(
-                        json.dumps(results, indent=2) + "\n"
-                    )
-                print(json.dumps(result), flush=True)
-    return int(any(not record["discovered"]["torn_limit_pass"] for record in results))
 
 
 def pgm(data: bytes) -> np.ndarray:
@@ -2324,7 +2043,7 @@ def view(args: argparse.Namespace) -> int:
     installed = False
     if viewer_target is not None:
         status = subprocess.run(
-            ["ssh", *viewer_options, viewer_target, "korri-plugin status @korri:moonlight"],
+            ["ssh", *viewer_options, viewer_target, "korri-plugin status @korri:viewer"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -2349,7 +2068,7 @@ def view(args: argparse.Namespace) -> int:
         "sunshine": patched["sunshine"] if patched else part(sender_paths, "-sunshine-", "/bin/sunshine"),
         "capture": part(seat_paths, "-stream-cadence-capture-", "/bin/stream-cadence-capture"),
         "press": part(seat_paths, "-stream-cadence-press-", "/bin/stream-cadence-press"),
-        "viewer": part(seat_paths, "-moonlight-embedded-"),
+        "viewer": part(seat_paths, "-korri-viewer-"),
         "iproute2": part(sender_paths, "-iproute2-"),
         "pulseaudio": part(sender_paths, "-pulseaudio-", "/bin/pulseaudio"),
     }
@@ -2667,48 +2386,8 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
         description="Distinct streamed frames, with source/capture attribution against the discovered display ceiling."
     )
-    commands = result.add_subparsers(dest="command", required=True)
-    measure = commands.add_parser("run")
-    measure.add_argument(
-        "--device", required=True, help="SSH target, optionally user@host:port"
-    )
-    measure.add_argument("--ssh-port", type=int)
-    measure.add_argument(
-        "--ssh-option",
-        action="append",
-        default=[],
-        help="OpenSSH -o setting passed to every device SSH connection and nix copy; repeatable",
-    )
-    measure.add_argument("--stream-host")
-    measure.add_argument(BUILD_STORE_OPTION, metavar="STORE", help=BUILD_STORE_HELP)
-    measure.add_argument("--fps", action="append", type=positive)
-    measure.add_argument("--resolution", type=resolution)
-    measure.add_argument(
-        "--codec", choices=["h264", "h265", "av1", "auto"], default="h264"
-    )
-    measure.add_argument("--bitrate", type=int, default=10000)
-    measure.add_argument("--seconds", type=positive, default=90)
-    measure.add_argument("--warmup", type=positive, default=10)
-    measure.add_argument("--window", type=positive, default=10)
-    measure.add_argument("--runs", type=int, default=3)
-    measure.add_argument("--out", type=Path)
     state = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))
-    measure.add_argument(
-        "--keydir", type=Path, default=state / "korri/stream-cadence/keys"
-    )
-    measure.add_argument("--keep-recording", action="store_true")
-    measure.add_argument("--require-vblank-lock", action="store_true")
-    measure.add_argument(
-        "--max-torn-frames",
-        type=nonnegative_integer,
-        help="maximum torn frames in each scored window; no limit by default",
-    )
-    measure.add_argument(
-        "--max-unreadable-frames",
-        type=nonnegative_integer,
-        default=0,
-        help="maximum total unreadable frames across scored windows; unreadable IDs never count as received",
-    )
+    commands = result.add_subparsers(dest="command", required=True)
     watch = commands.add_parser(
         "view", help="measure a viewer from outside: what it shows, and when"
     )
@@ -2734,7 +2413,7 @@ def parser() -> argparse.ArgumentParser:
     )
     watch.add_argument(
         "--viewer-package",
-        help="a product viewer package in this host's Nix store (the plugin's moonlight-embedded-korri) to copy to a viewer device that has no viewer plugin and to run in the viewer fixture there, with korrid's arguments and environment",
+        help="a product viewer package in this host's Nix store (the plugin's korri-viewer) to copy to a viewer device that has no viewer plugin and to run in the viewer fixture there, with korrid's arguments and environment",
     )
     watch.add_argument(
         "--candidate-package",
@@ -2846,7 +2525,7 @@ def main() -> int:
     signal.signal(signal.SIGTERM, terminate)
     arguments = parser()
     args = arguments.parse_args()
-    if args.command in ("run", "view"):
+    if args.command == "view":
         if (
             args.runs <= 0
             or args.seconds < args.window
@@ -2857,7 +2536,7 @@ def main() -> int:
                 "runs/bitrate must be positive, and seconds must include a complete window"
             )
     try:
-        return {"run": run, "view": view, "verdict": verdicts, "compare": compare}[
+        return {"view": view, "verdict": verdicts, "compare": compare}[
             args.command
         ](args)
     except (Refusal, ValueError, OSError, subprocess.SubprocessError) as error:

@@ -13,6 +13,13 @@ API.
 Korri reaches that state in stages. Measured performance decides each stage.
 The language does not.
 
+## Amendment, 2026-11-24
+
+[ADR 0099](0099-moonlight-embedded-goes-now-even-where-streaming-is-lost.md)
+removes Moonlight Embedded immediately. Its fallback and retention rules below
+are historical; the Rust viewer remains a removable plugin and performance
+proofs still apply to new Rust viewer work.
+
 ## Decision
 
 - Stage 1 puts the session part in Rust, for Linux and Android. The session

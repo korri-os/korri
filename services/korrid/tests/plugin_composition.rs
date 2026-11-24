@@ -930,14 +930,14 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
     use serde_json::json;
     let root = tempfile::tempdir().unwrap();
     let sunshine = "@korri:sunshine/sunshine";
-    let moonlight = "@korri:moonlight/moonlight";
-    readable::install(root.path(), &json!({"host":{"services":{sunshine:{"settings":{"plugin":{"video":{"max-bitrate-kbps":3000}}}}},"runners":{moonlight:{"settings":{"plugin":{"video":{"fps":30}}}}}}}).to_string(), &readable::gba_library());
+    let viewer = "@korri:viewer/viewer";
+    readable::install(root.path(), &json!({"host":{"services":{sunshine:{"settings":{"plugin":{"video":{"max-bitrate-kbps":3000}}}}},"runners":{viewer:{"settings":{"plugin":{"video":{"fps":30}}}}}}}).to_string(), &readable::gba_library());
     let library_path = root.path().join("catalog/library.yaml");
     let mut library: serde_json::Value =
         serde_yaml::from_str(&fs::read_to_string(&library_path).unwrap()).unwrap();
     library["library"][readable::GBA_ID]["runners"] =
-        json!({moonlight:{"settings":{"plugin":{"video":{"fps":45}}}}});
-    library["library"][readable::GBA_ID]["profiles"] = json!({"quiet":{"title":"Quiet","runners":{moonlight:{"settings":{"plugin":{"video":{"fps":90}}}}}}});
+        json!({viewer:{"settings":{"plugin":{"video":{"fps":45}}}}});
+    library["library"][readable::GBA_ID]["profiles"] = json!({"quiet":{"title":"Quiet","runners":{viewer:{"settings":{"plugin":{"video":{"fps":90}}}}}}});
     library["library"][readable::GBA_ID]["profile"] = json!("quiet");
     fs::write(library_path, serde_yaml::to_string(&library).unwrap()).unwrap();
     let mut document: serde_json::Value =
@@ -964,9 +964,9 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
     );
     let moon = package(
         root.path(),
-        "@korri:moonlight",
+        "@korri:viewer",
         &format!(
-            r#"export const name='moonlight';export const runners={{moonlight:{{program:'program'}}}};export const handlers={{'settings.describe':()=>({{schema:{schema},revision:'moon-v1'}}),'settings.validate':input=>({{valid:input.values.plugin?.video?.fps!==999,diagnostics:input.values.plugin?.video?.fps===999?[{{severity:'error',code:'fps',path:['plugin','video','fps'],message:'unsupported fps'}}]:[]}}),'settings.render':input=>({{args:['-fps',String(input.settings.plugin?.video.fps),'-width',String(input.display.width)]}})}};"#
+            r#"export const name='viewer';export const runners={{viewer:{{program:'program'}}}};export const handlers={{'settings.describe':()=>({{schema:{schema},revision:'moon-v1'}}),'settings.validate':input=>({{valid:input.values.plugin?.video?.fps!==999,diagnostics:input.values.plugin?.video?.fps===999?[{{severity:'error',code:'fps',path:['plugin','video','fps'],message:'unsupported fps'}}]:[]}}),'settings.render':input=>({{args:['-fps',String(input.settings.plugin?.video.fps),'-width',String(input.display.width)]}})}};"#
         ),
         None,
     );
@@ -981,21 +981,21 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
             !snapshot
                 .runners
                 .iter()
-                .find(|r| r.id == moonlight)
+                .find(|r| r.id == viewer)
                 .unwrap()
                 .choosable
         );
         let projection = snapshot
             .runner_resolved
             .iter()
-            .find(|r| r.runner_id == moonlight)
+            .find(|r| r.runner_id == viewer)
             .unwrap();
         assert_eq!(
             projection.values["settings.plugin.video.fps"].value,
             if game.is_some() { 90 } else { 30 }
         );
         assert!(
-            matches!(projection.values["settings.plugin.video.codec"].source,Some(LaunchSource::PluginDefault {ref plugin_id}) if plugin_id=="@korri:moonlight")
+            matches!(projection.values["settings.plugin.video.codec"].source,Some(LaunchSource::PluginDefault {ref plugin_id}) if plugin_id=="@korri:viewer")
         );
         assert!(!snapshot
             .resolved
@@ -1011,7 +1011,7 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
         assert!(snapshot
             .places
             .iter()
-            .any(|p| matches!(&p.place.scope,LaunchRunnerScope::Runner(id) if id==moonlight)));
+            .any(|p| matches!(&p.place.scope,LaunchRunnerScope::Runner(id) if id==viewer)));
         assert!(matches!(
             snapshot.resolved.values[&format!("services.{sunshine}.settings.plugin.video.codec")]
                 .source,
@@ -1033,7 +1033,7 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
             scope: LaunchRunnerScope::Any,
         },
         path: LaunchPath::Runner,
-        value: Some(json!(moonlight)),
+        value: Some(json!(viewer)),
         expected_revision: korrid::config::settings::runner_choice_revisions(root.path())
             .unwrap()
             .games,
@@ -1139,13 +1139,13 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
         &config,
         &registry,
         readable::GBA_ID,
-        Some(moonlight)
+        Some(viewer)
     )
     .is_err());
     let library_path = root.path().join("catalog/library.yaml");
     let mut library: serde_json::Value =
         serde_yaml::from_str(&fs::read_to_string(&library_path).unwrap()).unwrap();
-    library["library"][readable::GBA_ID]["profiles"]["quiet"]["runners"][moonlight]["settings"]
+    library["library"][readable::GBA_ID]["profiles"]["quiet"]["runners"][viewer]["settings"]
         ["plugin"]["video"]["fps"] = json!(999);
     fs::write(library_path, serde_yaml::to_string(&library).unwrap()).unwrap();
     let snapshot = ls::snapshot(
@@ -1158,10 +1158,10 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
     let projection = snapshot
         .runner_resolved
         .iter()
-        .find(|r| r.runner_id == moonlight)
+        .find(|r| r.runner_id == viewer)
         .unwrap();
     assert!(!projection.values.contains_key("settings.plugin.video.fps"));
-    assert!(snapshot.notices.iter().any(|n|matches!(n,ls::LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},runner_id:Some(id),message} if id==moonlight && key=="plugin.video.fps" && message=="unsupported fps")));
+    assert!(snapshot.notices.iter().any(|n|matches!(n,ls::LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},runner_id:Some(id),message} if id==viewer && key=="plugin.video.fps" && message=="unsupported fps")));
 }
 
 #[test]

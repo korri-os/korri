@@ -24,7 +24,7 @@ fn viewer_asks_for_the_picture_as_seen_on_a_quarter_turned_main_display() {
 #[test]
 fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
     let files = ViewerFiles {
-        executable: "/nix/store/viewer/bin/moonlight".into(),
+        executable: "/nix/store/viewer/bin/korri-viewer".into(),
         mapping: "/nix/store/viewer/mapping".into(),
         bootstrap: "/nix/store/viewer/bootstrap".into(),
     };
@@ -87,7 +87,7 @@ fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
 #[test]
 fn linux_viewer_vaapi_argv_keeps_sdl_fallback_interactive() {
     let files = ViewerFiles {
-        executable: "/nix/store/viewer/bin/moonlight".into(),
+        executable: "/nix/store/viewer/bin/korri-viewer".into(),
         mapping: "/nix/store/viewer/mapping".into(),
         bootstrap: "/nix/store/viewer/bootstrap".into(),
     };
@@ -107,7 +107,7 @@ fn linux_viewer_vaapi_argv_keeps_sdl_fallback_interactive() {
 #[test]
 fn linux_viewer_argv_unbrackets_ipv6_without_changing_the_control_url() {
     let files = ViewerFiles {
-        executable: "/nix/store/viewer/bin/moonlight".into(),
+        executable: "/nix/store/viewer/bin/korri-viewer".into(),
         mapping: "/nix/store/viewer/mapping".into(),
         bootstrap: "/nix/store/viewer/bootstrap".into(),
     };
@@ -324,7 +324,7 @@ esac
         crate::host::sway_test_peer::SwayTestPeer::start(compositor, root.path().join("sway.sock"));
     let viewer = ProductionLinuxStreamViewer {
         settings: Arc::new(|plugin, display| {
-            assert_eq!(plugin, ViewerPlugin::Moonlight);
+            assert_eq!(plugin, ViewerPlugin::Korri);
             Ok(vec![
                 "-width".into(),
                 display.width.to_string(),
@@ -345,9 +345,9 @@ esac
         }),
         local_seats: Arc::new(|| Box::pin(async { Ok(vec!["/dev/input/event12".into()]) })),
         resolve_files: Arc::new(|plugin| {
-            assert_eq!(plugin, ViewerPlugin::Moonlight);
+            assert_eq!(plugin, ViewerPlugin::Korri);
             Ok(ViewerFiles {
-                executable: "/nix/store/viewer/bin/moonlight".into(),
+                executable: "/nix/store/viewer/bin/korri-viewer".into(),
                 mapping: "/nix/store/viewer/mapping".into(),
                 bootstrap: "/nix/store/viewer/bootstrap".into(),
             })
@@ -369,18 +369,9 @@ esac
             height: 720
         })
     );
-    // The Linux viewer still requests its local 1280x720, not the holder's size.
-    viewer
-        .start(
-            launch,
-            &address,
-            Some(crate::launcher::plugin_launch::PluginDisplay {
-                width: 640,
-                height: 480,
-            }),
-        )
-        .await
-        .unwrap();
+    viewer.start_lifecycle(launch, &address).await.unwrap();
+    // Focus remains a separate effect, requested only after socket Start.
+    viewer.mutate(launch, Some(false)).await.unwrap();
     assert_eq!(
         &*provisioned.lock().unwrap(),
         &[("sunshine-host".into(), certificate.into())]
@@ -389,26 +380,18 @@ esac
         &*units.certificates.lock().unwrap(),
         &[certificate.to_owned()]
     );
-    // Moonlight's unit gets no lifecycle runtime directory or controller.
-    assert_eq!(&*units.controllers.lock().unwrap(), &[None]);
+    assert_eq!(
+        &*units.controllers.lock().unwrap(),
+        &[Some(unsafe { libc::geteuid() })]
+    );
     assert!(
         !viewer.keydir.exists(),
-        "korrid never opens or creates the identity directory"
+        "korrid never creates the identity directory"
     );
-    assert_eq!(
-        viewer.status(launch).await.unwrap(),
-        LinuxViewerStatus::Running
-    );
-    viewer.background(launch).await.unwrap();
-    assert_eq!(
-        viewer.status(launch).await.unwrap(),
-        LinuxViewerStatus::Backgrounded
-    );
-    viewer.resume_and_focus(launch).await.unwrap();
-    assert_eq!(
-        viewer.status(launch).await.unwrap(),
-        LinuxViewerStatus::Running
-    );
+    viewer.mutate(launch, Some(true)).await.unwrap();
+    assert_eq!(std::fs::read_to_string(&focus).unwrap(), "shell");
+    viewer.mutate(launch, Some(false)).await.unwrap();
+    assert_eq!(std::fs::read_to_string(&focus).unwrap(), "viewer");
     // The viewer fills its output on every return; the shell never does.
     let commands = std::fs::read_to_string(&commands).unwrap();
     let viewer_commands: Vec<_> = commands
@@ -444,7 +427,7 @@ esac
             .windows(2)
             .any(|args| args == ["-width", "1280"]));
         assert_eq!(
-            launches[0].environment["KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT"],
+            launches[0].environment["KORRI_VIEWER_DISABLE_GAMEPAD_QUIT"],
             "1"
         );
         // Gamepad events must reach Moonlight without X11 window focus.
@@ -453,31 +436,21 @@ esac
             "1"
         );
     }
-    // After a korrid restart its unit still names Moonlight as its viewer,
-    // and Moonlight's unit carries nothing it did not carry before.
     assert_eq!(
-        viewer.running(launch).unwrap(),
-        Some(ViewerPlugin::Moonlight)
+        units.launches.lock().unwrap()[0].environment[crate::host::RUNNER_ID_ENV],
+        "@korri:viewer/viewer"
     );
-    assert!(!units.launches.lock().unwrap()[0]
-        .environment
-        .contains_key(crate::host::RUNNER_ID_ENV));
     // A --no-block stop leaves the unit deactivating for a moment (#472).
     units
         .deactivating
         .store(3, std::sync::atomic::Ordering::SeqCst);
-    viewer.stop(launch).await.unwrap();
+    viewer.end_unit(launch).await.unwrap();
     assert_eq!(
         units.deactivating.load(std::sync::atomic::Ordering::SeqCst),
         0,
         "never claim stop until systemd confirms it"
     );
     assert_eq!(units.stops.load(std::sync::atomic::Ordering::SeqCst), 1);
-    assert_eq!(
-        viewer.status(launch).await.unwrap(),
-        LinuxViewerStatus::Stopped
-    );
-    assert_eq!(viewer.running(launch).unwrap(), None);
     task.abort();
 }
 
@@ -610,11 +583,11 @@ fn linux_viewer_drops_plugin_invariant_flags_and_preserves_native_settings() {
 #[test]
 fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_profile() {
     use serde_json::json;
-    const ID: &str = "@korri:moonlight/moonlight";
+    const ID: &str = "@korri:viewer/viewer";
     let root = tempfile::tempdir().unwrap();
     let package = root.path().join("plugin");
     std::fs::create_dir(&package).unwrap();
-    let source = r#"export const name='moonlight';export const runners={moonlight:{program:'program'}};export const handlers={
+    let source = r#"export const name='viewer';export const runners={viewer:{program:'program'}};export const handlers={
       'settings.describe':()=>({revision:'v1',schema:{}}),
       'settings.validate': input=>({valid:false,diagnostics:input.values.plugin?.video?.codec==='bad'?[{severity:'error',code:'codec',path:['plugin','video','codec'],message:'unsupported codec'}]:[]}),
       'settings.render':input=>({args:[JSON.stringify(input.settings),String(input.display.width)]})
@@ -622,7 +595,7 @@ fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_prof
     std::fs::write(package.join("plugin.ts"), source).unwrap();
     let registry = crate::plugin::PluginRegistry::from_installed(vec![
         crate::plugin_installation::EnabledPackage {
-            id: "@korri:moonlight".into(),
+            id: "@korri:viewer".into(),
             package,
             files: BTreeMap::from([("program".into(), "/bin/sh".into())]),
             entry: "plugin.ts".into(),
@@ -681,7 +654,7 @@ fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_prof
 #[test]
 fn linux_viewer_passes_plugin_audio_and_bitrate_unchanged_without_host_defaults() {
     let files = ViewerFiles {
-        executable: "/nix/store/viewer/bin/moonlight".into(),
+        executable: "/nix/store/viewer/bin/korri-viewer".into(),
         mapping: "/nix/store/viewer/mapping".into(),
         bootstrap: "/nix/store/viewer/bootstrap".into(),
     };
@@ -813,7 +786,6 @@ esac
         Some(&"@korri:viewer/viewer".to_owned())
     );
     drop(launches);
-    assert_eq!(viewer.running(launch).unwrap(), Some(ViewerPlugin::Korri));
     task.abort();
 }
 
@@ -849,7 +821,7 @@ fn korri_viewer_cleanup_waits_for_its_unit_to_end_and_resets_a_failed_one() {
 /// first stop request waits until systemd reports the unit gone, inactive or
 /// failed, and claims no stop that systemd cannot confirm.
 #[tokio::test]
-async fn moonlight_stop_waits_for_a_deactivating_unit_to_end() {
+async fn viewer_stop_waits_for_a_deactivating_unit_to_end() {
     use std::os::unix::fs::PermissionsExt;
     let launch = "0123456789abcdef0123456789abcdef";
     let unit = format!("korri-game-{launch}.service");
@@ -912,7 +884,7 @@ esac
             keydir: "/unused".into(),
             operation: Arc::new(tokio::sync::Mutex::new(())),
         };
-        let result = viewer.stop(launch).await;
+        let result = viewer.end_unit(launch).await;
         let calls = std::fs::read_to_string(state.join("calls")).unwrap();
         let count = |verb: &str| {
             calls

@@ -399,7 +399,7 @@ impl Drop for Alsa {
 }
 
 /// PulseAudio's names for the stream, as pulse.c gives them.
-const PULSE_APPLICATION: &str = "Moonlight Embedded";
+const PULSE_APPLICATION: &str = "Korri viewer";
 const PULSE_STREAM: &str = "Streaming";
 
 /// pulse.c's `audio_pulse_init`: a stereo stream at 48 kHz opens on the

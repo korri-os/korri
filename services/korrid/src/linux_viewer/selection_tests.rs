@@ -1,5 +1,4 @@
 use super::*;
-use crate::linux_viewer::test_backend::{LinuxViewerAction, TestLinuxStreamViewer};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -35,12 +34,12 @@ fn the_korri_viewer_is_chosen_only_when_its_treaty_is_korrids_byte_for_byte() {
     std::fs::write(&changed, &changed_bytes).unwrap();
     let moonlight = package("@korri:moonlight", None);
 
-    // Not installed: Moonlight, exactly as before this plugin existed.
-    assert_eq!(
-        select(std::slice::from_ref(&moonlight), &read).unwrap(),
-        ViewerPlugin::Moonlight
-    );
-    assert_eq!(select(&[], &read).unwrap(), ViewerPlugin::Moonlight);
+    // Missing or disabled viewer: a clear refusal, never another client.
+    assert!(select(&[], &read)
+        .unwrap_err()
+        .to_string()
+        .contains("@korri:viewer is not enabled"));
+    assert!(select(std::slice::from_ref(&moonlight), &read).is_err());
 
     // Equal bytes: the Korri viewer, with or without Moonlight installed.
     let korri = package("@korri:viewer", Some(same.clone()));
@@ -53,12 +52,9 @@ fn the_korri_viewer_is_chosen_only_when_its_treaty_is_korrids_byte_for_byte() {
         ViewerPlugin::Korri
     );
 
-    // One changed byte: refused, and Moonlight stays the viewer.
+    // One changed byte: refused even if an obsolete client remains installed.
     let other = package("@korri:viewer", Some(changed));
-    assert_eq!(
-        select(&[moonlight.clone(), other.clone()], &read).unwrap(),
-        ViewerPlugin::Moonlight
-    );
+    assert!(select(&[moonlight.clone(), other.clone()], &read).is_err());
     let refusal = select(std::slice::from_ref(&other), &read)
         .unwrap_err()
         .to_string();
@@ -68,10 +64,7 @@ fn the_korri_viewer_is_chosen_only_when_its_treaty_is_korrids_byte_for_byte() {
 
     // No treaty file: refused the same way.
     let unknown = package("@korri:viewer", None);
-    assert_eq!(
-        select(&[moonlight.clone(), unknown.clone()], &read).unwrap(),
-        ViewerPlugin::Moonlight
-    );
+    assert!(select(&[moonlight.clone(), unknown.clone()], &read).is_err());
     let refusal = select(&[unknown], &read).unwrap_err().to_string();
     assert!(refusal.contains("declares no treaty file"), "{refusal}");
 
@@ -93,132 +86,37 @@ fn the_production_read_takes_only_an_immutable_store_file() {
 }
 
 #[tokio::test]
-async fn each_launch_stays_with_the_viewer_that_started_it() {
-    let moonlight = TestLinuxStreamViewer::default();
-    let korri = TestLinuxStreamViewer::default();
+async fn disabling_the_plugin_refuses_new_starts_but_keeps_existing_lifecycle_controls() {
+    use crate::linux_viewer::test_backend::{LinuxViewerAction, TestLinuxStreamViewer};
+    use std::sync::Mutex;
+    let backend = TestLinuxStreamViewer::default();
     let choice = Arc::new(Mutex::new(Ok(ViewerPlugin::Korri)));
     let chosen = choice.clone();
     let viewer = InstalledLinuxStreamViewer::new(
-        Arc::new(moonlight.clone()),
-        Arc::new(korri.clone()),
+        Arc::new(backend.clone()),
         Arc::new(move || chosen.lock().unwrap().clone()),
-        Arc::new(|_| Ok(None)),
     );
-    let first = "0123456789abcdef0123456789abcdef";
-    let second = "fedcba9876543210fedcba9876543210";
-    viewer.start(first, "192.0.2.1", None).await.unwrap();
-    *choice.lock().unwrap() = Ok(ViewerPlugin::Moonlight);
-    viewer.start(second, "192.0.2.1", None).await.unwrap();
-    // The plugin set changed between the two starts. Neither launch moves.
-    viewer.background(first).await.unwrap();
-    viewer.status(second).await.unwrap();
-    viewer.stop(first).await.unwrap();
-    let actions = |backend: &TestLinuxStreamViewer| {
+    let launch = "0123456789abcdef0123456789abcdef";
+    viewer.start(launch, "192.0.2.1", None).await.unwrap();
+    *choice.lock().unwrap() = Err(error("@korri:viewer is not enabled"));
+    assert!(viewer
+        .start("22222222222222222222222222222222", "192.0.2.1", None)
+        .await
+        .is_err());
+    viewer.background(launch).await.unwrap();
+    viewer.status(launch).await.unwrap();
+    viewer.stop(launch).await.unwrap();
+    assert_eq!(
         backend
             .calls()
             .into_iter()
-            .map(|call| (call.launch_id, call.action))
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(
-        actions(&korri),
+            .map(|call| call.action)
+            .collect::<Vec<_>>(),
         vec![
-            (first.to_owned(), LinuxViewerAction::Start),
-            (first.to_owned(), LinuxViewerAction::Background),
-            (first.to_owned(), LinuxViewerAction::Stop),
-        ]
-    );
-    assert_eq!(
-        actions(&moonlight),
-        vec![
-            (second.to_owned(), LinuxViewerAction::Start),
-            (second.to_owned(), LinuxViewerAction::Status),
-        ]
-    );
-    // A stopped or unknown launch goes where a start would go now.
-    viewer.status(first).await.unwrap();
-    assert_eq!(
-        actions(&moonlight).last(),
-        Some(&(first.to_owned(), LinuxViewerAction::Status))
-    );
-    // A failed start is forgotten; its adapter already cleaned up.
-    *choice.lock().unwrap() = Ok(ViewerPlugin::Korri);
-    korri.fail_next(LinuxViewerAction::Start, "no connection");
-    let third = "00000000000000000000000000000003";
-    assert!(viewer.start(third, "192.0.2.1", None).await.is_err());
-    *choice.lock().unwrap() = Ok(ViewerPlugin::Moonlight);
-    viewer.status(third).await.unwrap();
-    assert_eq!(
-        actions(&moonlight).last(),
-        Some(&(third.to_owned(), LinuxViewerAction::Status))
-    );
-    // A refusal with no Moonlight to fall back to fails the start itself.
-    *choice.lock().unwrap() = Err(LinuxViewerError::new("korrid refuses @korri:viewer"));
-    let fourth = "00000000000000000000000000000004";
-    assert_eq!(
-        viewer
-            .start(fourth, "192.0.2.1", None)
-            .await
-            .unwrap_err()
-            .to_string(),
-        "korrid refuses @korri:viewer"
-    );
-    // An unknown launch is still observed when no choice can be made, by
-    // Moonlight's adapter as before this plugin existed.
-    viewer.status(fourth).await.unwrap();
-    assert_eq!(
-        actions(&moonlight).last(),
-        Some(&(fourth.to_owned(), LinuxViewerAction::Status))
-    );
-}
-
-#[tokio::test]
-async fn after_a_restart_an_unknown_launch_goes_to_the_viewer_whose_unit_runs_it() {
-    let moonlight = TestLinuxStreamViewer::default();
-    let korri = TestLinuxStreamViewer::default();
-    let moonlight_unit = "11111111111111111111111111111111";
-    let korri_unit = "22222222222222222222222222222222";
-    let no_unit = "33333333333333333333333333333333";
-    let unreadable = "44444444444444444444444444444444";
-    // Both plugins are installed, so a start would choose the Korri viewer.
-    let viewer = InstalledLinuxStreamViewer::new(
-        Arc::new(moonlight.clone()),
-        Arc::new(korri.clone()),
-        Arc::new(|| Ok(ViewerPlugin::Korri)),
-        Arc::new(move |launch| match launch.as_str() {
-            "11111111111111111111111111111111" => Ok(Some(ViewerPlugin::Moonlight)),
-            "22222222222222222222222222222222" => Ok(Some(ViewerPlugin::Korri)),
-            "33333333333333333333333333333333" => Ok(None),
-            _ => Err(LinuxViewerError::new("systemd unreachable")),
-        }),
-    );
-    for launch in [moonlight_unit, korri_unit, no_unit, unreadable] {
-        viewer.status(launch).await.unwrap();
-    }
-    // The Moonlight unit is observed by Moonlight's adapter, not answered
-    // Stopped by the Korri adapter, which has no connection to it; so is
-    // its stop.
-    viewer.stop(moonlight_unit).await.unwrap();
-    let launches = |backend: &TestLinuxStreamViewer| {
-        backend
-            .calls()
-            .into_iter()
-            .map(|call| (call.launch_id, call.action))
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(
-        launches(&moonlight),
-        vec![
-            (moonlight_unit.to_owned(), LinuxViewerAction::Status),
-            (unreadable.to_owned(), LinuxViewerAction::Status),
-            (moonlight_unit.to_owned(), LinuxViewerAction::Stop),
-        ]
-    );
-    assert_eq!(
-        launches(&korri),
-        vec![
-            (korri_unit.to_owned(), LinuxViewerAction::Status),
-            (no_unit.to_owned(), LinuxViewerAction::Status),
+            LinuxViewerAction::Start,
+            LinuxViewerAction::Background,
+            LinuxViewerAction::Status,
+            LinuxViewerAction::Stop
         ]
     );
 }

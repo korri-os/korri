@@ -1,3 +1,6 @@
+> Historical acceptance of Moonlight Embedded. ADR 0099 removed that client
+> on 2026-11-24. This record does not prove the Rust viewer on this device.
+
 # H700 Moonlight hardware decode through V4L2 Request
 
 ## Scope

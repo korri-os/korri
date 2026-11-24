@@ -191,7 +191,7 @@ int main(int argc, char** argv) {
     viewer_input_callbacks(&cb);
     assert(cb.rumble && cb.rumbleTriggers && cb.setControllerLED && cb.setMotionEventState);
     // Patch 0014: Korri owns the gamepad quit chord.
-    setenv("KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT", "1", 1);
+    setenv("KORRI_VIEWER_DISABLE_GAMEPAD_QUIT", "1", 1);
     int chord[] = {SDL_CONTROLLER_BUTTON_START, SDL_CONTROLLER_BUTTON_BACK,
       SDL_CONTROLLER_BUTTON_LEFTSHOULDER, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER};
     for (int i = 0; i < 4; ++i)

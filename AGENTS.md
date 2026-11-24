@@ -246,12 +246,17 @@ repositories, and no Korri client ships an outside repository address.
 - Peer korrids speak the native tagged `/rpc` wire. The Effect-RPC envelope
   client in `services/korrid/src/upstream.rs` exists only for aka until it is
   migrated; it dies at switchover. Do not grow abstractions around it.
-- One viewer that Korri owns replaces Moonlight Embedded in measured stages
-  (issue #391, ADRs 0059 to 0064); on Android it is already the only viewer
-  (ADR 0087). A part moves to Rust only when its replacement measures equal
-  or better, and agents prove each stage on aka and the device bench with no
-  person in the loop. Build a new viewer feature in the new viewer. In
-  Moonlight Embedded, fix only `priority: high` bugs.
+- Moonlight Embedded was removed on 2026-11-24 (owner decision, ADR 0099).
+  The tag `moonlight-final` marks the last Korri commit that carried its
+  integration; `docs/briefs/2026-11-24-moonlight-removal-scope.md` records
+  the cut and the corresponding plugins revision. The Rust viewer is the
+  only client. Devices without a supported Rust decoder lose streaming;
+  do not restore the old client as a fallback. The Moonlight protocol,
+  Sunshine, pairing and the certificate broker stay.
+- Viewer parts move to Rust in measured stages (issue #391, ADR 0062).
+  Build new viewer features in the Rust viewer and prove each stage on aka
+  and the device bench without a person in the loop. ADR 0099 removes the
+  requirement to retain Moonlight Embedded while a picture path has no proof.
 
 ## Agent skills
 

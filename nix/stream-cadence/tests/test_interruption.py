@@ -1,5 +1,3 @@
-import contextlib
-import io
 import json
 import os
 from pathlib import Path
@@ -12,7 +10,7 @@ import threading
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from cli import Remote, compare, parser, run_case
+from cli import Remote, compare, parser
 
 
 class InterruptionTests(unittest.TestCase):
@@ -105,31 +103,6 @@ class InterruptionTests(unittest.TestCase):
                 self.assertEqual(received[0]["operation"], "revoke")
                 self.assertFalse(grant.exists())
                 self.assertFalse((root / "run-data").exists())
-
-    def test_refused_run_records_imported_paths_in_discovered_facts(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            remote = Remote(
-                [sys.executable, str(Path(__file__).with_name("reply-peer.py"))],
-                root / "peer.log",
-            )
-            args = parser().parse_args(["run", "--device", "example.test"])
-            args.imported_store_paths = [
-                "/nix/store/transport-python3-1.0",
-                "/nix/store/transport-stream-cadence-motion",
-                "/nix/store/transport-source",
-            ]
-            with contextlib.redirect_stdout(io.StringIO()):
-                result = run_case(
-                    args, remote, "unused-motion", root, "public-certificate", None, 0
-                )
-            saved = json.loads((root / "result.json").read_text())
-            self.assertEqual(
-                saved["discovered"]["imported_store_paths"], args.imported_store_paths
-            )
-            self.assertEqual(result, saved)
-            self.assertFalse(saved["discovered"]["valid"])
-            self.assertTrue(saved["discovered"]["restore"]["pass"])
 
     def test_empty_results_do_not_pass_an_explicit_limit(self):
         with tempfile.TemporaryDirectory() as temporary:

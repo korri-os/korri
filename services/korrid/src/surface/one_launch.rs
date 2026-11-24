@@ -384,11 +384,11 @@ mod tests {
     /// This device's stream viewer codec.
     fn codec() -> Change {
         Change {
-            row: "launch:stream:@korri:moonlight/moonlight#video.codec".into(),
+            row: "launch:stream:@korri:viewer/viewer#video.codec".into(),
             path: json!({"_tag":"Setting","payload":{"key":"video.codec"}}),
             value: json!("av1"),
             side: Side::Viewer {
-                runner: "@korri:moonlight/moonlight".into(),
+                runner: "@korri:viewer/viewer".into(),
             },
         }
     }

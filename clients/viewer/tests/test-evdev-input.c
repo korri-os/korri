@@ -119,7 +119,7 @@ int main(int argc, char** argv) {
   event(&dev, EV_KEY, BTN_A, 0);
   event(&dev, EV_SYN, SYN_REPORT, 0);
   assert(controllers == 2 && flags == 0);
-  setenv("KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT", "1", 1);
+  setenv("KORRI_VIEWER_DISABLE_GAMEPAD_QUIT", "1", 1);
   dev.buttonFlags = PLAY_FLAG | BACK_FLAG | LB_FLAG | RB_FLAG;
   event(&dev, EV_KEY, BTN_A, 1);
   event(&dev, EV_SYN, SYN_REPORT, 0);

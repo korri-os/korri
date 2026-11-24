@@ -82,10 +82,11 @@ nix run .#viewer-android-recovery-proof -- --build-store auto --stream-host AKA_
   ALSA. The fixture's
   isolated null ALSA configuration works without a sound server. The Rust
   port of that code chooses the same way ("Sound in Rust", below).
-- The unchanged stage-0 tool needs `bin/moonlight` and the mapping path
-  `share/moonlight/korri-inputplumber-gamecontrollerdb.txt`. The binary name
-  is a package-entry symlink, not a second implementation. The mapping is
-  the pinned upstream controller database with the plugin package's two
+- The viewer program is `bin/korri-viewer`. `stream-cadence view` uses it
+  with the mapping at `share/moonlight/korri-inputplumber-gamecontrollerdb.txt`.
+  ADR 0099 removes the old `bin/moonlight` alias and the stage-0 tool's
+  Moonlight-only `run` command. The mapping is the pinned upstream controller
+  database with the plugin package's two
   InputPlumber corrections. It accepts the PC flags emitted by
   `linux_viewer::stream_args` and the plugin's rendered settings. On PC,
   `-input` fails explicitly: korrid passes no explicit input node there.
@@ -402,21 +403,17 @@ The plugin is built in the plugins repository from this directory
 mapping, an identity-bootstrap helper, `treaty` (this package's
 `share/korri-viewer/viewer.ts`) and `packages.source`, the GPL-3
 corresponding source that `default.nix` builds as `correspondingSource`
-(ADR 0059). Its settings are `@korri:moonlight`'s, under the runner
+(ADR 0059). Its settings are owned by the viewer plugin, under the runner
 `@korri:viewer/viewer`.
 
 korrid (`services/korrid/src/linux_viewer/selection.rs`) chooses at each start:
 
 - `@korri:viewer` enabled and its `files.treaty` equal, byte for byte, to
   korrid's own `contracts/generated/viewer.ts`: the socket adapter.
-- Otherwise Moonlight, exactly as before. A refused `@korri:viewer` is logged
-  with korrid's treaty hash, and with the plugin's when it declares a treaty
-  file. Without Moonlight the refusal is the start's error. A launch stays
-  with the viewer that started it.
-- After a korrid restart, a launch it no longer knows goes to the viewer whose
-  unit holds it. The Korri viewer's unit carries the live-unit runner marker
-  `KORRI_LIVE_RUNNER_ID=@korri:viewer/viewer`; a unit without it is
-  Moonlight's. With no unit, the launch goes where a start would go.
+- A missing or disabled plugin fails with an error that names `@korri:viewer`.
+- A mismatched treaty fails with both hashes. There is no fallback client
+  (ADR 0099). Disabling the plugin during a stream does not move that
+  stream's lifecycle controls away from the socket adapter.
 
 The treaty check covers the wire types only. A change to the launch
 arguments, or to behaviour that keeps the wire types, is not caught before
@@ -424,9 +421,9 @@ start: the viewer then fails at start. If that happens, the next step is to
 put the launch arguments into the contract crate, so that the same check
 covers them.
 
-korrid starts the viewer in its exact-launch unit `korri-game-<launch>`, as it
-starts Moonlight: same user, sandbox, environment, broker certificate
-credential and key directory. The lifecycle viewer's unit adds:
+korrid starts the viewer in its exact-launch unit `korri-game-<launch>` with
+the runtime user, sandbox, broker certificate credential and protocol identity
+directory. The unit declares:
 
 ```text
 korri-viewer --lifecycle-socket /run/korri-game-<launch>/control/viewer.sock \
@@ -440,7 +437,7 @@ systemd applies `RuntimeDirectoryMode` again before each Exec command, and a
 chmod resets an ACL mask. So the search grant comes after the main process
 starts, and `systemd-run` returns only after `ExecStartPost`. A connect that
 still comes before the grant gets `EACCES`, which korrid retries. systemd
-removes the directory when the unit stops. Moonlight's units do not change.
+removes the directory when the unit stops.
 
 `services/korrid/viewer-vm-test.nix`, run by the plugins repository as
 `korri-viewer-lifecycle`, proves this on a cold NixOS guest with the real
@@ -575,7 +572,7 @@ other final measurements: `korri-viewer-c` against
 `korri-viewer-rust-audio-output`, with `--tone 1000`.
 
 `korri-viewer-rust-audio-output` is the viewer with the feature and no
-other Rust part; its `bin/moonlight` appends `-audiooutput rust`, so that
+other Rust part; its `bin/korri-viewer` selects `-audiooutput rust`, so that
 the stage-0 tool runs it as the candidate beside `korri-viewer-c`, the
 viewer with no Rust part. `korri-viewer` is no baseline for it: it carries
 nightjar-core and the Rust presenter, window and sound.
@@ -591,7 +588,7 @@ Only the language changes, so that the measure judges one cause:
 | Choice | `viewer_audio_callbacks`: SDL unless X11 VA-API; then Pulse when a 48 kHz stereo probe stream opens on the device, else ALSA | The same, with the same probe (`choose`) |
 | Decode | libopus on the core's thread (`CAPABILITY_DIRECT_SUBMIT`); NULL for a lost packet | The same libopus calls, bound by `build.rs` from `opus_multistream.h` |
 | ALSA | alsa-lib: the device or `sysdefault`, non-blocking, S16_LE, 20 ms period, 60 ms buffer, start and wake at the granted period, one `snd_pcm_recover` and one retry of a failed write, drain then close | The same calls, through the `alsa` crate 0.12 (Apache-2.0 or MIT) |
-| PulseAudio | libpulse-simple: names "Moonlight Embedded" and "Streaming", the default buffer, ALSA's channel map, blocking writes, free without a drain | The same calls, through `libpulse-simple-binding` 2.29 (MIT or Apache-2.0) |
+| PulseAudio | libpulse-simple: names "Korri viewer" and "Streaming", the default buffer, ALSA's channel map, blocking writes, free without a drain | The same calls, through `libpulse-simple-binding` 2.29 (MIT or Apache-2.0) |
 | SDL | SDL2's default device, 4096 frames, `SDL_QueueAudio`, the subsystem left open | The same calls, bound by `build.rs` from `SDL.h` (no `sdl2-sys`: it carries 89 MB of SDL source) |
 | Channel order | ALSA's (FL FR RL RR C LFE SL SR) for ALSA and Pulse, the core's for SDL | The same |
 
@@ -643,7 +640,7 @@ carried C on every number in turns (`proof/rust-egl-presenter/`), so it is
 the default where the cargo feature `rust-egl-presenter` builds it (ADR
 0062). The PC package, `korri-viewer`, builds it; `-eglpresenter c`
 chooses the carried C. `korri-viewer-rust-egl-presenter` is the port with
-no other Rust part, the turns' candidate; its `bin/moonlight` appends
+no other Rust part, the turns' candidate; its `bin/korri-viewer` selects
 `-eglpresenter rust`.
 
 With the feature, Rust owns the two names that the caller uses
@@ -723,7 +720,7 @@ the carried C on every number in turns (`proof/rust-x11-window/`), so it is
 the default where the cargo feature `rust-x11-window` builds it (ADR 0062).
 The PC package, `korri-viewer`, builds it; `-x11window c` chooses the
 carried C. `korri-viewer-rust-x11-window` is the port with no other Rust
-part, the turns' candidate; its `bin/moonlight` appends `-x11window rust`.
+part, the turns' candidate; its `bin/korri-viewer` selects `-x11window rust`.
 The SDL platform (`-platform x11`, or a VA-API start that failed) and
 `v4l2request` have no such window: there a named `-x11window rust` is
 refused, and the default goes unused.
@@ -816,9 +813,9 @@ the window too; `vaPutSurface` then shows none on AMD. The presenter is
 the one that `-eglpresenter` chooses. `-filledpicture putsurface`, the
 default, keeps `vaPutSurface`. On the SDL platform and on `v4l2request`
 `egl` is refused: neither shows pictures through this code.
-`korri-viewer-rust-egl-filled-picture`'s `bin/moonlight` appends
+`korri-viewer-rust-egl-filled-picture`'s `bin/korri-viewer` selects
 `-eglpresenter rust -filledpicture egl` to the binary of
-`korri-viewer-rust-egl-presenter`, whose `bin/moonlight` appends
+`korri-viewer-rust-egl-presenter`, whose `bin/korri-viewer` selects
 `-eglpresenter rust` alone. Its turns beside that package judged this
 choice alone: worse on numbers 1 and 3 (`proof/rust-egl-filled-picture/`),
 so `putsurface` stays the default and `egl` an option.
@@ -2077,7 +2074,7 @@ it (ADR 0062), and `-networkcore c` streams with the C core:
 
 - Linux: the PC package, `korri-viewer`, builds it (x86_64; the aarch64
   package does not, below). `korri-viewer-nightjar` is nightjar-core with
-  no other Rust part, the turns' candidate; its `bin/moonlight` appends
+  no other Rust part, the turns' candidate; its `bin/korri-viewer` selects
   `-networkcore nightjar`.
 - Android: `nix build .#korri-viewer-android-apk` (the viewer's own app,
   both ABIs) and `.#checks.x86_64-linux.korri-viewer-android` (the session

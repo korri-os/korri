@@ -594,7 +594,7 @@ int sdlinput_handle_event(SDL_Window* window, SDL_Event* event) {
     else
       gamepad->buttons &= ~SDL_TO_LI_BUTTON_MAP[event->cbutton.button];
 
-    if (getenv("KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT") == NULL &&
+    if (getenv("KORRI_VIEWER_DISABLE_GAMEPAD_QUIT") == NULL &&
         (gamepad->buttons & QUIT_BUTTONS) == QUIT_BUTTONS)
       return SDL_QUIT_APPLICATION;
 

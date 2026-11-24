@@ -1,6 +1,6 @@
 //! Viewer effects stay at this edge. Admission comes from the plugin host;
 //! process lifetime and focus come from the existing exact-launch authorities.
-use super::{LinuxStreamViewer, LinuxViewerError, LinuxViewerStatus};
+use super::LinuxViewerError;
 use crate::host::compositor_focus::{
     focused_ownership, select_focus_target, CompositorControl, FocusTarget, SwayCompositorControl,
 };
@@ -26,41 +26,24 @@ pub type CertificateProvision = Arc<
 pub type LocalSeats =
     Arc<dyn Fn() -> BoxFuture<'static, Result<Vec<PathBuf>, LinuxViewerError>> + Send + Sync>;
 
-/// The two Linux viewer plugins (ADR 0061). Both take Moonlight's arguments,
-/// keydir and broker certificate; only `Korri` reports over a lifecycle socket.
+/// The removable Linux viewer (ADRs 0061 and 0099).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ViewerPlugin {
-    Moonlight,
     Korri,
 }
 
 impl ViewerPlugin {
     pub fn id(self) -> &'static str {
-        match self {
-            Self::Moonlight => "@korri:moonlight",
-            Self::Korri => "@korri:viewer",
-        }
+        "@korri:viewer"
     }
-    /// The runner whose settings korrid renders for this viewer.
     pub fn runner(self) -> &'static str {
-        match self {
-            Self::Moonlight => "@korri:moonlight/moonlight",
-            Self::Korri => "@korri:viewer/viewer",
-        }
+        "@korri:viewer/viewer"
     }
-    /// The name in korrid's messages; Moonlight's are unchanged.
     fn title(self) -> &'static str {
-        match self {
-            Self::Moonlight => "Moonlight",
-            Self::Korri => "Korri viewer",
-        }
+        "Korri viewer"
     }
-    /// The declared file that names the viewer program.
     fn program(self) -> &'static str {
-        match self {
-            Self::Moonlight => "moonlight",
-            Self::Korri => "viewer",
-        }
+        "viewer"
     }
 }
 
@@ -85,9 +68,8 @@ pub(super) fn production_effects(
     }
 }
 
-/// Moonlight's adapter observes systemd and compositor state. The Korri
-/// viewer's adapter (`socket.rs`) borrows only its effects: unit start, focus
-/// and confirmed stop.
+/// Effects used by the lifecycle socket adapter: unit start, focus and
+/// confirmed stop. Viewer state comes only from that socket.
 #[derive(Clone)]
 pub(super) struct ProductionLinuxStreamViewer {
     provision: CertificateProvision,
@@ -176,10 +158,8 @@ fn installed_files(plugin: ViewerPlugin) -> Result<ViewerFiles, LinuxViewerError
     let packages = crate::plugin_installation::read().map_err(error)?;
     let package = enabled(&packages, plugin)?
         .ok_or_else(|| error(format!("{} plugin is not enabled", plugin.title())))?;
-    if plugin == ViewerPlugin::Korri {
-        // Selection checked this too; the package can change between the two reads.
-        super::selection::verify_treaty(package, &super::selection::read_immutable)?;
-    }
+    // Selection checked this too; the package can change between the two reads.
+    super::selection::verify_treaty(package, &super::selection::read_immutable)?;
     let file = |name: &str| -> Result<PathBuf, LinuxViewerError> {
         let path = package
             .files
@@ -279,7 +259,7 @@ fn platform() -> &'static str {
         std::env::consts::ARCH,
         Path::new("/dev/dri"),
         |error| {
-            log::warn!("Moonlight cannot read device-tree compatibility; using x11: {error}");
+            log::warn!("Korri viewer cannot read device-tree compatibility; using x11: {error}");
         },
     )
 }
@@ -340,8 +320,7 @@ pub type ViewerSettings = Arc<
         + Sync,
 >;
 
-/// Each viewer plugin has its own settings under its own runner (ADR 0061):
-/// settings stored for `@korri:moonlight` do not carry over.
+/// Render settings for the installed viewer runner (ADR 0061).
 pub fn render_settings(
     root: &Path,
     registry: &crate::plugin::PluginRegistry,
@@ -498,7 +477,7 @@ fn stream_args(
     });
     let (rendered, warnings) = plugin_args(rendered);
     for warning in warnings {
-        log::warn!("Moonlight {warning}");
+        log::warn!("Korri viewer {warning}");
     }
     args.extend(rendered);
     Ok(args)
@@ -557,26 +536,6 @@ impl ProductionLinuxStreamViewer {
             .and_then(|displays| displays.into_iter().find(|d| d.main))
             .map(|d| d.name);
         viewer_dimensions(&output, main.as_deref()).map_err(error)
-    }
-    fn observe(&self, launch: &str) -> Result<LinuxViewerStatus, LinuxViewerError> {
-        match self.units.state(launch).map_err(unit_error)? {
-            LaunchUnitState::Completed => return Ok(LinuxViewerStatus::Stopped),
-            LaunchUnitState::Running => (),
-            _ => return Err(error("viewer unit is not settled running or stopped")),
-        }
-        let pids = self.units.window_pids(launch).map_err(unit_error)?;
-        let tree = self.control()?.tree().map_err(error)?;
-        let shell_pids = self
-            .shell
-            .as_ref()
-            .map(|unit| unit.window_pids())
-            .transpose()
-            .map_err(unit_error)?
-            .unwrap_or_default();
-        match focused_ownership(&tree, &pids, &shell_pids).map_err(error)? {
-            crate::FocusOwnership::Launch => Ok(LinuxViewerStatus::Running),
-            _ => Ok(LinuxViewerStatus::Backgrounded),
-        }
     }
     fn focus(&self, launch: &str, shell: bool) -> Result<(), LinuxViewerError> {
         let control = self.control()?;
@@ -655,126 +614,15 @@ impl ProductionLinuxStreamViewer {
             std::thread::sleep(Duration::from_millis(50));
         }
     }
-    /// Whose viewer unit holds this launch now, from systemd: None when no
-    /// unit does. Only the Korri viewer's unit names its runner (start_unit),
-    /// so a unit without that name is Moonlight's, including one started by
-    /// a korrid before this marker existed.
-    pub(super) fn running(&self, launch: &str) -> Result<Option<ViewerPlugin>, LinuxViewerError> {
-        validate_launch(launch)?;
-        match self.units.state(launch) {
-            Ok(LaunchUnitState::Completed) => return Ok(None),
-            Ok(_) => {}
-            // A failed unit still holds the name until a stop resets it.
-            Err(failed) if failed.kind == crate::host::LaunchUnitErrorKind::UnitFailed => {}
-            Err(other) => return Err(unit_error(other)),
-        }
-        let runner = self.units.runner_id(launch).map_err(unit_error)?;
-        Ok(Some(
-            if runner.as_deref() == Some(ViewerPlugin::Korri.runner()) {
-                ViewerPlugin::Korri
-            } else {
-                ViewerPlugin::Moonlight
-            },
-        ))
-    }
 }
 
-impl LinuxStreamViewer for ProductionLinuxStreamViewer {
-    fn snapshot<'a>(
-        &'a self,
-        launch: &'a str,
-    ) -> futures::future::BoxFuture<'a, Result<Option<super::ViewerSnapshot>, LinuxViewerError>>
-    {
-        let this = self.clone();
-        let launch = launch.to_owned();
-        Box::pin(async move {
-            tokio::task::spawn_blocking(move || {
-                validate_launch(&launch)?;
-                let (phase, text) = this.units.state_with_status(&launch).map_err(unit_error)?;
-                if phase == crate::host::LaunchUnitState::Completed {
-                    return Ok(Some(super::ViewerSnapshot {
-                        connected: Some(false),
-                        ..Default::default()
-                    }));
-                }
-                if phase != crate::host::LaunchUnitState::Running {
-                    return Ok(None);
-                }
-                let Some(text) = text else {
-                    return Ok(None);
-                };
-                if text == "korri-viewer-disconnected" {
-                    return Ok(Some(super::ViewerSnapshot {
-                        connected: Some(false),
-                        ..Default::default()
-                    }));
-                }
-                let Some(encoded) = connected_stream_size(&text) else {
-                    return Ok(None);
-                };
-                let screen = this
-                    .display()
-                    .ok_or_else(|| error("Viewer display unavailable"))?;
-                Ok(Some(super::ViewerSnapshot {
-                    connected: Some(true),
-                    shape: Some(super::ViewerShapeSnapshot {
-                        connection: text
-                            .rsplitn(3, ':')
-                            .last()
-                            .expect("validated presence")
-                            .to_owned(),
-                        screen,
-                        encoded,
-                        ready: false,
-                    }),
-                    ..Default::default()
-                }))
-            })
-            .await
-            .map_err(error)?
-        })
-    }
-
-    fn display(&self) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
+impl ProductionLinuxStreamViewer {
+    pub(super) fn display(&self) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
         let (width, height) = self.dimensions().ok()?;
         Some(crate::launcher::plugin_launch::PluginDisplay {
             width: width as u32,
             height: height as u32,
         })
-    }
-
-    fn start<'a>(
-        &'a self,
-        launch: &'a str,
-        address: &'a str,
-        _display: Option<crate::launcher::plugin_launch::PluginDisplay>,
-    ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
-        Box::pin(self.start_unit(ViewerPlugin::Moonlight, launch, address))
-    }
-    fn status<'a>(
-        &'a self,
-        launch: &'a str,
-    ) -> BoxFuture<'a, Result<LinuxViewerStatus, LinuxViewerError>> {
-        Box::pin(async move {
-            validate_launch(launch)?;
-            let this = self.clone();
-            let launch = launch.to_owned();
-            tokio::task::spawn_blocking(move || this.observe(&launch))
-                .await
-                .map_err(error)?
-        })
-    }
-    fn background<'a>(&'a self, launch: &'a str) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
-        self.mutate(launch, Some(true))
-    }
-    fn resume_and_focus<'a>(
-        &'a self,
-        launch: &'a str,
-    ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
-        self.mutate(launch, Some(false))
-    }
-    fn stop<'a>(&'a self, launch: &'a str) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
-        self.mutate(launch, None)
     }
 }
 impl ProductionLinuxStreamViewer {
@@ -791,8 +639,8 @@ impl ProductionLinuxStreamViewer {
     }
 
     /// One viewer unit for one exact launch: identity bootstrap, broker
-    /// certificate, occupied seats, the chosen plugin's settings. Moonlight is
-    /// focused here; the Korri viewer is focused after its socket confirms Start.
+    /// certificate, occupied seats and plugin settings. The viewer is focused
+    /// only after its socket confirms Start.
     async fn start_unit(
         &self,
         plugin: ViewerPlugin,
@@ -842,19 +690,13 @@ impl ProductionLinuxStreamViewer {
                 platform(),
                 &seats,
             )?;
-            let controller = match plugin {
-                ViewerPlugin::Moonlight => None,
-                ViewerPlugin::Korri => {
-                    // korrid's own UID: the only peer the viewer accepts.
-                    let controller = unsafe { libc::geteuid() };
-                    let socket =
-                        crate::host::viewer_lifecycle_socket(&launch).map_err(unit_error)?;
-                    command.splice(1..1, lifecycle_args(&socket, &launch, controller));
-                    Some(controller)
-                }
-            };
-            let mut environment = BTreeMap::from([
-                ("KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT".into(), "1".into()),
+            // korrid's own UID: the only peer the viewer accepts.
+            let controller = unsafe { libc::geteuid() };
+            let socket = crate::host::viewer_lifecycle_socket(&launch).map_err(unit_error)?;
+            command.splice(1..1, lifecycle_args(&socket, &launch, controller));
+            let environment = BTreeMap::from([
+                ("KORRI_VIEWER_DISABLE_GAMEPAD_QUIT".into(), "1".into()),
+                (crate::host::RUNNER_ID_ENV.into(), plugin.runner().into()),
                 // SDL drops gamepad events while its window lacks X11
                 // focus. Under Xwayland the viewer can hold compositor
                 // focus without it, which left joiners with no controls.
@@ -866,11 +708,6 @@ impl ProductionLinuxStreamViewer {
                     "unix:/run/korri-game-audio/native".into(),
                 ),
             ]);
-            if controller.is_some() {
-                // The live-unit runner marker game units carry: a restarted
-                // korrid reads it to route this launch (`running`).
-                environment.insert(crate::host::RUNNER_ID_ENV.into(), plugin.runner().into());
-            }
             let sandbox = LaunchSandbox::new(&command, &environment);
             this.units
                 .launch_viewer(
@@ -879,15 +716,9 @@ impl ProductionLinuxStreamViewer {
                     &environment,
                     &sandbox,
                     &server_certificate,
-                    controller,
+                    Some(controller),
                 )
                 .map_err(unit_error)?;
-            if plugin == ViewerPlugin::Moonlight {
-                if let Err(focus_error) = this.focus(&launch, false) {
-                    this.ended(&launch)?;
-                    return Err(focus_error);
-                }
-            }
             Ok(())
         })
         .await
@@ -935,31 +766,3 @@ impl ProductionLinuxStreamViewer {
 #[cfg(test)]
 #[path = "production_tests.rs"]
 mod tests;
-
-// Only the native connectionStarted callback emits this StatusText. A live
-// process or a visible Moonlight window alone does not prove a connection.
-fn connected_stream_size(text: &str) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
-    let fields: Vec<_> = text
-        .strip_prefix("korri-viewer-connected:")?
-        .split(':')
-        .collect();
-    if fields.len() != 5 {
-        return None;
-    }
-    let pid = fields[0].parse::<u32>().ok()?;
-    let seconds = fields[1].parse::<u64>().ok()?;
-    let nanos = fields[2].parse::<u32>().ok()?;
-    let width = fields[3].parse::<u32>().ok()?;
-    let height = fields[4].parse::<u32>().ok()?;
-    if pid == 0
-        || seconds == 0
-        || nanos >= 1_000_000_000
-        || width == 0
-        || height == 0
-        || width > 16384
-        || height > 16384
-    {
-        return None;
-    }
-    Some(crate::launcher::plugin_launch::PluginDisplay { width, height })
-}

@@ -165,8 +165,6 @@ let
         export EGL_PLATFORM=x11
       '';
       postInstall = ''
-        # The unchanged stage-0 tool asks every candidate package for this name.
-        ln -s korri-viewer $out/bin/moonlight
         mkdir -p $out/share/moonlight
         cp ${upstream}/third_party/SDL_GameControllerDB/gamecontrollerdb.txt \
           $out/share/moonlight/korri-inputplumber-gamecontrollerdb.txt
@@ -355,20 +353,12 @@ let
   # The viewer with nightjar-core (#391 step E, `vendor/README.md`) and no
   # other Rust part: the turns' candidate against the C core. With the
   # feature, nightjar-core is the default core, as in `package`;
-  # `bin/moonlight` also names it, as the stage-0 tool's candidate. The
-  # binary wrapper execs the viewer, which keeps the process the tool
-  # measures.
+  # `bin/korri-viewer` selects it directly for the measurement fixture.
   nightjarPackage = package.overrideAttrs (old: {
     pname = "korri-viewer-nightjar";
     cargoBuildFeatures = [ "nightjar" ];
     korriNotices = "${noticesFor [ "nightjar" ]}/NOTICES.txt";
     cargoCheckFeatures = [ "nightjar" ];
-    nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.makeBinaryWrapper ];
-    postInstall = old.postInstall + ''
-      rm $out/bin/moonlight
-      makeBinaryWrapper $out/bin/korri-viewer $out/bin/moonlight \
-        --append-flags "-networkcore nightjar"
-    '';
     meta = old.meta // {
       # nightjar-core and rubylight-native-api are GPL-3.0-only, so the
       # binary is; Nightjar's rusty_enet is MIT (vendor/README.md).
@@ -384,7 +374,7 @@ let
   # The viewer with the Rust port of the carried C audio renderers (#391
   # step F, slice F1, src/audio_output/) and no other Rust part: the
   # candidate of the quiet set against `cPackage`. With the feature, the port
-  # is the default output, as in `package`; `bin/moonlight` also names it,
+  # is the default output, as in `package`; `bin/korri-viewer` selects it,
   # as `nightjarPackage` does. Its tests play into a private PulseAudio
   # server; `package`'s check has pulseaudio and parec.
   rustAudioOutputPackage = package.overrideAttrs (old: {
@@ -392,12 +382,6 @@ let
     cargoBuildFeatures = [ "rust-audio-output" ];
     korriNotices = "${noticesFor [ "rust-audio-output" ]}/NOTICES.txt";
     cargoCheckFeatures = [ "rust-audio-output" ];
-    nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.makeBinaryWrapper ];
-    postInstall = old.postInstall + ''
-      rm $out/bin/moonlight
-      makeBinaryWrapper $out/bin/korri-viewer $out/bin/moonlight \
-        --append-flags "-audiooutput rust"
-    '';
     meta = old.meta // {
       # A candidate for the measure on aka; no handheld runs it yet.
       platforms = [ "x86_64-linux" ];
@@ -406,7 +390,7 @@ let
   # The viewer with the Rust port of the carried C VA-API EGL presenter
   # (#391 step F, slice F3, src/egl_presenter/) and no other Rust part: the
   # turns' candidate. With the feature, the port is the default presenter,
-  # as in `package`; `bin/moonlight` also names it, as `nightjarPackage`
+  # as in `package`; `bin/korri-viewer` selects it, as `nightjarPackage`
   # does. Its tests draw with both presenters into an Xvfb window with
   # Mesa's software EGL and compare the pixels.
   rustEglPresenterPackage = package.overrideAttrs (old: {
@@ -414,15 +398,9 @@ let
     cargoBuildFeatures = [ "rust-egl-presenter" ];
     korriNotices = "${noticesFor [ "rust-egl-presenter" ]}/NOTICES.txt";
     cargoCheckFeatures = [ "rust-egl-presenter" ];
-    nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.makeBinaryWrapper ];
     preCheck = old.preCheck + ''
       export __EGL_VENDOR_LIBRARY_FILENAMES=${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json
       export EGL_PLATFORM=x11
-    '';
-    postInstall = old.postInstall + ''
-      rm $out/bin/moonlight
-      makeBinaryWrapper $out/bin/korri-viewer $out/bin/moonlight \
-        --append-flags "-eglpresenter rust"
     '';
     meta = old.meta // {
       # A candidate for the measure on aka; no handheld runs it.
@@ -432,7 +410,7 @@ let
   # The Rust EGL presenter's package with `-filledpicture egl` too (#391
   # step F, slice F5): on X11 VA-API, a picture that fills its window goes
   # through the Rust EGL presenter instead of vaPutSurface. Its
-  # `bin/moonlight` appends both options to the same binary, so that its turns
+  # `bin/korri-viewer` appends both options to the same binary, so that its turns
   # beside `rustEglPresenterPackage` judge that choice alone. The binary's
   # tests ran in that package.
   rustEglFilledPicturePackage =
@@ -446,14 +424,13 @@ let
       ''
         mkdir -p $out/bin
         ln -s ${rustEglPresenterPackage}/share $out/share
-        ln -s ${rustEglPresenterPackage}/bin/korri-viewer $out/bin/korri-viewer
-        makeBinaryWrapper ${rustEglPresenterPackage}/bin/korri-viewer $out/bin/moonlight \
+        makeBinaryWrapper ${rustEglPresenterPackage}/bin/korri-viewer $out/bin/korri-viewer \
           --append-flags "-eglpresenter rust -filledpicture egl"
       '';
   # The viewer with the Rust port of the carried C X11 window and its
   # keyboard and mouse (#391 step F, slice F4, src/x11_window/) and no other
   # Rust part: the turns' candidate. With the feature, the port is the
-  # default window, as in `package`; `bin/moonlight` also names it, as
+  # default window, as in `package`; `bin/korri-viewer` selects it, as
   # `nightjarPackage` does. Its tests run both windows, each on a private
   # Xvfb with a screen of its own, so the check has Xvfb.
   rustX11WindowPackage = package.overrideAttrs (old: {
@@ -461,13 +438,7 @@ let
     cargoBuildFeatures = [ "rust-x11-window" ];
     korriNotices = "${noticesFor [ "rust-x11-window" ]}/NOTICES.txt";
     cargoCheckFeatures = [ "rust-x11-window" ];
-    nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.makeBinaryWrapper ];
     nativeCheckInputs = (old.nativeCheckInputs or [ ]) ++ [ pkgs.xvfb ];
-    postInstall = old.postInstall + ''
-      rm $out/bin/moonlight
-      makeBinaryWrapper $out/bin/korri-viewer $out/bin/moonlight \
-        --append-flags "-x11window rust"
-    '';
     meta = old.meta // {
       # A candidate for the measure on aka; no handheld runs it.
       platforms = [ "x86_64-linux" ];

@@ -5,7 +5,11 @@ let
     filter =
       path: type:
       # Baselines are measurement data. A new baseline must not rebuild the tool.
-      type == "directory" && !(builtins.elem (builtins.baseNameOf path) [ "__pycache__" "baselines" ])
+      type == "directory"
+      && !(builtins.elem (builtins.baseNameOf path) [
+        "__pycache__"
+        "baselines"
+      ])
       || type == "regular" && !(pkgs.lib.hasSuffix ".pyc" path);
   };
   # korrid's own picture-path table. viewer.py holds a copy of it.
@@ -107,30 +111,6 @@ let
     mkdir -p "$out/bin"
     cp ${weston}/bin/weston-presentation-shm "$out/bin/stream-cadence-motion"
   '';
-  shimSource = pkgs.lib.fileset.toSource {
-    root = ./.;
-    fileset = pkgs.lib.fileset.unions [
-      ./client-shim.c
-      ./receive-clock.h
-    ];
-  };
-  shim = pkgs.stdenv.mkDerivation {
-    pname = "stream-cadence-client-shim";
-    version = "1";
-    src = pkgs.moonlight-embedded.src;
-    dontConfigure = true;
-    buildPhase = ''
-      runHook preBuild
-      $CC -std=c11 -Wall -Wextra -Werror -fPIC -shared \
-        -Ithird_party/moonlight-common-c/src -I${shimSource} ${shimSource}/client-shim.c \
-        -o client-shim.so -ldl
-      runHook postBuild
-    '';
-    installPhase = ''
-      mkdir -p "$out/lib"
-      cp client-shim.so "$out/lib/"
-    '';
-  };
   device = pkgs.writeShellScriptBin "stream-cadence-device" ''
     export PYTHONDONTWRITEBYTECODE=1
     exec ${pkgs.python3}/bin/python3 -u ${deviceSource}/device.py "$@"
@@ -144,11 +124,9 @@ let
       pkgs.nix
       pkgs.openssl
       pkgs.ffmpeg
-      pkgs.moonlight-embedded
     ];
     text = ''
       export PYTHONDONTWRITEBYTECODE=1
-      export CADENCE_SHIM=${shim}/lib/client-shim.so
       export CADENCE_NIXPKGS=${pkgs.path}
       exec ${python}/bin/python3 ${source}/cli.py "$@"
     '';
@@ -195,7 +173,6 @@ in
 {
   inherit
     app
-    shim
     motion
     capture
     press
@@ -208,7 +185,7 @@ in
     python = pkgs.python3;
     source = deviceSource;
     # aka is server-only and has no viewer plugin. The fixture copies this one.
-    viewer = pkgs.moonlight-embedded;
+    viewer = (import ../../clients/viewer { inherit pkgs; }).package;
     # The sender fixture's hidden compositor and its stock Sunshine. A host with
     # no Korri also takes this sway for the viewer fixture.
     sway = pkgs.sway-unwrapped;

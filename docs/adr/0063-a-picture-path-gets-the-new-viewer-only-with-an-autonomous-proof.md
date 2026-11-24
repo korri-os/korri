@@ -8,6 +8,13 @@ status: accepted
 of the new viewer without the owner. This ADR says where that proof comes
 from, and what happens to a device that has none.
 
+## Amendment, 2026-11-24
+
+[ADR 0099](0099-moonlight-embedded-goes-now-even-where-streaming-is-lost.md)
+removes Moonlight Embedded immediately. Its fallback and retention rules below
+are historical; the Rust viewer remains a removable plugin and performance
+proofs still apply to new Rust viewer work.
+
 ## Decision
 
 - aka runs the sender and a test viewer together for every change. That run

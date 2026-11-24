@@ -10,6 +10,13 @@ viewer that Korri owns. On Linux that viewer still ships as a removable
 Korri repository, because the Android app in that repository uses the same
 code. Its plugin id is `@korri:viewer`.
 
+## Amendment, 2026-11-24
+
+[ADR 0099](0099-moonlight-embedded-goes-now-even-where-streaming-is-lost.md)
+removes Moonlight Embedded immediately. Its fallback and retention rules below
+are historical; the Rust viewer remains a removable plugin and performance
+proofs still apply to new Rust viewer work.
+
 ## Considered options
 
 - **Make the viewer part of Korri.** korrid and the viewer would always

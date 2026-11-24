@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import shlex
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -256,27 +255,12 @@ class BuildAnInstallable(unittest.TestCase):
 
 class Options(unittest.TestCase):
     def test_run_and_view_take_a_build_store_and_have_none_by_default(self):
-        for command in (["run", "--device", "device"], ["view", "--sender", "a", "--viewer", "b"]):
+        for command in (["view", "--sender", "a", "--viewer", "b"],):
             with self.subTest(command=command[0]):
                 self.assertIsNone(parser().parse_args(command).build_store)
                 self.assertEqual(
                     parser().parse_args([*command, "--build-store", BUILD_STORE]).build_store, BUILD_STORE
                 )
-
-    def test_run_hands_the_build_store_to_tools(self):
-        asked: list = []
-
-        def recorded(*arguments):
-            asked.append(arguments)
-            raise Refusal("stop here")
-
-        architecture = subprocess.CompletedProcess([], 0, stdout="x86_64\n")
-        with patch.object(cli, "tools", new=recorded), \
-                patch.object(cli, "execute", new=lambda *a, **k: architecture):
-            with self.assertRaisesRegex(Refusal, "stop here"):
-                cli.run(parser().parse_args(["run", "--device", "operator@example.test", "--build-store", BUILD_STORE]))
-        self.assertEqual(asked, [("x86_64", "operator@example.test", ssh_target("operator@example.test", None, [])[1],
-                                  ("motion",), BUILD_STORE)])
 
     def test_view_hands_the_build_store_to_tools_for_both_halves(self):
         asked: list = []

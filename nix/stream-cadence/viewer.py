@@ -64,7 +64,7 @@ from device import (
 
 DISPLAY = "wayland-1"
 OUTPUT = "HEADLESS-1"
-PLUGIN = "@korri:moonlight"
+PLUGIN = "@korri:viewer"
 # Times of the heat guard's watch on a running viewer. Its limits are in heat.py.
 GUARD_PERIOD = 0.25  # seconds between two looks at a running viewer
 BUSY_RATE = 1.0  # CPU seconds each second that no hardware-decode viewer needs
@@ -208,7 +208,7 @@ def plugin() -> tuple[dict | None, str | None]:
     return {
         "package": installed["package"],
         "release_version": installed.get("provenance", {}).get("release_version"),
-        "moonlight": files["moonlight"],
+        "moonlight": files["viewer"],
         "mapping": files["mapping"],
     }, None
 
@@ -611,7 +611,7 @@ class Session:
         assert self.root is not None
         # What korrid's linux_viewer gives the plugin's binary, without DISPLAY.
         product = dict(
-            KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT="1",
+            KORRI_VIEWER_DISABLE_GAMEPAD_QUIT="1",
             SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS="1",
             KORRI_MOONLIGHT_SERVER_CERTIFICATE=str(self.root / "server.pem"),
         )
@@ -626,7 +626,7 @@ class Session:
                     "DBUS_SESSION_BUS_ADDRESS": "unix:path=" + str(self.root / "rt/no-session-bus"),
                     "DBUS_SYSTEM_BUS_ADDRESS": "unix:path=" + str(self.root / "rt/no-system-bus"),
                 } if self.x_namespace else {}),
-                **(product if self.plugin_viewer else {}),
+                **product,
                 WAYLAND_DISPLAY=DISPLAY,
                 SDL_VIDEODRIVER="x11" if self.x_namespace else "wayland",
                 SDL_AUDIODRIVER="dummy",
@@ -844,7 +844,7 @@ class Session:
         # A product viewer package that the tool copied here, for a device with
         # no plugin. It is started as the plugin's own binary is.
         package = request.get("viewer_package")
-        if package and not Path(package, "bin", "moonlight").is_file():
+        if package and not Path(package, "bin", "korri-viewer").is_file():
             raise RuntimeError(
                 f"The product viewer package {package} is not on this device: the tool's "
                 "copy did not arrive. The viewer does not start."

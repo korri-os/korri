@@ -432,21 +432,6 @@ class DiscoveryTests(unittest.TestCase):
 
 
 class CommandTests(unittest.TestCase):
-    def test_unreadable_limit_defaults_to_zero_and_rejects_negative_values(self):
-        self.assertEqual(
-            parser().parse_args(["run", "--device", "device"]).max_unreadable_frames, 0
-        )
-        self.assertEqual(
-            parser()
-            .parse_args(["run", "--device", "device", "--max-unreadable-frames", "200"])
-            .max_unreadable_frames,
-            200,
-        )
-        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            parser().parse_args(
-                ["run", "--device", "device", "--max-unreadable-frames", "-1"]
-            )
-
     def test_ssh_options_repeat_and_keep_native_option_values_intact(self):
         settings = [
             'UserKnownHostsFile="/tmp/cadence known hosts"',
@@ -454,8 +439,9 @@ class CommandTests(unittest.TestCase):
         ]
         args = parser().parse_args(
             [
-                "run",
-                "--device",
+                "view",
+                "--viewer", "local",
+                "--sender",
                 "example.test:2345",
                 "--ssh-option",
                 settings[0],
@@ -464,7 +450,7 @@ class CommandTests(unittest.TestCase):
             ]
         )
         self.assertEqual(args.ssh_option, settings)
-        target, options = ssh_target(args.device, args.ssh_port, args.ssh_option)
+        target, options = ssh_target(args.sender, None, args.ssh_option)
         self.assertEqual(target, "example.test")
         self.assertEqual(
             options[-6:], ["-o", settings[0], "-o", settings[1], "-p", "2345"]
@@ -524,14 +510,14 @@ class CommandTests(unittest.TestCase):
             )
 
     def test_bitrate_default_is_explicit_and_can_be_overridden(self):
-        args = parser().parse_args(["run", "--device", "device"])
+        args = parser().parse_args(["view", "--sender", "device", "--viewer", "local"])
         self.assertEqual(args.bitrate, 10000)
-        args = parser().parse_args(["run", "--device", "device", "--bitrate", "2000"])
+        args = parser().parse_args(["view", "--sender", "device", "--viewer", "local", "--bitrate", "2000"])
         self.assertEqual(args.bitrate, 2000)
 
     def test_torn_limit_is_explicit_and_counts_each_new_window(self):
         args = parser().parse_args(
-            ["run", "--device", "device", "--max-torn-frames", "0"]
+            ["compare", "old.json", "new.json", "--max-torn-frames", "0"]
         )
         self.assertEqual(args.max_torn_frames, 0)
         with tempfile.TemporaryDirectory() as temporary:

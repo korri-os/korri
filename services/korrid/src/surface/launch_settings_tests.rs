@@ -20,7 +20,7 @@ use crate::surface::{
     launch_settings::{Closing, LaunchSettings},
 };
 
-const MOONLIGHT: &str = "@korri:moonlight/moonlight";
+const VIEWER: &str = "@korri:viewer/viewer";
 const SUNSHINE: &str = "@korri:sunshine/sunshine";
 const SNAPSHOT: &str = "app.launch-settings.snapshot";
 const SET: &str = "app.launch-settings.set";
@@ -44,7 +44,7 @@ fn mgba_schema() -> Value {
     })
 }
 
-fn moonlight_schema() -> Value {
+fn viewer_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
@@ -115,10 +115,10 @@ fn gpsp() -> Runner {
         json!({ "type": "object", "properties": { "bios": section("BIOS", json!({ "enable": { "type": "boolean", "title": "Use BIOS" } })) } }),
     )
 }
-fn moonlight() -> Runner {
+fn viewer() -> Runner {
     Runner {
         choosable: false,
-        ..runner(MOONLIGHT, "Moonlight", None, moonlight_schema())
+        ..runner(VIEWER, "Moonlight", None, viewer_schema())
     }
 }
 
@@ -713,9 +713,9 @@ fn skipped(key: &str, message: &str, runner_id: Option<&str>) -> Value {
 
 // --- Moonlight ------------------------------------------------------------------------
 
-fn with_moonlight() -> Fixture {
-    let device = format!("device/runner:{MOONLIGHT}");
-    let game = format!("game:wario/runner:{MOONLIGHT}");
+fn with_viewer() -> Fixture {
+    let device = format!("device/runner:{VIEWER}");
+    let game = format!("game:wario/runner:{VIEWER}");
     let mut fixture = wario()
         .body(
             &device,
@@ -725,15 +725,15 @@ fn with_moonlight() -> Fixture {
             &game,
             json!({ "settings": { "audio": { "channels": "stereo" } } }),
         );
-    fixture.runners.push(moonlight());
+    fixture.runners.push(viewer());
     fixture.runner_resolved = vec![(
-        MOONLIGHT,
+        VIEWER,
         vec![
             sourced(editable(setting("video.fps")), json!(30), at(&device)),
             sourced(
                 editable(setting("video.codec")),
                 json!("h264"),
-                plugin_default("@korri:moonlight"),
+                plugin_default("@korri:viewer"),
             ),
             sourced(
                 editable(setting("audio.channels")),
@@ -746,9 +746,9 @@ fn with_moonlight() -> Fixture {
 }
 
 #[tokio::test]
-async fn moonlight_is_offered_on_the_device_settings_page_with_add_setting_and_default() {
-    let device = format!("device/runner:{MOONLIGHT}");
-    let mut fixture = with_moonlight();
+async fn viewer_is_offered_on_the_device_settings_page_with_add_setting_and_default() {
+    let device = format!("device/runner:{VIEWER}");
+    let mut fixture = with_viewer();
     fixture.game = false;
     fixture.runner_resolved[0].1.truncate(2);
     let (korrid, script) = scripted();
@@ -971,7 +971,7 @@ const FRAMESKIP: &str = "launch:row:setting:video.frameskip";
 const RENDER_SCALE: &str = "launch:row:setting:video.render-scale";
 const SPEED: &str = "launch:row:runner:retroarch/mgba:setting:plugin.speed";
 const GPSP_SPEED: &str = "launch:row:runner:retroarch/gpsp:setting:plugin.speed";
-const CODEC: &str = "launch:stream:@korri:moonlight/moonlight#video.codec";
+const CODEC: &str = "launch:stream:@korri:viewer/viewer#video.codec";
 
 fn limit(tag: &str, value: Value) -> Value {
     sourced(editable(json!({ "_tag": tag })), value, device_default())
@@ -1076,7 +1076,7 @@ fn asked(calls: &Calls, tag: &str) -> Vec<Value> {
 
 /// This device's own launch settings: a device page with a stream viewer.
 fn this_device() -> Fixture {
-    let mut fixture = with_moonlight();
+    let mut fixture = with_viewer();
     fixture.game = false;
     fixture.runners.retain(|runner| !runner.choosable);
     fixture.resolved.clear();
@@ -1853,7 +1853,7 @@ async fn a_streamed_games_changes_and_this_devices_own_copy_do_not_mix() {
 
 /// The place this device's stream viewer reads its values from.
 fn viewer_place() -> Value {
-    json!({ "layer": { "_tag": "Device" }, "scope": { "_tag": "Runner", "id": MOONLIGHT } })
+    json!({ "layer": { "_tag": "Device" }, "scope": { "_tag": "Runner", "id": VIEWER } })
 }
 
 #[tokio::test]

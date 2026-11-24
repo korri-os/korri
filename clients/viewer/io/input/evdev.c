@@ -701,7 +701,7 @@ static bool evdev_handle_event(struct input_event *ev, struct input_device *dev)
     }
   }
 
-  if (getenv("KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT") == NULL &&
+  if (getenv("KORRI_VIEWER_DISABLE_GAMEPAD_QUIT") == NULL &&
       gamepadModified && (dev->buttonFlags & QUIT_BUTTONS) == QUIT_BUTTONS) {
     LiSendMultiControllerEvent(dev->controllerId, assignedControllerIds, 0, 0, 0, 0, 0, 0, 0);
     return false;

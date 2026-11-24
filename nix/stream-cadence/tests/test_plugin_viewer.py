@@ -35,8 +35,8 @@ TESTS = Path(__file__).resolve().parent
 PLUGIN = {
     "package": "/nix/store/aaaa-korri-plugin",
     "release_version": "build-0123456789ab-test",
-    "moonlight": "/nix/store/bbbb-moonlight-embedded-korri-2.7.1-korri/bin/moonlight",
-    "mapping": "/nix/store/bbbb-moonlight-embedded-korri-2.7.1-korri/share/moonlight/map.txt",
+    "moonlight": "/nix/store/bbbb-korri-viewer-0.1.0/bin/korri-viewer",
+    "mapping": "/nix/store/bbbb-korri-viewer-0.1.0/share/moonlight/map.txt",
 }
 
 
@@ -66,13 +66,13 @@ class WhereTheViewerRuns(unittest.TestCase):
                 "package": "/nix/store/aaaa-korri-plugin",
             },
         )
-        stand_in = viewer_ran(None, "/nix/store/cccc-moonlight-embedded-2.7.1", FIXTURE)
+        stand_in = viewer_ran(None, "/nix/store/cccc-korri-viewer-0.1.0", FIXTURE)
         self.assertEqual(
             stand_in,
             {
                 "kind": STAND_IN,
                 "place": FIXTURE,
-                "moonlight": "/nix/store/cccc-moonlight-embedded-2.7.1/bin/moonlight",
+                "moonlight": "/nix/store/cccc-korri-viewer-0.1.0/bin/korri-viewer",
                 "release_version": None,
                 "package": None,
             },
@@ -115,7 +115,7 @@ class PluginViewerInTheFixture(unittest.TestCase):
         self.prepare(session, plugin_viewer=True)
         environment = session.viewer_environment()
         # What korrid's linux_viewer gives the viewer.
-        self.assertEqual(environment["KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT"], "1")
+        self.assertEqual(environment["KORRI_VIEWER_DISABLE_GAMEPAD_QUIT"], "1")
         self.assertEqual(environment["SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS"], "1")
         self.assertEqual(environment["KORRI_MOONLIGHT_SERVER_CERTIFICATE"], str(session.root / "server.pem"))
         # The fixture's own compositor, and nothing that names the device's display.
@@ -167,7 +167,7 @@ class PluginViewerInTheFixture(unittest.TestCase):
                 if package:
                     root = Path(self.directory.name) / package
                     (root / "bin").mkdir(parents=True, exist_ok=True)
-                    (root / "bin/moonlight").touch()
+                    (root / "bin/korri-viewer").touch()
                     arguments["viewer_package"] = str(root)
                 with self.assertRaisesRegex(RuntimeError, "VA-API.*:0.*private"):
                     self.prepare(session, plugin_viewer=True, **arguments)
@@ -188,7 +188,7 @@ class PluginViewerInTheFixture(unittest.TestCase):
         session = self.session()
         self.prepare(session)
         environment = session.viewer_environment()
-        self.assertNotIn("KORRI_MOONLIGHT_SERVER_CERTIFICATE", environment)
+        self.assertEqual(environment["KORRI_MOONLIGHT_SERVER_CERTIFICATE"], str(session.root / "server.pem"))
         self.assertNotIn("DISPLAY", environment)
         self.assertEqual(environment["SDL_VIDEODRIVER"], "wayland")
 
@@ -315,9 +315,9 @@ class CopiedProductViewer(PluginViewerInTheFixture):
 
     def package(self) -> Path:
         store = Path(self.directory.name) / "store"
-        package = store / "ycag-moonlight-embedded-korri-2.7.1-korri"
+        package = store / "ycag-korri-viewer-0.1.0"
         (package / "bin").mkdir(parents=True)
-        (package / "bin" / "moonlight").write_text("#!/bin/sh\n")
+        (package / "bin" / "korri-viewer").write_text("#!/bin/sh\n")
         (package / "share" / "moonlight").mkdir(parents=True)
         (package / "share" / "moonlight" / "korri-inputplumber-gamecontrollerdb.txt").write_text("map\n")
         previous, cli.NIX_STORE = cli.NIX_STORE, store
@@ -330,7 +330,7 @@ class CopiedProductViewer(PluginViewerInTheFixture):
             product_package(str(package)),
             {
                 "package": str(package),
-                "moonlight": str(package / "bin" / "moonlight"),
+                "moonlight": str(package / "bin" / "korri-viewer"),
                 "mapping": str(package / "share" / "moonlight" / "korri-inputplumber-gamecontrollerdb.txt"),
             },
         )
@@ -346,8 +346,8 @@ class CopiedProductViewer(PluginViewerInTheFixture):
         (package / "share" / "moonlight" / "korri-inputplumber-gamecontrollerdb.txt").unlink()
         with self.assertRaisesRegex(Refusal, "korri-inputplumber-gamecontrollerdb.txt"):
             product_package(str(package))
-        (package / "bin" / "moonlight").unlink()
-        with self.assertRaisesRegex(Refusal, "bin/moonlight"):
+        (package / "bin" / "korri-viewer").unlink()
+        with self.assertRaisesRegex(Refusal, "bin/korri-viewer"):
             product_package(str(package))
 
     def test_view_refuses_a_bad_package_before_it_asks_any_device(self):
@@ -386,7 +386,7 @@ class CopiedProductViewer(PluginViewerInTheFixture):
             {
                 "kind": COPIED_PRODUCT,
                 "place": FIXTURE,
-                "moonlight": str(package / "bin" / "moonlight"),
+                "moonlight": str(package / "bin" / "korri-viewer"),
                 "release_version": None,
                 "package": str(package),
                 "copied_from": "buildhost",
@@ -397,7 +397,7 @@ class CopiedProductViewer(PluginViewerInTheFixture):
         self.assertNotIn(ran["kind"], (PLUGIN_VIEWER, STAND_IN))
 
     def test_signers_are_read_from_nix_path_info(self):
-        path = "/nix/store/ycag-moonlight-embedded-korri-2.7.1-korri"
+        path = "/nix/store/ycag-korri-viewer-0.1.0"
         new = json.dumps({path: {"signatures": ["korri-plugins-1:Pgbb==", "cache.nixos.org-1:abc="]}})
         old = json.dumps([{"path": path, "signatures": ["korri-plugins-1:Pgbb=="]}])
         self.assertEqual(signer_names(new), ["cache.nixos.org-1", "korri-plugins-1"])
@@ -410,7 +410,7 @@ class CopiedProductViewer(PluginViewerInTheFixture):
         self.assertIsNone(session.facts["plugin"])
         self.prepare(session, plugin_viewer=True, viewer_package=str(package))
         environment = session.viewer_environment()
-        self.assertEqual(environment["KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT"], "1")
+        self.assertEqual(environment["KORRI_VIEWER_DISABLE_GAMEPAD_QUIT"], "1")
         self.assertEqual(environment["SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS"], "1")
         self.assertEqual(environment["KORRI_MOONLIGHT_SERVER_CERTIFICATE"], str(session.root / "server.pem"))
         self.assertEqual(environment["SDL_VIDEODRIVER"], "wayland")
@@ -419,7 +419,7 @@ class CopiedProductViewer(PluginViewerInTheFixture):
     def test_the_agent_refuses_a_package_that_is_not_on_the_device(self):
         session = self.session()
         with self.assertRaisesRegex(RuntimeError, "is not on this device"):
-            self.prepare(session, plugin_viewer=True, viewer_package="/nix/store/none-moonlight-embedded-korri")
+            self.prepare(session, plugin_viewer=True, viewer_package="/nix/store/none-korri-viewer")
         self.assertIsNone(session.root)
 
     def test_verdict_names_a_copied_package_and_knows_the_same_binary(self):
@@ -439,14 +439,14 @@ class CopiedProductViewer(PluginViewerInTheFixture):
 
         copied = viewer_ran(
             None, "", FIXTURE,
-            copied={"package": "/nix/store/bbbb-moonlight-embedded-korri-2.7.1-korri", "moonlight": PLUGIN["moonlight"],
+            copied={"package": "/nix/store/bbbb-korri-viewer-0.1.0", "moonlight": PLUGIN["moonlight"],
                     "mapping": PLUGIN["mapping"], "copied_from": "buildhost", "signed_by": ["korri-plugins-1"]},
         )
-        stand_in = viewer_ran(None, "/nix/store/cccc-moonlight-embedded-2.7.1", FIXTURE)
+        stand_in = viewer_ran(None, "/nix/store/cccc-korri-viewer-0.1.0", FIXTURE)
         lines = viewers(result(copied), result(stand_in))
         self.assertRegex(
             lines[0],
-            "^baseline viewer: copied product package \\(.*bbbb-moonlight-embedded-korri.*copied from buildhost, signed by korri-plugins-1\\), in the fixture",
+            "^baseline viewer: copied product package \\(.*bbbb-korri-viewer.*copied from buildhost, signed by korri-plugins-1\\), in the fixture",
         )
         self.assertRegex(lines[2], "different viewers")
         # The same binary, installed as a plugin on one device and copied to the other.
@@ -588,12 +588,12 @@ class WhichViewerAVerdictCompares(unittest.TestCase):
 
     def test_verdict_says_which_viewer_each_result_ran(self):
         plugin = self.result(viewer_ran(PLUGIN, "", FIXTURE))
-        stand_in = self.result(viewer_ran(None, "/nix/store/cccc-moonlight-embedded-2.7.1", FIXTURE))
+        stand_in = self.result(viewer_ran(None, "/nix/store/cccc-korri-viewer-0.1.0", FIXTURE))
         # The viewer is what a comparison changes on purpose: it is compared, and it is said.
         self.assertEqual(len(judge(plugin, stand_in, 5)), 16)
         lines = viewers(plugin, stand_in)
-        self.assertRegex(lines[0], "^baseline viewer: plugin build-0123456789ab-test .*bbbb-moonlight-embedded-korri.*in the fixture")
-        self.assertRegex(lines[1], "^candidate viewer: stand-in .*cccc-moonlight-embedded-2.7.1.*in the fixture")
+        self.assertRegex(lines[0], "^baseline viewer: plugin build-0123456789ab-test .*bbbb-korri-viewer.*in the fixture")
+        self.assertRegex(lines[1], "^candidate viewer: stand-in .*cccc-korri-viewer-0.1.0.*in the fixture")
         self.assertRegex(lines[2], "different viewers")
         same = viewers(plugin, plugin)
         self.assertEqual(len(same), 5)
@@ -620,7 +620,7 @@ class WhichViewerAVerdictCompares(unittest.TestCase):
 
     def test_one_result_has_one_viewer(self):
         plugin = self.result(viewer_ran(PLUGIN, "", FIXTURE))
-        stand_in = self.result(viewer_ran(None, "/nix/store/cccc-moonlight-embedded-2.7.1", FIXTURE))
+        stand_in = self.result(viewer_ran(None, "/nix/store/cccc-korri-viewer-0.1.0", FIXTURE))
         mixed = plugin[:4] + stand_in[:1]
         with self.assertRaisesRegex(ValueError, "more than one viewer"):
             judge(mixed, plugin, 5)
@@ -638,12 +638,12 @@ class WhichViewerAVerdictCompares(unittest.TestCase):
         # ran the stand-in in the fixture.
         old_plugin = self.result(None, viewer={"model": "host", "plugin": dict(PLUGIN)})
         old_stand_in = self.result(
-            None, viewer_command=["/nix/store/cccc-moonlight-embedded-2.7.1/bin/moonlight", "stream"]
+            None, viewer_command=["/nix/store/cccc-korri-viewer-0.1.0/bin/korri-viewer", "stream"]
         )
         self.assertRegex(viewers(old_plugin, old_plugin)[0], "plugin build-0123456789ab-test .*on the device's own display")
-        self.assertRegex(viewers(old_stand_in, old_stand_in)[0], "stand-in .*cccc-moonlight-embedded-2.7.1.*in the fixture")
+        self.assertRegex(viewers(old_stand_in, old_stand_in)[0], "stand-in .*cccc-korri-viewer-0.1.0.*in the fixture")
         with self.assertRaisesRegex(ValueError, "recorded before the tool kept decode"):
-            judge(old_stand_in, self.result(viewer_ran(None, "/nix/store/cccc-moonlight-embedded-2.7.1", FIXTURE)), 5)
+            judge(old_stand_in, self.result(viewer_ran(None, "/nix/store/cccc-korri-viewer-0.1.0", FIXTURE)), 5)
 
 
 if __name__ == "__main__":

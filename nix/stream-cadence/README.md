@@ -1,3 +1,9 @@
+> **2026-11-24 — ADR 0099:** Moonlight Embedded and its plugin are removed.
+> The `run` command and its LD_PRELOAD shim are removed with the client.
+> Use `view`, which now selects `@korri:viewer` or copies `korri-viewer` into
+> the fixture. Moonlight-only commands and measurements below are history,
+> not current device acceptance. The protocol and Sunshine remain.
+
 # Stream cadence
 
 Measure **distinct decoded source IDs**, not packets, duplicate encoded frames,

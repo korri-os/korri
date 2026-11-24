@@ -21,7 +21,7 @@ fn runtime_directory(launch: &str) -> Result<String, LaunchUnitError> {
 }
 
 impl SystemdLaunchUnitBackend {
-    /// `controller` is korrid's UID for a lifecycle viewer, None for Moonlight.
+    /// `controller` is korrid's UID for a lifecycle viewer, None for identity bootstrap.
     pub(super) fn viewer_arguments(
         &self,
         launch: &str,
@@ -34,7 +34,7 @@ impl SystemdLaunchUnitBackend {
         if !self.stream_viewer {
             return Err(LaunchUnitError::new(
                 LaunchUnitErrorKind::InvalidConfiguration,
-                "Moonlight effects require the viewer sandbox",
+                "viewer effects require the viewer sandbox",
             ));
         }
         let mut env = environment.clone();
@@ -172,7 +172,7 @@ mod tests {
         )
         .unwrap();
         let launch = "0123456789abcdef0123456789abcdef";
-        let command = vec!["/nix/store/viewer/bin/moonlight".into()];
+        let command = vec!["/nix/store/viewer/bin/korri-viewer".into()];
         let env = BTreeMap::new();
         let sandbox = LaunchSandbox::new(&command, &env);
         let cert = "-----BEGIN CERTIFICATE-----\nY2VydA==\n-----END CERTIFICATE-----\n";
@@ -274,7 +274,7 @@ mod tests {
         )
         .unwrap()
         .for_stream_viewer();
-        let command = vec!["/nix/store/viewer/bin/moonlight".into()];
+        let command = vec!["/nix/store/viewer/bin/korri-viewer".into()];
         let environment = BTreeMap::new();
         let sandbox = LaunchSandbox::new(&command, &environment);
         let args = backend
@@ -331,7 +331,7 @@ mod tests {
         .unwrap()
         .for_stream_viewer();
         let launch = "0123456789abcdef0123456789abcdef";
-        let command = vec!["/nix/store/viewer/bin/moonlight".into()];
+        let command = vec!["/nix/store/viewer/bin/korri-viewer".into()];
         let environment = BTreeMap::from([(
             "KORRI_MOONLIGHT_SERVER_CERTIFICATE".into(),
             "/ignored-caller-pin.pem".into(),

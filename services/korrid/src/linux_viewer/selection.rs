@@ -1,8 +1,8 @@
 //! Which installed plugin is this device's Linux viewer (ADR 0061).
 //!
 //! `@korri:viewer`, when it is enabled and built from korrid's own viewer
-//! contract, runs through the lifecycle socket. Otherwise Moonlight runs as
-//! before. korrid refuses a viewer of another contract; it does not adapt.
+//! contract, runs through the lifecycle socket. A missing or mismatched plugin
+//! fails the start; there is no fallback client (ADR 0099).
 use super::production::{enabled, immutable_file, production_effects, ViewerPlugin};
 use super::socket::SocketLinuxStreamViewer;
 use super::{
@@ -13,12 +13,7 @@ use crate::launcher::plugin_launch::PluginDisplay;
 use crate::plugin_installation::EnabledPackage;
 use futures::future::BoxFuture;
 use sha2::{Digest, Sha256};
-use std::{
-    collections::HashMap,
-    io::Read,
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use std::{io::Read, path::Path, sync::Arc};
 
 /// The Typeshare output of `contracts/viewer`, as this korrid was built with
 /// it. `@korri:viewer` declares the same file from the Korri revision it was
@@ -86,31 +81,21 @@ pub(super) fn verify_treaty(
     Ok(())
 }
 
-/// The viewer for the next start. A refused `@korri:viewer` leaves Moonlight
-/// the viewer when Moonlight is enabled; without Moonlight the refusal is
-/// the start's error. No `@korri:viewer`: Moonlight, exactly as before.
+/// Requires the enabled Rust viewer and korrid's exact treaty.
 pub(super) fn select(
     packages: &[EnabledPackage],
     read: &dyn Fn(&Path) -> std::io::Result<Vec<u8>>,
 ) -> Result<ViewerPlugin, LinuxViewerError> {
-    let Some(korri) = enabled(packages, ViewerPlugin::Korri)? else {
-        return Ok(ViewerPlugin::Moonlight);
-    };
-    match verify_treaty(korri, read) {
-        Ok(()) => Ok(ViewerPlugin::Korri),
-        Err(refusal) => {
-            eprintln!("korrid viewer: {refusal}");
-            if enabled(packages, ViewerPlugin::Moonlight)?.is_some() {
-                Ok(ViewerPlugin::Moonlight)
-            } else {
-                Err(refusal)
-            }
-        }
-    }
+    let package = enabled(packages, ViewerPlugin::Korri)?.ok_or_else(|| {
+        error(
+            "@korri:viewer is not enabled; install and enable a compatible Korri viewer to stream",
+        )
+    })?;
+    verify_treaty(package, read)?;
+    Ok(ViewerPlugin::Korri)
 }
 
 type Choose = Arc<dyn Fn() -> Result<ViewerPlugin, LinuxViewerError> + Send + Sync>;
-type Running = Arc<dyn Fn(String) -> Result<Option<ViewerPlugin>, LinuxViewerError> + Send + Sync>;
 
 /// The daemon's Linux viewer. The certificate broker, the occupied seats and
 /// the settings renderer are the caller's; everything else is production.
@@ -141,97 +126,31 @@ pub fn installed_viewer(
             Box::pin(async move { effects.end_unit(&launch).await })
         }),
     );
-    let running = effects.clone();
     Arc::new(InstalledLinuxStreamViewer::new(
-        Arc::new(effects),
         Arc::new(korri),
         Arc::new(|| {
             let packages = crate::plugin_installation::read().map_err(error)?;
             select(&packages, &read_immutable)
         }),
-        Arc::new(move |launch| running.running(&launch)),
     ))
 }
 
-/// Chooses at each start and keeps each launch with the viewer that started
-/// it, so a plugin change during a stream does not move its stop elsewhere.
+/// Checks the installed plugin at each start. All lifecycle operations stay
+/// with the socket adapter even when the plugin is disabled during a stream.
 pub(super) struct InstalledLinuxStreamViewer {
-    moonlight: Arc<dyn LinuxStreamViewer>,
     korri: Arc<dyn LinuxStreamViewer>,
     choose: Choose,
-    running: Running,
-    launches: Mutex<HashMap<String, ViewerPlugin>>,
 }
 
 impl InstalledLinuxStreamViewer {
-    pub(super) fn new(
-        moonlight: Arc<dyn LinuxStreamViewer>,
-        korri: Arc<dyn LinuxStreamViewer>,
-        choose: Choose,
-        running: Running,
-    ) -> Self {
-        Self {
-            moonlight,
-            korri,
-            choose,
-            running,
-            launches: Mutex::new(HashMap::new()),
-        }
+    pub(super) fn new(korri: Arc<dyn LinuxStreamViewer>, choose: Choose) -> Self {
+        Self { korri, choose }
     }
-    fn viewer(&self, plugin: ViewerPlugin) -> &Arc<dyn LinuxStreamViewer> {
-        match plugin {
-            ViewerPlugin::Moonlight => &self.moonlight,
-            ViewerPlugin::Korri => &self.korri,
-        }
-    }
-    /// The installed plugins are a file read; keep it off the async workers.
     async fn choose(&self) -> Result<ViewerPlugin, LinuxViewerError> {
         let choose = self.choose.clone();
         tokio::task::spawn_blocking(move || choose())
             .await
             .map_err(error)?
-    }
-    /// A launch that this process did not start (after a korrid restart)
-    /// goes to the viewer whose unit holds it, and is kept with it. With no
-    /// unit it goes where a start would go now. When systemd or the choice
-    /// cannot answer it goes to Moonlight, which observes its unit itself.
-    async fn route(&self, launch: &str) -> Result<Arc<dyn LinuxStreamViewer>, LinuxViewerError> {
-        let recorded = self
-            .launches
-            .lock()
-            .expect("viewer launches poisoned")
-            .get(launch)
-            .copied();
-        if let Some(plugin) = recorded {
-            return Ok(self.viewer(plugin).clone());
-        }
-        let running = self.running.clone();
-        let asked = launch.to_owned();
-        let plugin = match tokio::task::spawn_blocking(move || running(asked)).await {
-            Ok(Ok(Some(plugin))) => {
-                self.launches
-                    .lock()
-                    .expect("viewer launches poisoned")
-                    .insert(launch.into(), plugin);
-                plugin
-            }
-            Ok(Ok(None)) => self.choose().await.unwrap_or(ViewerPlugin::Moonlight),
-            Ok(Err(cause)) => {
-                eprintln!("korrid viewer: launch {launch} unit unreadable, Moonlight observes it: {cause}");
-                ViewerPlugin::Moonlight
-            }
-            Err(cause) => {
-                eprintln!("korrid viewer: launch {launch} unit unreadable, Moonlight observes it: {cause}");
-                ViewerPlugin::Moonlight
-            }
-        };
-        Ok(self.viewer(plugin).clone())
-    }
-    fn forget(&self, launch: &str) {
-        self.launches
-            .lock()
-            .expect("viewer launches poisoned")
-            .remove(launch);
     }
 }
 
@@ -240,7 +159,7 @@ impl LinuxStreamViewer for InstalledLinuxStreamViewer {
         self.korri.change_signal()
     }
     fn display(&self) -> Option<PluginDisplay> {
-        self.moonlight.display()
+        self.korri.display()
     }
     fn start<'a>(
         &'a self,
@@ -251,45 +170,32 @@ impl LinuxStreamViewer for InstalledLinuxStreamViewer {
         Box::pin(async move {
             let plugin = self.choose().await?;
             eprintln!("korrid viewer: launch {launch} uses {}", plugin.id());
-            self.launches
-                .lock()
-                .expect("viewer launches poisoned")
-                .insert(launch.into(), plugin);
-            let result = self.viewer(plugin).start(launch, address, display).await;
-            if result.is_err() {
-                // Both adapters stop what a failed start began.
-                self.forget(launch);
-            }
-            result
+            self.korri.start(launch, address, display).await
         })
     }
     fn status<'a>(
         &'a self,
         launch: &'a str,
     ) -> BoxFuture<'a, Result<LinuxViewerStatus, LinuxViewerError>> {
-        Box::pin(async move { self.route(launch).await?.status(launch).await })
+        Box::pin(async move { self.korri.status(launch).await })
     }
     fn background<'a>(&'a self, launch: &'a str) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
-        Box::pin(async move { self.route(launch).await?.background(launch).await })
+        Box::pin(async move { self.korri.background(launch).await })
     }
     fn resume_and_focus<'a>(
         &'a self,
         launch: &'a str,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
-        Box::pin(async move { self.route(launch).await?.resume_and_focus(launch).await })
+        Box::pin(async move { self.korri.resume_and_focus(launch).await })
     }
     fn stop<'a>(&'a self, launch: &'a str) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
-        Box::pin(async move {
-            self.route(launch).await?.stop(launch).await?;
-            self.forget(launch);
-            Ok(())
-        })
+        Box::pin(async move { self.korri.stop(launch).await })
     }
     fn snapshot<'a>(
         &'a self,
         launch: &'a str,
     ) -> BoxFuture<'a, Result<Option<ViewerSnapshot>, LinuxViewerError>> {
-        Box::pin(async move { self.route(launch).await?.snapshot(launch).await })
+        Box::pin(async move { self.korri.snapshot(launch).await })
     }
     fn resize<'a>(
         &'a self,
@@ -297,12 +203,7 @@ impl LinuxStreamViewer for InstalledLinuxStreamViewer {
         connection: &'a str,
         display: PluginDisplay,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
-        Box::pin(async move {
-            self.route(launch)
-                .await?
-                .resize(launch, connection, display)
-                .await
-        })
+        Box::pin(async move { self.korri.resize(launch, connection, display).await })
     }
     fn apply<'a>(
         &'a self,
@@ -310,19 +211,14 @@ impl LinuxStreamViewer for InstalledLinuxStreamViewer {
         control: &'a str,
         value: Option<korri_surface_treaty::SurfaceGameplayControlValue>,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
-        Box::pin(async move {
-            self.route(launch)
-                .await?
-                .apply(launch, control, value)
-                .await
-        })
+        Box::pin(async move { self.korri.apply(launch, control, value).await })
     }
     fn notice<'a>(
         &'a self,
         launch: &'a str,
         message: &'a str,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
-        Box::pin(async move { self.route(launch).await?.notice(launch, message).await })
+        Box::pin(async move { self.korri.notice(launch, message).await })
     }
 }
 
