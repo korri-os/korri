@@ -35,6 +35,8 @@ const SURFACE_ID: &str = "korri-cli";
 /// A sign-in waits this long for the person and the service.
 const SIGN_IN_WAIT: Duration = Duration::from_secs(600);
 const POLL: Duration = Duration::from_millis(500);
+/// How long an empty account list is read again before it is believed.
+const ACCOUNTS_WAIT: Duration = Duration::from_secs(5);
 /// The light border the QR standard asks for, in modules.
 const QUIET_ZONE: usize = 4;
 
@@ -112,7 +114,21 @@ fn declare(context: &Context) -> Result<(), CliError> {
     }
 }
 
+/// The model, once korrid has read the accounts. A hub that this call
+/// started publishes its first model before it has asked each plugin, so an
+/// empty list is read again for a short time.
 fn model(context: &Context) -> Result<(RpcResponse, Box<SurfaceModel>), CliError> {
+    let deadline = Instant::now() + ACCOUNTS_WAIT;
+    loop {
+        let (response, model) = model_now(context)?;
+        if !model.account_sign_ins.is_empty() || Instant::now() >= deadline {
+            return Ok((response, model));
+        }
+        std::thread::sleep(POLL);
+    }
+}
+
+fn model_now(context: &Context) -> Result<(RpcResponse, Box<SurfaceModel>), CliError> {
     let response = context.rpc(&RpcRequest::SurfaceModel(SurfaceModelRequest {
         surface_id: SURFACE_ID.into(),
     }))?;
