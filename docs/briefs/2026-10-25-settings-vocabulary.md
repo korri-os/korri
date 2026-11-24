@@ -468,6 +468,18 @@ Korri's device label (`sunshine_name`); no UI on the device (`locale`,
 inferred and not checked per SoC (`nvenc_*` ×8, `qsv_*` ×3, `amd_*` ×7,
 `vt_*` ×3, `vaapi_strict_rc_buffer`); no list kind yet (`keybindings`).
 
+## Steam (`host.runners.'@korri:steam/steam'.settings` and `'@korri:steam/engine'`)
+
+ADR 0083, owner decision 2026-11-23. Both runners, plugin bucket only.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `plugin.proton` | choice | The Proton that runs Windows games, as the id of an artifact the runner names. One entry today: `@korri:proton/cachyos`, the default. |
+| `plugin.fex` | choice | The FEX x86 root file system on ARM devices, as an artifact id. One entry today: `@korri:fex/rootfs`, the default. |
+
+A value is an artifact id, not a version number, so a saved choice survives a
+new pin of that artifact. Another version is another artifact.
+
 ## Open items
 
 None. Settled 2026-10-25:
