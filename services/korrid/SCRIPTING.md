@@ -564,9 +564,12 @@ that the device streams to others. While the device watches a stream, installs
 slow to 2 MiB/s, and pause while the viewer's last sample shows a dropped frame
 or a round trip of 40 ms or more. A download that cannot resume (a POST, no
 validator, or a server that serves no ranges) slows instead of pausing. A
-device that serves pieces slows to 2 MiB/s while it plays or runs on battery,
-and below 20% charge it answers every piece with 503 "busy": the receiver asks
-another source, and with none it waits. A paused install looks again every
+device that serves pieces slows to 2 MiB/s while it plays, except for the
+install its own netplay waits on (the device it hosts or reserved, asking for
+that session's release), which it serves at full pace. On battery (status
+"Discharging"; "Full", "Not charging" and an unknown status are power) it
+slows to 2 MiB/s, and below 20% charge it answers every piece with 503 "busy":
+the receiver asks another source, and with none it waits. A paused install looks again every
 second and resumes by itself. `DeviceInstallStatus.yielding` and
 `AcquireJobStatus.yielding` say `{ "pace": "Slowed" | "Paused", "reason":
 "Game" | "Netplay" | "Stream" | "SourcesBusy" }`.

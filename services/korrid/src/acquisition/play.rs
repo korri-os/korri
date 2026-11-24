@@ -14,20 +14,22 @@
 //!   (ADR 0088's controller is not built), so it does not count.
 //!
 //! Serving (a device that holds a release and gives pieces to others):
-//! - on battery (the battery does not charge): serve at
-//!   `SLOW_BYTES_PER_SECOND`; below `LOW_BATTERY_PERCENT`, refuse every
-//!   piece with "busy", which the receiver takes as "try another source";
+//! - on battery (the battery reports "Discharging"; "Full", "Not charging"
+//!   and an unknown status are power): serve at `SLOW_BYTES_PER_SECOND`;
+//!   below `LOW_BATTERY_PERCENT`, refuse every piece with "busy", which the
+//!   receiver takes as "try another source";
 //! - while it plays (any of the cases above): serve at
 //!   `SLOW_BYTES_PER_SECOND`. A holder that streams a game to the device
 //!   that installs it still serves, so a play-here install goes on behind
-//!   its stream (ADR 0092).
+//!   its stream (ADR 0092). The install that the holder's own netplay waits
+//!   on is part of that play: the device it hosts or reserved, asking for the
+//!   release of that session, is served at full pace.
 //!
 //! A paused install looks again every `PAUSE_CHECK`, so it resumes by itself
 //! when play ends. The signals are read when an install needs them, at most
 //! once per `PLAY_FRESH`; no timer runs while nothing installs.
 use crate::RpcFailure;
 use futures::future::BoxFuture;
-use korri_surface_treaty::SurfaceBattery;
 use serde::{Deserialize, Serialize};
 use std::{
     sync::{Arc, Mutex},
@@ -100,7 +102,19 @@ pub(crate) struct Play {
     /// This device watches a stream: the viewer's last measurements.
     pub stream: Option<StreamHealth>,
     /// This device's battery (ADR 0094); none without one.
-    pub battery: Option<SurfaceBattery>,
+    pub battery: Option<Battery>,
+    /// The device and release key of the netplay this device hosts or
+    /// reserved for its live session.
+    pub netplay_partner: Option<(String, String)>,
+}
+
+/// The battery facts that serving reads.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Battery {
+    /// The battery reports "Discharging": the device runs on it.
+    pub discharging: bool,
+    /// Only where the device verified its percent events (ADR 0094).
+    pub percent: Option<f64>,
 }
 
 /// The ADR 0088 viewer measurements that installs back off for.
@@ -152,8 +166,9 @@ pub(crate) enum Serve {
     Refuse,
 }
 
-pub(crate) fn serving(play: &Play) -> Serve {
-    if let Some(battery) = play.battery.as_ref().filter(|battery| !battery.charging) {
+/// `requester` is the asking device and the release key it asks for.
+pub(crate) fn serving(play: &Play, requester: Option<(&str, &str)>) -> Serve {
+    if let Some(battery) = play.battery.as_ref().filter(|battery| battery.discharging) {
         // ADR 0094: the percent is known only where the device verified it.
         if battery
             .percent
@@ -163,7 +178,12 @@ pub(crate) fn serving(play: &Play) -> Serve {
         }
         return Serve::Slowed;
     }
-    if play.game || play.netplay || play.stream.is_some() {
+    let partner = play
+        .netplay_partner
+        .as_ref()
+        .zip(requester)
+        .is_some_and(|((device, key), (asks, wants))| device == asks && key == wants);
+    if (play.game || play.netplay || play.stream.is_some()) && !partner {
         return Serve::Slowed;
     }
     Serve::Free
@@ -264,10 +284,10 @@ impl Gate {
         }
     }
 
-    /// Before this device serves `bytes`: false when it refuses, else true
-    /// once the slowed budget allows it.
-    pub(crate) async fn serve(&self, bytes: u64) -> bool {
-        match serving(&self.play().await) {
+    /// Before this device serves `bytes` of `release` to `device`: false
+    /// when it refuses, else true once the slowed budget allows it.
+    pub(crate) async fn serve(&self, bytes: u64, requester: Option<(&str, &str)>) -> bool {
+        match serving(&self.play().await, requester) {
             Serve::Refuse => false,
             Serve::Slowed => {
                 spend(&self.0.serving, bytes).await;
@@ -335,6 +355,10 @@ impl PlaySource for DeviceSignals {
                 },
                 None => None,
             };
+            let netplay_partner = match &running {
+                Some(launch) => self.holder.partner(launch).await,
+                None => None,
+            };
             let netplay = self.receiver.playing()
                 || match &running {
                     Some(launch) => self.holder.hosts(launch).await,
@@ -366,6 +390,7 @@ impl PlaySource for DeviceSignals {
                 netplay,
                 stream,
                 battery: battery(),
+                netplay_partner,
             }
         })
     }
@@ -373,10 +398,13 @@ impl PlaySource for DeviceSignals {
 
 /// ADR 0094's battery source: `/sys/class/power_supply`, read on kernel
 /// events. Tests read no battery of the machine that runs them.
-fn battery() -> Option<SurfaceBattery> {
+fn battery() -> Option<Battery> {
     #[cfg(all(target_os = "linux", not(test)))]
     {
-        crate::battery::device().borrow().clone()
+        crate::battery::power().borrow().map(|power| Battery {
+            discharging: power.discharging,
+            percent: power.percent,
+        })
     }
     #[cfg(any(not(target_os = "linux"), test))]
     {
@@ -408,8 +436,11 @@ impl PlaySource for TestPlay {
 mod tests {
     use super::*;
 
-    fn battery(percent: Option<f64>, charging: bool) -> Option<SurfaceBattery> {
-        Some(SurfaceBattery { percent, charging })
+    fn battery(percent: Option<f64>, discharging: bool) -> Option<Battery> {
+        Some(Battery {
+            discharging,
+            percent,
+        })
     }
 
     #[test]
@@ -457,7 +488,7 @@ mod tests {
         // The battery does not change the pace of taking.
         assert_eq!(
             pace(Play {
-                battery: battery(Some(5.0), false),
+                battery: battery(Some(5.0), true),
                 ..Default::default()
             }),
             None
@@ -465,28 +496,94 @@ mod tests {
     }
 
     #[test]
-    fn a_device_on_battery_serves_slowly_and_stops_below_the_threshold() {
+    fn only_a_discharging_battery_slows_serving_and_stops_it_below_the_threshold() {
         let serve = |battery, game| {
-            serving(&Play {
-                battery,
-                game,
-                ..Default::default()
-            })
+            serving(
+                &Play {
+                    battery,
+                    game,
+                    ..Default::default()
+                },
+                None,
+            )
         };
         assert_eq!(serve(None, false), Serve::Free);
-        assert_eq!(serve(battery(Some(100.0), true), false), Serve::Free);
-        assert_eq!(serve(battery(Some(10.0), true), false), Serve::Free);
-        assert_eq!(serve(battery(Some(80.0), false), false), Serve::Slowed);
+        // Charging, Full, Not charging and an unknown status are power
+        // (`battery::read_power`): never slowed, never refused for charge.
+        assert_eq!(serve(battery(Some(100.0), false), false), Serve::Free);
+        assert_eq!(serve(battery(Some(5.0), false), false), Serve::Free);
+        assert_eq!(serve(battery(None, false), false), Serve::Free);
+        assert_eq!(serve(battery(Some(80.0), true), false), Serve::Slowed);
         // A device that has not verified its percent (ADR 0094) slows only.
-        assert_eq!(serve(battery(None, false), false), Serve::Slowed);
+        assert_eq!(serve(battery(None, true), false), Serve::Slowed);
         assert_eq!(
-            serve(battery(Some(LOW_BATTERY_PERCENT), false), false),
+            serve(battery(Some(LOW_BATTERY_PERCENT), true), false),
             Serve::Slowed
         );
         assert_eq!(
-            serve(battery(Some(LOW_BATTERY_PERCENT - 1.0), false), false),
+            serve(battery(Some(LOW_BATTERY_PERCENT - 1.0), true), false),
             Serve::Refuse
         );
         assert_eq!(serve(None, true), Serve::Slowed);
+    }
+
+    #[test]
+    fn the_battery_status_decides_power() {
+        let root = tempfile::tempdir().unwrap();
+        let supply = root.path().join("BAT0");
+        std::fs::create_dir(&supply).unwrap();
+        std::fs::write(supply.join("type"), "Battery\n").unwrap();
+        std::fs::write(supply.join("capacity"), "12\n").unwrap();
+        let verified = crate::battery::Verified { percent: true };
+        for (status, discharging) in [
+            (Some("Discharging"), true),
+            (Some("Charging"), false),
+            (Some("Full"), false),
+            (Some("Not charging"), false),
+            (Some("Unknown"), false),
+            (None, false),
+        ] {
+            match status {
+                Some(status) => std::fs::write(supply.join("status"), status).unwrap(),
+                None => {
+                    let _ = std::fs::remove_file(supply.join("status"));
+                }
+            }
+            let power = crate::battery::read_power(root.path(), verified).unwrap();
+            assert_eq!(power.discharging, discharging, "{status:?}");
+            assert_eq!(power.percent, Some(12.0));
+        }
+    }
+
+    #[test]
+    fn a_holder_serves_its_netplay_partner_at_full_pace_while_it_plays() {
+        let play = Play {
+            game: true,
+            netplay: true,
+            netplay_partner: Some(("partner".into(), "sha256:netplay".into())),
+            ..Default::default()
+        };
+        assert_eq!(
+            serving(&play, Some(("partner", "sha256:netplay"))),
+            Serve::Free
+        );
+        assert_eq!(
+            serving(&play, Some(("partner", "sha256:other"))),
+            Serve::Slowed
+        );
+        assert_eq!(
+            serving(&play, Some(("other", "sha256:netplay"))),
+            Serve::Slowed
+        );
+        assert_eq!(serving(&play, None), Serve::Slowed);
+        // The low-battery refusal still applies to the partner.
+        let low = Play {
+            battery: battery(Some(LOW_BATTERY_PERCENT - 1.0), true),
+            ..play
+        };
+        assert_eq!(
+            serving(&low, Some(("partner", "sha256:netplay"))),
+            Serve::Refuse
+        );
     }
 }

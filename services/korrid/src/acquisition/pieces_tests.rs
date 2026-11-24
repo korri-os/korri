@@ -1306,7 +1306,6 @@ async fn an_install_pauses_when_a_game_starts_and_resumes_when_it_ends() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_serving_device_below_the_battery_threshold_is_a_busy_source() {
     use super::{play::TestPlay, YieldPace, YieldReason};
-    use korri_surface_treaty::SurfaceBattery;
     let (rom, key) = release(4 * PIECE_BYTES as usize);
     let low = Device::new(39, true).await;
     let other = Device::new(40, true).await;
@@ -1315,9 +1314,9 @@ async fn a_serving_device_below_the_battery_threshold_is_a_busy_source() {
     other.hold(&key, &[("Game.gba", &rom)]);
     let battery = Arc::new(TestPlay::default());
     battery.set(|play| {
-        play.battery = Some(SurfaceBattery {
+        play.battery = Some(super::play::Battery {
             percent: Some(super::play::LOW_BATTERY_PERCENT - 1.0),
-            charging: false,
+            discharging: true,
         })
     });
     low.coordinator.yield_to(battery.clone());
@@ -1387,9 +1386,84 @@ async fn a_serving_device_below_the_battery_threshold_is_a_busy_source() {
         "{:?}",
         waiting.status(&job)
     );
-    battery.set(|play| play.battery.as_mut().unwrap().charging = true);
+    // Plugged in: Charging, Full or Not charging is power.
+    battery.set(|play| play.battery.as_mut().unwrap().discharging = false);
     waiting.wait(&job).await.unwrap();
     assert_eq!(fs::read(ready(&alone, &key).join("Game.gba")).unwrap(), rom);
     low.lose();
     other.lose();
+}
+
+/// #556: a holder that hosts netplay serves its partner's netplay release at
+/// full pace; another release, or another device, it serves slowed while it
+/// plays.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_netplay_holder_serves_its_partners_release_at_full_pace() {
+    use super::play::{TestPlay, SLOW_BYTES_PER_SECOND};
+    const PIECES: u64 = 16;
+    let (rom, key) = release((PIECES * PIECE_BYTES) as usize);
+    let (other_rom, other_key) = release((PIECES * PIECE_BYTES) as usize + 1);
+    let holder = Device::new(43, false).await;
+    holder.hold(&key, &[("Game.gba", &rom)]);
+    holder.hold(&other_key, &[("Other.gba", &other_rom)]);
+    let play = Arc::new(TestPlay::default());
+    play.set(|play| {
+        play.game = true;
+        play.netplay = true;
+        play.netplay_partner = Some(("partner".into(), key.clone()));
+    });
+    holder.coordinator.yield_to(play);
+    let device = |key: &str| {
+        AuthorizationContext::Peer(Principal::OwnerDevice {
+            device_public_key: key.into(),
+            owner_statement: "verified upstream".into(),
+            owner_public_key: "owner".into(),
+        })
+    };
+    let pieces = holder.coordinator.pieces();
+    let (manifest, other_manifest) = (
+        pieces.manifest(&holder.context, &key).await.unwrap(),
+        pieces.manifest(&holder.context, &other_key).await.unwrap(),
+    );
+    let serve_all = |context: AuthorizationContext, key: String, blake3: String| {
+        let state = holder.state.clone();
+        async move {
+            let started = std::time::Instant::now();
+            for index in 0..PIECES {
+                let request = InstallPieceRequest {
+                    release_key: key.clone(),
+                    blake3: blake3.clone(),
+                    offset: index * PIECE_BYTES,
+                    length: PIECE_BYTES,
+                };
+                let response = super::pieces::piece_response(&state, &context, &request).await;
+                assert!(response.status().is_success(), "{}", response.status());
+            }
+            started.elapsed()
+        }
+    };
+    // Slowed: every piece after the first waits its share of the budget.
+    let slowed =
+        Duration::from_secs_f64(((PIECES - 1) * PIECE_BYTES) as f64 / SLOW_BYTES_PER_SECOND as f64);
+    let partner = serve_all(
+        device("partner"),
+        key.clone(),
+        manifest.files[0].blake3.clone(),
+    )
+    .await;
+    assert!(partner < slowed, "{partner:?} < {slowed:?}");
+    let other_device = serve_all(
+        device("other"),
+        key.clone(),
+        manifest.files[0].blake3.clone(),
+    )
+    .await;
+    assert!(other_device >= slowed, "{other_device:?} >= {slowed:?}");
+    let other_release = serve_all(
+        device("partner"),
+        other_key.clone(),
+        other_manifest.files[0].blake3.clone(),
+    )
+    .await;
+    assert!(other_release >= slowed, "{other_release:?} >= {slowed:?}");
 }

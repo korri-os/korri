@@ -104,6 +104,55 @@ pub fn read(root: &Path, verified: Verified) -> Option<SurfaceBattery> {
     })
 }
 
+/// Whether the device runs on its battery, for installs (ADR 0092, #556):
+/// only a primary battery whose `status` is "Discharging". "Full", "Not
+/// charging", "Charging" and an unknown status are power. `percent` follows
+/// the same verified rule as the surface's.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Power {
+    pub discharging: bool,
+    pub percent: Option<f64>,
+}
+
+/// The power facts under `root`; `None` without a readable battery.
+pub fn read_power(root: &Path, verified: Verified) -> Option<Power> {
+    let supply = primary(root).ok()??;
+    Some(Power {
+        discharging: supply.status.as_deref() == Some("Discharging"),
+        percent: supply.capacity.filter(|_| verified.percent).map(f64::from),
+    })
+}
+
+/// The power facts, published beside the surface's battery by the same
+/// reader thread (`device`), on the same kernel events.
+#[cfg(target_os = "linux")]
+static POWER: std::sync::OnceLock<tokio::sync::watch::Sender<Option<Power>>> =
+    std::sync::OnceLock::new();
+
+/// This device's power facts for installs, from the battery reader.
+#[cfg(target_os = "linux")]
+pub fn power() -> tokio::sync::watch::Receiver<Option<Power>> {
+    // `device` makes the power channel before its reader starts.
+    let _ = device();
+    POWER
+        .get_or_init(|| tokio::sync::watch::channel(None).0)
+        .subscribe()
+}
+
+/// Read once: the surface's battery, and the power facts where the reader
+/// publishes them.
+#[cfg(target_os = "linux")]
+fn refresh(
+    root: &Path,
+    verified: Verified,
+    sender: &tokio::sync::watch::Sender<Option<SurfaceBattery>>,
+) {
+    publish(sender, read(root, verified));
+    if let Some(power) = POWER.get() {
+        power.send_replace(read_power(root, verified));
+    }
+}
+
 /// Whether one `NETLINK_KOBJECT_UEVENT` datagram is the kernel's event for
 /// a power supply: `ACTION@DEVPATH`, then `KEY=VALUE` fields, each ended by
 /// a zero byte, one of them `SUBSYSTEM=power_supply`. udev's own messages
@@ -147,6 +196,7 @@ pub fn device() -> tokio::sync::watch::Receiver<Option<SurfaceBattery>> {
                     eprintln!("korrid: battery percent off: {message}");
                     Verified::default()
                 });
+            POWER.get_or_init(|| tokio::sync::watch::channel(None).0);
             let (sender, receiver) = tokio::sync::watch::channel(None);
             let started = std::thread::Builder::new()
                 .name("korrid-battery".into())
@@ -196,11 +246,11 @@ fn follow<S>(
         Ok(events) => events,
         Err(error) => {
             eprintln!("korrid: battery events unavailable, percent off: {error}");
-            publish(sender, read(root, Verified::default()));
+            refresh(root, Verified::default(), sender);
             return;
         }
     };
-    publish(sender, read(root, verified));
+    refresh(root, verified, sender);
     let mut buffer = vec![0u8; 8192];
     loop {
         let (length, port) = match receive(&events, &mut buffer) {
@@ -209,17 +259,17 @@ fn follow<S>(
             // The kernel dropped events for a full queue: one of them may
             // have been the battery's.
             Err(error) if error.raw_os_error() == Some(libc::ENOBUFS) => {
-                publish(sender, read(root, verified));
+                refresh(root, verified, sender);
                 continue;
             }
             Err(error) => {
                 eprintln!("korrid: battery events ended, percent off: {error}");
-                publish(sender, read(root, Verified::default()));
+                refresh(root, Verified::default(), sender);
                 return;
             }
         };
         if port == 0 && is_power_supply_uevent(&buffer[..length.min(buffer.len())]) {
-            publish(sender, read(root, verified));
+            refresh(root, verified, sender);
         }
     }
 }

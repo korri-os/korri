@@ -1465,7 +1465,23 @@ pub(crate) async fn piece_response(
     // #556: a device that plays serves slowly; one on low battery serves
     // nothing, and the receiver asks another source.
     let pieces = state.acquisition.pieces();
-    if !pieces.gate.serve(request.length.min(PIECE_BYTES)).await {
+    let device = match context {
+        AuthorizationContext::Peer(
+            Principal::OwnerDevice {
+                device_public_key, ..
+            }
+            | Principal::Household {
+                device_public_key, ..
+            },
+        ) => Some(device_public_key.as_str()),
+        _ => None,
+    };
+    let requester = device.map(|device| (device, request.release_key.as_str()));
+    if !pieces
+        .gate
+        .serve(request.length.min(PIECE_BYTES), requester)
+        .await
+    {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             [(axum::http::header::RETRY_AFTER, "5")],

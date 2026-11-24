@@ -13,6 +13,8 @@ struct Reservation {
     device_public_key: String,
     seat: u8,
     hosting_confirmed: bool,
+    /// The release of the reserved session, which the device installs.
+    release_key: String,
 }
 impl Holder {
     /// ADR 0092 (#556): this device hosts netplay for its live session
@@ -24,6 +26,22 @@ impl Holder {
             .as_ref()
             .is_some_and(|reservation| {
                 reservation.launch_id == launch && reservation.hosting_confirmed
+            })
+    }
+    /// ADR 0092 (#556): the device and release key of the netplay this
+    /// device hosts or reserved for its live session `launch`. Its install
+    /// is part of that play.
+    pub(crate) async fn partner(&self, launch: &str) -> Option<(String, String)> {
+        self.reservation
+            .lock()
+            .await
+            .as_ref()
+            .filter(|reservation| reservation.launch_id == launch)
+            .map(|reservation| {
+                (
+                    reservation.device_public_key.clone(),
+                    reservation.release_key.clone(),
+                )
             })
     }
     pub(crate) async fn stream_play(
@@ -107,6 +125,7 @@ pub(crate) async fn register(
                 device_public_key: device_public_key.clone(),
                 seat,
                 hosting_confirmed: false,
+                release_key: local.facts.release_key.clone(),
             });
             seat
         };
