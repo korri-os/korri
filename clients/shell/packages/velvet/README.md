@@ -298,7 +298,11 @@ backdrop pixel differs from its neighbour by more than four levels.
   and hands down: the stage's picture, the focused game's
   logo, then tiles from the focused one outwards, rows in sight first; in
   the library the shelves before the home's row, which has left the stage)
-  and stops at 23 MiB. A tile over the budget shows its no-art card. A set is
+  and stops at 23 MiB. Of a game's pictures of a class (its posters, its
+  stage pictures), a tile or the stage asks for the least that covers the
+  size it is drawn at, then for each smaller one, so the budget gives a
+  smaller picture before it gives the no-art card (`fitting`, `src/art.ts`).
+  A tile none of them fits shows its no-art card. A set is
   five tiles across at most and a shelf five games, so every tile in sight
   has its picture. The mockup's six across cannot have that while the shell
   hands a poster over at its stored size (see "Asked of the shell").

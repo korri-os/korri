@@ -25,6 +25,7 @@ import { sameGame } from "./lists"
 import { onForget } from "./memo"
 import { NO_POSTER, posterFor, posterView, type PosterView } from "./poster"
 import { plateOf } from "./plate"
+import { TILE_RATIO } from "./plan"
 import type { Game } from "./types"
 import { ago, caps, playtime } from "./words"
 
@@ -33,9 +34,11 @@ import { ago, caps, playtime } from "./words"
  * surface, and a picture it had to let go is empty again until it is read
  * once more, so a view never names more than fits. A view asks for its
  * pictures in order of importance (`take`): the stage's hero, the focused
- * game's logo, then tiles from the focused one outwards. A picture that does
- * not fit is not asked for, and its tile shows its no-art card, which is a
- * finished picture too.
+ * game's logo, then tiles from the focused one outwards. The budget decides
+ * which picture a tile shows, never how many tiles stand (src/plan.ts): of a
+ * game's pictures of the tile's class, a tile asks for the least that is as
+ * large as it is drawn, then for each smaller one (`fitting`). A tile none of
+ * them fits shows its no-art card, which is a finished picture too.
  *
  * A stored picture reaches a surface with its longer side at most 1920 px,
  * four bytes a pixel. Korri gives a square cover no size; it is counted as
@@ -117,10 +120,36 @@ export interface ArtOf {
   readonly logo?: SurfaceMedia
   /** What lights the stage: the background, else the wide hero. */
   readonly stage?: SurfaceMedia
+  /** Every poster, the fewest pixels first (a tile draws the one that fits it, `fitting`). */
+  readonly posters?: readonly SurfaceMedia[]
+  /** Every picture of the stage's class (the backgrounds, else the wide heroes), the fewest pixels first. */
+  readonly stages?: readonly SurfaceMedia[]
 }
 
 const NO_ART: Readonly<ArtOf> = {}
 const larger = (one: SurfaceMedia, than: SurfaceMedia | undefined): boolean => than === undefined || one.width * one.height > than.width * than.height
+/** Fewest pixels first; of two the same size, the first Korri sent. */
+const ascending = (list: SurfaceMedia[]): SurfaceMedia[] => list.map((one, at) => ({ one, at })).sort((a, b) => a.one.width * a.one.height - b.one.width * b.one.height || a.at - b.at).map(({ one }) => one)
+
+/**
+ * The order in which to ask for a class's pictures (the fewest pixels first, as
+ * `chooseArt` lists them) for a box drawn `width` x `height` px and cut to fill
+ * it: the least that covers the box, then each smaller one, the largest of them
+ * first. A picture larger than the box shows nothing more and costs the budget
+ * more; a smaller one is softer, and better than no picture. With no box (0),
+ * the largest first, then each smaller one.
+ */
+export function fitting<T extends { readonly width: number; readonly height: number }>(sorted: readonly T[], width: number, height: number): T[] {
+  if (sorted.length === 0) return []
+  let from = sorted.length - 1
+  if (width > 0 && height > 0) {
+    const covers = sorted.findIndex(one => one.width >= width && one.height >= height)
+    if (covers >= 0) from = covers
+  }
+  const order: T[] = []
+  for (let at = from; at >= 0; at--) order.push(sorted[at]!)
+  return order
+}
 
 /**
  * One look through a game's media. Within a class the largest in pixels
@@ -134,6 +163,9 @@ export function chooseArt(media: readonly SurfaceMedia[] | undefined): ArtOf {
   let poster: SurfaceMedia | undefined
   let square: SurfaceMedia | undefined
   let logo: SurfaceMedia | undefined
+  const posters: SurfaceMedia[] = []
+  const backgrounds: SurfaceMedia[] = []
+  const wides: SurfaceMedia[] = []
   for (let i = 0; i < media.length; i++) {
     const one = media[i]!
     if (one.url === "") continue
@@ -143,15 +175,19 @@ export function chooseArt(media: readonly SurfaceMedia[] | undefined): ArtOf {
     }
     if (one.kind !== "picture") continue
     switch (classOf(one.width, one.height)) {
-      case "background": if (larger(one, background)) background = one; break
-      case "wide": if (larger(one, wide)) wide = one; break
-      case "poster": if (larger(one, poster)) poster = one; break
+      case "background": backgrounds.push(one); if (larger(one, background)) background = one; break
+      case "wide": wides.push(one); if (larger(one, wide)) wide = one; break
+      case "poster": posters.push(one); if (larger(one, poster)) poster = one; break
       case "square": if (larger(one, square)) square = one; break
     }
   }
   const stage = background ?? wide
   if (stage === undefined && poster === undefined && square === undefined && logo === undefined) return NO_ART
-  return { background, wide, poster, square, logo, stage }
+  return {
+    background, wide, poster, square, logo, stage,
+    ...(posters.length === 0 ? {} : { posters: ascending(posters) }),
+    ...(stage === undefined ? {} : { stages: ascending(background !== undefined ? backgrounds : wides) }),
+  }
 }
 
 /** A game's art by use, kept with its tile (`madeOf`). */
@@ -228,16 +264,22 @@ function fieldOf(colour: string | undefined, title: string): number {
   return hsl(gelHue(title), 0.34, 0.2)
 }
 
-/** A game's tile, made once: as its no-art card, and with its picture (the same when it has none). */
+/** A picture a tile may show: its address and stored size (for the pixel budget), and the tile with it. */
+interface Option {
+  readonly url: string
+  readonly width: number
+  readonly height: number
+  readonly view: TileView
+}
+
+/** A game's tile, made once: as its no-art card, and with each picture it may show (the fewest pixels first; none without art). */
 interface Made {
   readonly game: Game
   readonly chosen: ArtOf
   readonly card: TileView
+  /** With its largest picture (the card when it has none). */
   readonly art: TileView
-  /** The picture's address and stored size, for the pixel budget; "" with none. */
-  readonly url: string
-  readonly width: number
-  readonly height: number
+  readonly options: readonly Option[]
   /** Where the focus badge sits: on the card, and over the picture. */
   readonly cardBadgeTop: boolean
   readonly artBadgeTop: boolean
@@ -255,37 +297,50 @@ function madeOf(game: Game): Made {
   const card: TileView = { shown: true, kind: "game", artKind: "none", art: NO_IMAGE, poster: lines, label: game.title }
   // One look through the game's pictures (this runs for every card on its way in).
   const chosen = chooseArt(game.media)
-  const { poster, square, logo, stage } = chosen
+  const { posters, square, logo, stage } = chosen
   const cover = square?.url ?? game.coverArtUrl ?? ""
-  let next: Made
-  if (poster !== undefined) {
-    next = {
-      game, chosen, card, art: { shown: true, kind: "game", artKind: "poster", art: { $image: poster.url }, poster: lines, label: game.title },
-      url: poster.url, width: poster.width, height: poster.height, cardBadgeTop: paper.badgeTop, artBadgeTop: false,
-    }
+  const one = (url: string, width: number, height: number, view: TileView): Option => ({ url, width, height, view })
+  let options: Option[]
+  let artBadgeTop: boolean
+  if (posters !== undefined) {
+    options = posters.map(poster => one(poster.url, poster.width, poster.height, { shown: true, kind: "game", artKind: "poster", art: { $image: poster.url }, poster: lines, label: game.title }))
+    artBadgeTop = false
   } else if (cover !== "") {
     // A square tile from Korri's media, else its square cover: either stands over a field.
     const fit = fitCapsOnce(game.title, 52, 24, 12, 4.2)
-    next = {
-      game, chosen, card,
-      art: { shown: true, kind: "game", artKind: "cover", art: { $image: cover }, field: fieldOf(square?.color ?? stage?.color, game.title), capLines: fit.lines, capSize: fit.size, poster: lines, label: game.title },
-      url: cover, width: square?.width ?? COVER_SIDE, height: square?.height ?? COVER_SIDE, cardBadgeTop: paper.badgeTop, artBadgeTop: true,
-    }
+    options = [one(cover, square?.width ?? COVER_SIDE, square?.height ?? COVER_SIDE, {
+      shown: true, kind: "game", artKind: "cover", art: { $image: cover }, field: fieldOf(square?.color ?? stage?.color, game.title), capLines: fit.lines, capSize: fit.size, poster: lines, label: game.title,
+    })]
+    artBadgeTop = true
   } else if (logo !== undefined) {
-    next = {
-      game, chosen, card, art: { shown: true, kind: "game", artKind: "logo", art: { $image: logo.url }, field: fieldOf(logo.color ?? stage?.color, game.title), poster: lines, label: game.title },
-      url: logo.url, width: logo.width, height: logo.height, cardBadgeTop: paper.badgeTop, artBadgeTop: false,
-    }
-  } else next = { game, chosen, card, art: card, url: "", width: 0, height: 0, cardBadgeTop: paper.badgeTop, artBadgeTop: paper.badgeTop }
+    options = [one(logo.url, logo.width, logo.height, { shown: true, kind: "game", artKind: "logo", art: { $image: logo.url }, field: fieldOf(logo.color ?? stage?.color, game.title), poster: lines, label: game.title })]
+    artBadgeTop = false
+  } else {
+    options = []
+    artBadgeTop = paper.badgeTop
+  }
+  const next: Made = { game, chosen, card, art: options[options.length - 1]?.view ?? card, options, cardBadgeTop: paper.badgeTop, artBadgeTop }
   if (made.size > 1200) made.clear()
   made.set(game.id, next)
   return next
 }
 
-/** A game's tile as this view may show it: its picture when the budget has room, else its no-art card. */
-function budgeted(asked: Pictures, game: Game): { readonly view: TileView; readonly badgeTop: boolean } {
+/**
+ * A game's tile as this view may show it, drawn `drawn` px high (0: not known): the
+ * picture that fits it and the budget (`fitting`), else its no-art card. A picture of the
+ * game this view already holds and that covers the tile costs nothing more, so it is
+ * shown first.
+ */
+function budgeted(asked: Pictures, game: Game, drawn = 0): { readonly view: TileView; readonly badgeTop: boolean } {
   const tile = madeOf(game)
-  return tile.url === "" || take(asked, tile.url, tile.width, tile.height) ? { view: tile.art, badgeTop: tile.artBadgeTop } : { view: tile.card, badgeTop: tile.cardBadgeTop }
+  const { options } = tile
+  if (options.length === 0) return { view: tile.art, badgeTop: tile.artBadgeTop }
+  const width = Math.ceil(drawn * TILE_RATIO), height = Math.ceil(drawn)
+  const order = fitting(options, width, height)
+  const held = drawn > 0 ? options.find(option => asked.taken.has(option.url) && option.width >= width && option.height >= height) : undefined
+  if (held !== undefined) return { view: held.view, badgeTop: tile.artBadgeTop }
+  for (const option of order) if (take(asked, option.url, option.width, option.height)) return { view: option.view, badgeTop: tile.artBadgeTop }
+  return { view: tile.card, badgeTop: tile.cardBadgeTop }
 }
 
 /** Where a tile stands, past its focus id: its shelf in the lobby, and whether its row is at rest. */
@@ -349,23 +404,24 @@ export const drawsName = (tile: TileView): boolean => tile.kind !== "game" || ti
 /**
  * A game's tile on a shelf or in the row. `naming`: when focused, it carries its name line
  * (home's row on one window; the lobby has its own head line, the Floor's Stage names the game).
+ * `drawn`: the tile's height in px, for the picture that fits it (0: not known, the largest).
  */
-export function gameTile(asked: Pictures, game: Game, region: string, focusId: string, focused: boolean, at: number, standing?: Standing, naming = false): TileView {
-  const { view, badgeTop } = budgeted(asked, game)
+export function gameTile(asked: Pictures, game: Game, region: string, focusId: string, focused: boolean, at: number, standing?: Standing, naming = false, drawn = 0): TileView {
+  const { view, badgeTop } = budgeted(asked, game, drawn)
   // Sent with every focused tile, "" for none: a field left out keeps the row's old value.
   const name = focused ? (naming && !drawsName(view) ? game.title : "") : undefined
   return place(view, region, focusId, focused, at, standing, undefined, game.system ?? "", badgeTop, name)
 }
 
-/** A game's card where it is no focus target (the pick's card). */
-export const gameCard = (asked: Pictures, game: Game): TileView => budgeted(asked, game).view
+/** A game's card where it is no focus target (a list page's tile), `drawn` px high (0: not known). */
+export const gameCard = (asked: Pictures, game: Game, drawn = 0): TileView => budgeted(asked, game, drawn).view
 
 // A set's tiles, by their slot in the grid's pool: kept like the tiles above.
 const slots = new Map<number, { readonly base: TileView; readonly at: number; readonly lit: boolean; readonly badge: string; readonly badgeTop: boolean; readonly out: TileView }>()
 
-/** A game's picture in a set, at its place: no focus target (its mark is), lit when its mark has the focus. */
-export function setTile(asked: Pictures, game: Game, at: number, lit: boolean, slot: number): TileView {
-  const { view, badgeTop } = budgeted(asked, game)
+/** A game's picture in a set, at its place, `drawn` px high: no focus target (its mark is), lit when its mark has the focus. */
+export function setTile(asked: Pictures, game: Game, at: number, lit: boolean, slot: number, drawn = 0): TileView {
+  const { view, badgeTop } = budgeted(asked, game, drawn)
   const badge = game.system ?? ""
   const known = slots.get(slot)
   if (known !== undefined && known.base === view && known.at === at && known.lit === lit && (!lit || (known.badge === badge && known.badgeTop === badgeTop))) return known.out
@@ -452,9 +508,11 @@ export function stageOf(asked: Pictures, game: Game | undefined, veil: number, d
   if (card !== undefined && !lit && width > 0 && height > 0) {
     return { key: `plate:${game.id}`, light, artShown: true, art: { $image: plateOf(card, width, height) }, fill: true, veil, drift }
   }
-  return picture === undefined || !take(asked, picture.url, picture.width, picture.height)
+  // The picture that covers the stage, else the largest under it the budget holds (`fitting`).
+  const drawn = picture === undefined ? undefined : fitting(tile.chosen.stages ?? [picture], width, height).find(one => take(asked, one.url, one.width, one.height))
+  return drawn === undefined
     ? { key: `light:${game.id}`, light, artShown: false, art: NO_IMAGE, fill: true, veil, drift: false }
-    : { key: picture.url, light, artShown: true, art: { $image: picture.url }, fill: true, veil, drift }
+    : { key: drawn.url, light, artShown: true, art: { $image: drawn.url }, fill: true, veil, drift }
 }
 
 /** Whether a picture of the game lights the stage: a background or a wide hero. */

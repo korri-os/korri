@@ -200,10 +200,10 @@ export const pill = (label: string, region: string, focusId: string, focused: bo
 /** Whether a card already says the game's name (so the marquee beside it does not repeat it). */
 const cardNames = (game: Game): boolean => artOf(game).poster === undefined
 
-function shelfTile(asked: Pictures, item: ShelfItem, region: string, id: string, focused: boolean, at: number, standing: Standing): TileView {
+function shelfTile(asked: Pictures, item: ShelfItem, region: string, id: string, focused: boolean, at: number, standing: Standing, drawn: number): TileView {
   switch (item.kind) {
     case "game":
-      return gameTile(asked, item.game, region, id, focused, at, standing)
+      return gameTile(asked, item.game, region, id, focused, at, standing, false, drawn)
     case "more":
       return navTile(item.label, item.count === undefined ? "" : String(item.count), region, id, focused, at, standing)
     case "system":
@@ -278,7 +278,7 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
   // The card beside it takes focus with Left and opens the detail; with the hero as the
   // stage there is no card.
   const onCard = !hero && state.onCard
-  const cards = pick === undefined || hero ? [] : [gameTile(asked, pick, "pick", "card", onPick && onCard, 0)]
+  const cards = pick === undefined || hero ? [] : [gameTile(asked, pick, "pick", "card", onPick && onCard, 0, undefined, false, plan.posterH)]
   const rowTiles: TileView[] = row.map(() => NO_TILE)
   const fillRow = () => {
     const standing = depth === 0 ? ROW_RESTS : ROW_UP
@@ -290,7 +290,7 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
       // The pick's own place, at the row's head, stands off the stage's left edge while the
       // row is a strip; it keeps its game, so nothing changes in it as it slides in or away.
       // A focused tile carries its name line where its drawing does not name the game.
-      else rowTiles[at] = gameTile(asked, item.game, "row", id, focused, at, standing, named)
+      else rowTiles[at] = gameTile(asked, item.game, "row", id, focused, at, standing, named, plan.rowH)
     }
   }
   // The pixel budget goes to what is in sight first (src/art.ts): the row before the shelf
@@ -320,7 +320,7 @@ export function homeView(asked: Pictures, state: State, model: Model, plan: Plan
       if (at !== column && Math.abs(at - first) > across) continue
       const id = `${region}:${at}`
       const focused = live && !state.onMenu && depth === 2 && index === shelfAtNow && column === at
-      tiles[starts[index]! + at] = shelfTile(asked, shelf.items[at]!, region, id, focused, at, standingOf(index, depth !== 2 || index !== shelfAtNow))
+      tiles[starts[index]! + at] = shelfTile(asked, shelf.items[at]!, region, id, focused, at, standingOf(index, depth !== 2 || index !== shelfAtNow), plan.shelfH)
     }
   }
   if (depth >= 2) fillRow()
@@ -620,7 +620,7 @@ export function setView(asked: Pictures, state: State, set: SetState, model: Mod
       const game = window.window[set.low + place - window.firstIndex]
       const lit = live && !set.pill && place === focusedAt
       // Each place keeps its slot while it is near the view, so a row that scrolls keeps its tiles.
-      tiles[place % pool] = game === undefined ? blankTile(place) : setTile(asked, game, place, lit, place % pool)
+      tiles[place % pool] = game === undefined ? blankTile(place) : setTile(asked, game, place, lit, place % pool, plan.tileH)
     }
   }
   // A focus target for each place a tile is sent for: the rows in sight and one more each way.

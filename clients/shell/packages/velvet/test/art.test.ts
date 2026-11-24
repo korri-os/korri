@@ -15,7 +15,7 @@
 import { describe, expect, test } from "bun:test"
 import "../logic"
 import type { SurfaceMedia } from "../../../../../contracts/generated/surface"
-import { chooseArt, classOf, gameCard, hasHero, marqueeOf, pictures, stageOf } from "../src/art"
+import { chooseArt, classOf, decodedBytes, fitting, gameCard, gameTile, hasHero, marqueeOf, PIXEL_BUDGET, pictures, setTile, stageOf } from "../src/art"
 import { forget } from "../src/memo"
 import type { Game } from "../src/types"
 import { Play, scenario } from "./korri"
@@ -179,5 +179,54 @@ describe("through the view", () => {
     run.press("down")
     expect(run.view.stage.art).toEqual({ $image: "preview/art/hero-tide.png" })
     expect(run.view.stage.fill).toBe(true)
+  })
+})
+
+describe("a picture is chosen for the size it is drawn at, and the budget picks the picture, not the layout", () => {
+  test("fitting: the least that covers the box first, then each smaller one; with no box, the largest first", () => {
+    const sorted = [{ width: 200, height: 300 }, { width: 400, height: 600 }, { width: 600, height: 900 }, { width: 1000, height: 1500 }]
+    expect(fitting(sorted, 300, 450).map(one => one.height)).toEqual([600, 300])
+    expect(fitting(sorted, 600, 900).map(one => one.height)).toEqual([900, 600, 300])
+    expect(fitting(sorted, 2000, 3000).map(one => one.height)).toEqual([1500, 900, 600, 300])
+    expect(fitting(sorted, 0, 0).map(one => one.height)).toEqual([1500, 900, 600, 300])
+    expect(fitting([], 100, 100)).toEqual([])
+  })
+
+  test("a tile shows the least poster as large as the tile; a larger tile, a larger poster; no size known, the largest", () => {
+    forget()
+    const one = game([picture("poster-small", 300, 450), picture("poster-big", 1000, 1500), picture("poster-mid", 600, 900)])
+    expect(chooseArt(one.media).posters?.map(poster => poster.height)).toEqual([450, 900, 1500])
+    expect(gameCard(pictures(), one, 400)).toMatchObject({ artKind: "poster", art: { $image: "preview/art/poster-small.png" } })
+    expect(gameCard(pictures(), one, 600)).toMatchObject({ art: { $image: "preview/art/poster-mid.png" } })
+    expect(gameCard(pictures(), one, 1300)).toMatchObject({ art: { $image: "preview/art/poster-big.png" } })
+    expect(gameCard(pictures(), one, 4000)).toMatchObject({ art: { $image: "preview/art/poster-big.png" } })
+    expect(gameCard(pictures(), one)).toMatchObject({ art: { $image: "preview/art/poster-big.png" } })
+  })
+
+  test("where the budget cannot hold the poster that fits, a smaller one; where it holds none, the no-art card", () => {
+    forget()
+    const one = game([picture("poster-small", 300, 450), picture("poster-big", 1000, 1500)])
+    const near = (left: number) => ({ ...pictures(), spent: PIXEL_BUDGET - left })
+    expect(setTile(near(decodedBytes(1000, 1500)), one, 0, false, 0, 1400)).toMatchObject({ art: { $image: "preview/art/poster-big.png" } })
+    expect(setTile(near(decodedBytes(1000, 1500) - 1), one, 0, false, 0, 1400)).toMatchObject({ art: { $image: "preview/art/poster-small.png" } })
+    expect(setTile(near(decodedBytes(300, 450) - 1), one, 0, false, 0, 1400)).toMatchObject({ artKind: "none" })
+  })
+
+  test("a poster the view already holds and that covers the tile costs nothing more", () => {
+    forget()
+    const one = game([picture("poster-small", 300, 450), picture("poster-big", 1000, 1500)])
+    const asked = pictures()
+    gameTile(asked, one, "row", "row:0", false, 0, undefined, false, 1400)
+    const spent = asked.spent
+    expect(gameTile(asked, one, "shelf:x", "shelf:x:0", false, 0, undefined, false, 300)).toMatchObject({ art: { $image: "preview/art/poster-big.png" } })
+    expect(asked.spent).toBe(spent)
+  })
+
+  test("the stage takes the least background that covers the window", () => {
+    forget()
+    const one = game([picture("bg-small", 1280, 720), picture("bg-big", 3840, 2160)])
+    expect(stageOf(pictures(), one, 0, false, false, 1280, 720).art).toEqual({ $image: "preview/art/bg-small.png" })
+    expect(stageOf(pictures(), one, 0, false, false, 1920, 1080).art).toEqual({ $image: "preview/art/bg-big.png" })
+    expect(stageOf(pictures(), one, 0, false, false, 3840, 2160).art).toEqual({ $image: "preview/art/bg-big.png" })
   })
 })
