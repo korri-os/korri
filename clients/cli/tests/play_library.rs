@@ -652,6 +652,7 @@ fn play_library_failed_jobs_artifacts_and_partial_games_keep_ok_json_but_exit_on
                 file_name: None,
                 system: None,
                 message: None,
+                yielding: None,
                 state: AcquireJobState::Failed {
                     reason: error.clone(),
                 },
@@ -703,6 +704,7 @@ fn play_library_provider_job_status_and_artifact_cancel_ids_are_distinct() {
         file_name: None,
         system: None,
         message: None,
+        yielding: None,
         state: AcquireJobState::Unpacking,
     }));
     let server = Server::start(vec![job]);
@@ -848,6 +850,7 @@ fn play_library_provider_acquire_keeps_claim_identity_and_gets_details_first() {
         file_name: None,
         system: Some("gba".into()),
         message: None,
+        yielding: None,
         state: AcquireJobState::Queued,
     };
     let server = Server::start(vec![
