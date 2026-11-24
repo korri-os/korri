@@ -5582,12 +5582,14 @@ fn line_state(state: &acquisition::ArtifactState) -> Option<surface::installs::L
             done: *bytes_done,
             total: *bytes_total,
             bytes_per_second: *bytes_per_second,
+            // #556: the artifact download's yield once it lands.
             yielding: None,
         },
         A::Unpacking => L::Running {
             done: 0,
             total: None,
             bytes_per_second: None,
+            // #556: the artifact download's yield once it lands.
             yielding: None,
         },
         A::Failed { reason } => L::Failed {
@@ -5658,6 +5660,7 @@ impl surface::installs::InstallsAccess for InstallFacts {
                             done: 0,
                             total: None,
                             bytes_per_second: None,
+                            // #556: the provider job's yield once it lands.
                             yielding: None,
                         },
                         J::Downloading {
