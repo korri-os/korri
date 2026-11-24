@@ -2108,8 +2108,15 @@ impl AppState {
     fn recover_acquisition(&self) {
         if let Ok((root, registry)) = self.acquisition_context() {
             // ADR 0092: provider installs resume only where a library can
-            // record them.
-            let games = self.game_context().ok();
+            // record them. The registry is the one already read.
+            let games = self
+                .local_library()
+                .map(|library| acquisition::GameContext {
+                    root: root.to_path_buf(),
+                    private_root: self.private_state_root().to_path_buf(),
+                    registry: registry.clone(),
+                    discovery: library.discovery.clone(),
+                });
             if let Err(failure) = self.acquisition.recover_installs(
                 root,
                 self.private_state_root(),
