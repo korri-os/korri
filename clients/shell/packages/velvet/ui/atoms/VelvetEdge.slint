@@ -1,5 +1,6 @@
-// VelvetEdge: the focus edge. House light, three px, with a hairline of
-// shade inside it so it reads on a bright picture too. It fades in; it never
+// VelvetEdge: the focus edge. House light, three px at the reference stage and
+// more, in whole px, on a larger window, with a hairline of shade inside it so it
+// reads on a bright picture too. It fades in; it never
 // moves a neighbour. It stays while touch is in use: a tapped game shows it is chosen.
 
 import { Tokens } from "../tokens.slint";
@@ -7,23 +8,24 @@ import { Tokens } from "../tokens.slint";
 export component VelvetEdge inherits Rectangle {
     in property <bool> lit;
     in property <length> radius;
+    property <length> edge: Math.max(Tokens.edge, Math.round(Tokens.edge / Tokens.unit * Tokens.screen.k) * Tokens.unit);
     // Each ring fades by itself: a fading parent with a child is drawn through an
     // offscreen layer on the GPU every frame of the fade (#484). The rings do not overlap.
     Rectangle {
         width: parent.width;
         height: parent.height;
         border-radius: root.radius;
-        border-width: Tokens.edge;
+        border-width: root.edge;
         border-color: Tokens.house-light;
         opacity: root.lit ? 1 : 0;
         animate opacity { duration: Tokens.t-ring; easing: cubic-bezier(0.4, 0, 0.2, 1); }
     }
     Rectangle {
-        x: Tokens.edge;
-        y: Tokens.edge;
-        width: parent.width - 2 * Tokens.edge;
-        height: parent.height - 2 * Tokens.edge;
-        border-radius: Math.max(0px, root.radius - Tokens.edge);
+        x: root.edge;
+        y: root.edge;
+        width: parent.width - 2 * root.edge;
+        height: parent.height - 2 * root.edge;
+        border-radius: Math.max(0px, root.radius - root.edge);
         border-width: Tokens.hair;
         border-color: Tokens.shade-45;
         opacity: root.lit ? 1 : 0;

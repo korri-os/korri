@@ -43,7 +43,8 @@ decide structure, never a device:
 | `NARROW_RATIO` | width / height under 0.9 | The pick stacks under the hero's band; buttons stand one under the other; a list page's panel stands over its rows. |
 | `PANEL_BESIDE_RATIO` | 1.25 and at least 560 px wide | A list page's panel stands beside the rows. |
 | `EMPTY_WIDE_RATIO` | 1.5 | The empty library's ghost tiles stand beside the invitation. |
-| `MOST_COLUMNS` | 5 | The most tiles a set shows across (the pixel budget, below). |
+| `SET_FIT_GROW` | 0.1 | A set's row is always full, pad to pad: its tiles are the lobby's, and take at most a tenth more width before the row takes one more column. |
+| `SET_LEAST` | 60 px | No column more than leaves a set's tile narrower than this. |
 | `SHELF_SLOTS` | 5 | Games on a lobby shelf before "See all". |
 
 What yields first when the window gets small: the library's peek under the
@@ -52,8 +53,21 @@ most), then a curtain's words (they page, "More above / More below"). A
 button never yields: when a curtain cannot fit, it stands on the window's
 foot and its words give way.
 
-Proven at 1920x1080, 1240x1080, 640x480, 480x800, 320x240 and 1280x720, and
-by a sweep from 320x240 to 2560x1440 (`test/plan.test.ts`).
+Nothing in the plan has a ceiling in pixels. `k` and `kt` have floors and
+no cap, so a 3840x2160 window is the 1920x1080 composition twice the size,
+and a pane of any shape gets the composition its own width and height
+decide. A size that must stop growing stops at a share of the other axis
+(a pad: `PAD_SHARE`) or at a measure in type that grows with the type (a
+list page, a sheet, a curtain, the pause panel, the keyboard, a list row:
+`PAGE_MEASURE` and the others, set at the 1600x900 reference stage). The
+tokens' few "most" sizes are measures in the same way: a component
+multiplies them by `kt` or `k`.
+
+Proven at 1920x1080, 1240x1080, 640x480, 480x800, 320x240, 1280x720,
+3840x2160, 720x1600, 1920x400 and 480x320, and by a sweep from 320x240 to
+3840x2160 (`test/plan.test.ts`): a set's right margin is its left one, type
+never shrinks when the window grows on either axis, and a window twice the
+size is the same plan twice the size.
 
 ## Screens
 
@@ -298,14 +312,17 @@ backdrop pixel differs from its neighbour by more than four levels.
   and hands down: the stage's picture, the focused game's
   logo, then tiles from the focused one outwards, rows in sight first; in
   the library the shelves before the home's row, which has left the stage)
-  and stops at 23 MiB. Of a game's pictures of a class (its posters, its
-  stage pictures), a tile or the stage asks for the least that covers the
-  size it is drawn at, then for each smaller one, so the budget gives a
-  smaller picture before it gives the no-art card (`fitting`, `src/art.ts`).
-  A tile none of them fits shows its no-art card. A set is
-  five tiles across at most and a shelf five games, so every tile in sight
-  has its picture. The mockup's six across cannot have that while the shell
-  hands a poster over at its stored size (see "Asked of the shell").
+  and stops at 23 MiB. The budget chooses pictures, never columns: a set is
+  as many tiles across as its width holds. Of a game's pictures of a class
+  (its posters, its stage pictures), a tile or the stage asks for the least
+  that covers the size it is drawn at, then for each smaller one, so the
+  budget gives a smaller picture before it gives the no-art card
+  (`fitting`, `src/art.ts`). A tile none of them fits shows its no-art card.
+  The shell still decodes a picture at its stored size, so this only saves
+  pixels where Korri has several sizes of a picture; with one 600x900 poster
+  a game, 11 posters fit, and a set of 7 columns and 2 rows and a half in
+  sight (1920x1080, 3840x2160) shows the rest as cards, the focused row
+  first (see "Asked of the shell").
 - **Calls.** Every `view` and every `update` over 10,000 games is under
   50 ms on the slowest device's clock, the first sight of a screen included:
   there is no allowance for a first call. The test
@@ -400,8 +417,9 @@ a pattern can see; `velvet_package.rs` holds the rest.
 Not Velvet's to change; reported to the coordinator.
 
 - Pictures at the size they are drawn. A grid of posters needs a fifth of
-  the pixels the shell decodes for it. With that, a set could be six or
-  seven across with every picture.
+  the pixels the shell decodes for it (a 600x900 poster drawn 216x324 at
+  1920x1080). A size beside `$image` (contract 3.8), decoded to fit, would
+  let every tile in sight of a full-width set have its picture.
 - A mark in the treaty for "the catalog changed" (a revision on
   `SurfaceCatalog`, or on each game). Without it Velvet cannot tell a
   publication that changed a game out of its window from one that changed
@@ -461,7 +479,7 @@ preview state.
 | `decomposition-gate` | Every component has its preview; none is unused; `Screen` is the plan, field for field. |
 | `contrast-gate` | The house's pairs; a title and its facts on any game's light. |
 | `touch-gate` | `activated` and `dragged` reach the root from every instance; the gesture rules; the way back. |
-| `scenarios` | Every scenario at six sizes: the focus convention, the pixel budget, the view's size, the view's keys; no negative number and no empty kind stands in for "none". |
+| `scenarios` | Every scenario at ten sizes: the focus convention, the pixel budget, the view's size, the view's keys; no negative number and no empty kind stands in for "none". |
 | `refresh` | A game Korri changes shows on the stage, the row, the lobby and the detail, in the published window or not (the reviewer's case: heroes for the pick outside it); one pass of questions after a publication Velvet cannot explain, none after its own answers or the clock; at most one pass in ten seconds; a game is one object in every list that holds it; the pixel budget goes to what is in sight. |
 | `fresh` | Not started with 0, 1, 3, 60, 200, 300 and 10,000 unplayed games, among the first of Korri's order and after every played one: the first one in the row, on the shelf and first in the set; each page asked once with its own cursor; the number of questions in each. |
 | `memo` | Every binding in `src/` that can change is named in an `onForget`; each selection answers the same with its memory warm, warm from another order, and empty; `update` and `view` at every step of every scenario and of generated plays. |

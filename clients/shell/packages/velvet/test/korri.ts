@@ -12,9 +12,14 @@ import type { State } from "../src/types"
 
 export const PACKAGE = join(import.meta.dir, "..")
 
-/** The sizes Velvet is proven at: the four the design names and the verifier's others. */
+/**
+ * The sizes Velvet is proven at: the four the design names, the verifier's others, and
+ * the shapes no device names: IBUKI's television (3840 x 2160), a narrow-tall column, a
+ * wide-short strip and a small pane.
+ */
 export const SIZES = [
   [1920, 1080], [1240, 1080], [640, 480], [480, 800], [320, 240], [1280, 720],
+  [3840, 2160], [720, 1600], [1920, 400], [480, 320],
 ] as const
 
 export interface Scenario {

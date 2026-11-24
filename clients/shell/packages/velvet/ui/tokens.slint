@@ -54,10 +54,13 @@ export global Tokens {
     // How far a press may move before it is a drag and no longer a tap.
     out property <length> drag-start: 8px;
 
-    // ---- Floors and ceilings ----
+    // ---- Floors and measures ----
     // The plan scales everything with the window; these are the few sizes
-    // that do not scale, because under them a thing stops being readable or
-    // over them it stops being a line of text.
+    // that do not scale, because under them a thing stops being readable or a
+    // finger misses it. A "most" here is a measure at the reference stage
+    // (1600 x 900, where `kt` and `k` are 1), never a ceiling: a component
+    // multiplies it by `Tokens.screen.kt` (type, a line's length) or
+    // `Tokens.screen.k` (space), so it grows with the window (src/plan.ts).
     // The least side of a thing a finger must hit.
     out property <length> touch-least: 40px;
     out property <length> thin: 2px;

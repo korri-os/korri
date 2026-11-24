@@ -229,4 +229,42 @@ describe("a picture is chosen for the size it is drawn at, and the budget picks 
     expect(stageOf(pictures(), one, 0, false, false, 1920, 1080).art).toEqual({ $image: "preview/art/bg-big.png" })
     expect(stageOf(pictures(), one, 0, false, false, 3840, 2160).art).toEqual({ $image: "preview/art/bg-big.png" })
   })
+
+  // IBUKI's television, a 1920 x 1080 window and a wide-short strip: the set is as many
+  // columns as the width holds, and the pictures are what the budget holds, the focused
+  // game's first and outwards from it; every other tile is its no-art card, never a hole.
+  test("a set as wide as its window: its pictures inside the budget, the focused one's first", () => {
+    const base = scenario("home").models[0] as any
+    const model = {
+      ...base, systems: undefined,
+      catalog: {
+        _tag: "Ready",
+        games: Array.from({ length: 80 }, (_, index) => ({
+          id: `wide-${index}`, title: `Wide ${String(index).padStart(2, "0")}`, section: "This device",
+          lastPlayedAt: base.publishedAt - (index + 1) * 3_600_000, playCount: 80 - index, totalPlaytimeSeconds: 600,
+          media: [{ kind: "picture", url: `preview/art/wide-${index}.png`, width: 600, height: 900, color: "#804020" }],
+        })),
+      },
+    }
+    for (const [width, height] of [[3840, 2160], [1920, 1080], [1920, 400]] as const) {
+      const run = new Play(model, width, height)
+      run.press("down", "down")
+      for (let i = 0; i < 8 && !(run.view.shelfTiles as any[]).some(tile => tile.focused && tile.kind === "nav"); i++) run.press("right")
+      run.press("confirm")
+      expect(run.view.page).toBe("set")
+      const columns = run.view.screen.columns
+      expect(columns, `${width}x${height}`).toBeGreaterThan(5)
+      run.press("right", "right")
+      const tiles = (run.view.setTiles as any[]).filter(tile => tile.shown)
+      const shown = new Set(tiles.filter(tile => tile.artKind === "poster").map(tile => tile.art.$image))
+      expect(shown.size * decodedBytes(600, 900), `${width}x${height}`).toBeLessThanOrEqual(PIXEL_BUDGET)
+      const lit = tiles.find(tile => tile.lit)
+      expect(lit.artKind).toBe("poster")
+      // Along the focused row first: its places nearest the start hold pictures before the next row's.
+      const first = tiles.filter(tile => Math.floor(tile.at / columns) === 0)
+      expect(first.slice(0, Math.min(columns, shown.size)).every(tile => tile.artKind === "poster"), `${width}x${height}`).toBe(true)
+      // A place whose game has not come yet is blank (`blankTile`); every game with no picture here is its card.
+      for (const tile of tiles) if (tile.artKind === "none" && tile.label !== "") expect(tile.poster.lines.length).toBeGreaterThan(0)
+    }
+  })
 })

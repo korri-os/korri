@@ -1,6 +1,6 @@
 /**
  * Every scenario (preview/scenarios), played through logic.ts as the shell
- * plays it, at the six sizes. After every step:
+ * plays it, at every size in SIZES (test/korri.ts). After every step:
  *
  *  - Focus (contract 8.4): every entry with `focused` carries `focusRegion`
  *    and a `focusId`; at most one entry is focused; while buttons are in

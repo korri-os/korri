@@ -16,6 +16,15 @@
  * different rates (owner, 2026-11-13, #423): spacing follows `k`, the smaller
  * axis; type follows `kt`, which shrinks more slowly (the mockup's round-5
  * plan), so type does not reach its floor while the stage still has room.
+ *
+ * Nothing has a ceiling in pixels. Type, tiles, pads and gaps grow with the
+ * window without end, so a 3840 x 2160 television is the 1920 x 1080
+ * composition twice the size, and a pane of it is whatever its own width and
+ * height make it: `k` and `kt` have floors and no cap, and a size that must
+ * stop growing stops at a share of the other axis (a pad) or at a measure in
+ * type (a list page's width, a list row's height), which grows with the type. Height decides how many rows stand; width decides how
+ * many tiles stand in a row. The floors stay: under them a thing stops being
+ * readable or a finger misses it.
  */
 import { clamp } from "./colour"
 import { onForget } from "./memo"
@@ -40,14 +49,35 @@ export const ROW_SLOTS = 4
 export const ROW_FACT_LINES = 2
 /** A line of facts, in font sizes (ui/molecules/VelvetFacts.slint). */
 const FACT_PITCH = 1.7
-/** Games a lobby shelf shows before "See all": two shelves of posters are what the pixel budget holds. */
+/** Games a lobby shelf shows before "See all". */
 export const SHELF_SLOTS = 5
-/** The most tiles a set shows across: two rows of posters are what the pixel budget holds (src/art.ts). */
-export const MOST_COLUMNS = 5
 /** A list page stands beside its panel only when the window is this wide for its height. */
 export const PANEL_BESIDE_RATIO = 1.25
-/** How much of its width a set's tile may give so one more column fills the window. */
-export const SET_FIT_SHRINK = 0.1
+/**
+ * A set's row is always full: its tiles are the lobby's, given or taken a little
+ * width so whole columns fill the window. A tile takes at most this share of its
+ * width (one column fewer); past it, the row takes one column more and each tile
+ * gives what that costs. So a set's tile is never more than this larger than the
+ * lobby's (owner, 2026-11-13: larger ones felt too big beside the library's).
+ */
+export const SET_FIT_GROW = 0.1
+/** The least width of a set's tile, px: a set is read title by title (the lobby's least is 56). */
+export const SET_LEAST = 60
+/**
+ * Sizes that stop growing stop at a measure, set at the reference stage (1600 x
+ * 900, `kt` 1) and grown with the type: a list page's width, a sheet's, a
+ * curtain's, the overlay's panel, the keyboard's, a list row's height in body
+ * sizes. A line of words keeps its length in letters at every size.
+ */
+export const PAGE_MEASURE = 980
+export const SHEET_MEASURE = 420
+export const CURTAIN_MEASURE = 980
+export const PAUSE_MEASURE = 640
+export const KEYS_MEASURE = 1100
+export const KEY_MEASURE = 78
+export const ROW_BODIES = 2.4
+/** A pad is at most this share of the other axis: a short strip does not spend its width on a pad sized for its width. */
+export const PAD_SHARE = 2
 /** Type never grows past this many times the smaller axis's scale: a thin strip cannot set type its width cannot hold. */
 export const TYPE_REACH = 2.5
 /** The keyboard's grid. */
@@ -198,7 +228,7 @@ export function plan(width: number, height: number, floor = false): Plan {
   before = last
   const W = Math.max(1, width)
   const H = Math.max(1, height)
-  const k = clamp(Math.min(W / 1600, H / 900), 0.4, 1.25)
+  const k = Math.max(0.4, Math.min(W / 1600, H / 900))
   // Below the 1600 x 900 reference, type follows the fourth root of the area's
   // ratio: it shrinks slowly, and a tall or a wide window pays for it with its
   // plentiful axis. 933 x 704: k 0.58, kt 0.82 (facts 21 px, not 15).
@@ -207,8 +237,8 @@ export function plan(width: number, height: number, floor = false): Plan {
   // Space: pads, gaps and room. `ft`: type.
   const fs = (px: number, min: number) => Math.max(min, Math.round(px * k))
   const ft = (px: number, min: number) => Math.max(min, Math.round(px * kt))
-  const padX = Math.round(clamp(W * 0.05, 18, 110))
-  const padY = Math.round(clamp(H * 0.055, 14, 80))
+  const padX = Math.round(Math.max(18, Math.min(W * 0.05, H * 0.05 * PAD_SHARE)))
+  const padY = Math.round(Math.max(14, Math.min(H * 0.055, W * 0.055 * PAD_SHARE)))
   const narrow = W / H < NARROW_RATIO
   const R = TILE_RATIO
   const fact = ft(26, 15)
@@ -216,7 +246,7 @@ export function plan(width: number, height: number, floor = false): Plan {
 
   // Home. The card and the strip under it are about 3 to 1 (owner, 2026-11-13, on usu: the
   // prototype's 6 to 1 made the card loom and the games under it too small to read).
-  const stripH = Math.round(clamp(H * 0.17, 56, 200))
+  const stripH = Math.round(Math.max(56, H * 0.17))
   const stripY = H - padY - stripH
   let posterH: number, posterX: number, posterY: number, gap: number
   let textX: number, textY: number, textW: number, textH: number
@@ -230,9 +260,9 @@ export function plan(width: number, height: number, floor = false): Plan {
     textY = posterY
     textW = W - textX - padX
     textH = posterH
-    markH = Math.round(clamp(posterH * 0.42, 60, 330))
-    pickTitle = Math.round(clamp(posterH * 0.17, 30, 150))
-    rowH = Math.round(clamp(H * 0.32, 100, 380))
+    markH = Math.round(Math.max(60, posterH * 0.42))
+    pickTitle = Math.round(Math.max(30, posterH * 0.17))
+    rowH = Math.round(Math.max(100, H * 0.32))
   } else {
     posterH = Math.round(Math.min(H * 0.36, ((W - 2 * padX) * 0.52) / R))
     // One left edge for the card, its words, Play and the strip (owner, 2026-11-13: a centred
@@ -249,9 +279,9 @@ export function plan(width: number, height: number, floor = false): Plan {
     textY = posterY + posterH + gap
     textW = W - 2 * padX
     textH = Math.max(0, Math.round(stripY - textY - fs(20, 10)))
-    markH = Math.round(clamp(H * 0.1, 44, 120))
+    markH = Math.round(Math.max(44, H * 0.1))
     pickTitle = ft(104, 30)
-    rowH = Math.round(clamp((W - 2 * padX) / 2.3 / R, 100, 360))
+    rowH = Math.round(Math.max(100, (W - 2 * padX) / 2.3 / R))
   }
   // The row's facts take the width: no title is fitted there.
   const rowMarkW = W - 2 * padX
@@ -283,47 +313,51 @@ export function plan(width: number, height: number, floor = false): Plan {
   const headH = Math.round(head * 1.2)
   const libTop = padY + headH + fs(26, 10) + (narrow ? Math.round(fact * 1.7) : 0)
   const shelfLabel = Math.round(label * 1.75)
-  const shelfH = Math.round(clamp(Math.min((H - libTop - padY) / 1.5 - shelfLabel, H * 0.3, (W - 2 * padX) / (narrow ? 2.3 : 5.2) / R), 84, 300))
+  const shelfH = Math.round(Math.max(84, Math.min((H - libTop - padY) / 1.5 - shelfLabel, H * 0.3, (W - 2 * padX) / (narrow ? 2.3 : 5.2) / R)))
   const shelfGap = gapOf(shelfH)
   const halo = fs(14, 8)
   const shelfRowY = shelfLabel + growOf(shelfH) + fs(10, 5)
   const shelfPitch = shelfRowY + shelfH + Math.round(shelfGap * 1.2)
 
   // A set: its tiles are the lobby's (owner, 2026-11-13: larger ones felt too big beside the
-  // library's), as many across as fit and the pixel budget holds; the grid stands at the left.
-  // At least 60 px wide, where the lobby's smallest are 56: a set is read title by title.
-  // A tile may give up to SET_FIT_SHRINK of its width so one more column fills the row: at
-  // 1240 x 1080 (the Thor's Floor) four lobby tiles left 220 px empty at the right, and five
-  // fit at 197 px instead of 200. Tiles never grow past the lobby's.
+  // library's), and its rows fill the window's width from pad to pad, whatever the width: the
+  // width decides how many columns, and each tile gives or takes a little width so they fill
+  // it (SET_FIT_GROW). At least two across, and no column more than leaves a tile under
+  // SET_LEAST. The pixel budget does not decide the columns: it decides which picture each
+  // tile shows (src/art.ts). The Thor's Floor (1240 x 1080) keeps five across.
   const gridH = Math.max(shelfH, 90)
   const gridGap = gapOf(gridH)
-  const columns = Math.min(MOST_COLUMNS, Math.max(2, Math.floor((W - 2 * padX + gridGap) / (gridH * R * (1 - SET_FIT_SHRINK) + gridGap))))
-  const tileW = Math.min(Math.round(gridH * R), Math.floor((W - 2 * padX - (columns - 1) * gridGap) / columns))
+  const tileOf = (count: number) => (W - 2 * padX - (count - 1) * gridGap) / count
+  const fewer = Math.floor((W - 2 * padX + gridGap) / (gridH * R + gridGap))
+  const columns = fewer < 2 ? 2 : tileOf(fewer) <= gridH * R * (1 + SET_FIT_GROW) || tileOf(fewer + 1) < SET_LEAST ? fewer : fewer + 1
+  const tileW = Math.floor(tileOf(columns))
   const tileH = Math.round(tileW / R)
   const gridInset = growOf(tileH) + halo
   const gridRows = Math.max(1, Math.floor((H - libTop - gridInset + gridGap) / (tileH + gridGap)))
   const poolRows = Math.ceil((H - libTop) / (tileH + gridGap)) + 2
 
   // The detail.
-  const detailLogoH = narrow ? Math.round(clamp(H * 0.12, 48, 140) * 1.25) : Math.round(clamp(H * 0.24, 70, 280) * 1.25)
+  const detailLogoH = narrow ? Math.round(Math.max(48, H * 0.12) * 1.25) : Math.round(Math.max(70, H * 0.24) * 1.25)
   const detailW = narrow ? W - 2 * padX : Math.round(W * 0.5)
-  const detailTitle = Math.round(clamp((detailLogoH / 1.25) * 0.46, 28, 120) * 1.2)
+  const detailTitle = Math.round(Math.max(28, (detailLogoH / 1.25) * 0.46) * 1.2)
 
   // List pages.
-  const rowHeight = Math.round(clamp(H * 0.078, 30, 72))
+  const body = ft(30, 16)
+  const rowHeight = Math.round(Math.max(30, Math.min(H * 0.078, body * ROW_BODIES)))
   const panelBeside = W / H >= PANEL_BESIDE_RATIO && W >= 560
-  const pageW = panelBeside ? Math.round(Math.min((W - 2 * padX) * 0.58, 980)) : Math.min(W - 2 * padX, 980)
+  const measure = (px: number) => Math.round(px * kt)
+  const pageW = panelBeside ? Math.round(Math.min((W - 2 * padX) * 0.58, measure(PAGE_MEASURE))) : Math.min(W - 2 * padX, measure(PAGE_MEASURE))
   const panelW = panelBeside ? W - 2 * padX - pageW - Math.round(padX * 0.8) : W - 2 * padX
 
   // The keyboard: five rows of ten, in the lower part of the window.
   const keyGap = Math.max(2, Math.round(4 * k))
-  const keyW = Math.floor((Math.min(W - 2 * padX, 1100) - (KEY_COLUMNS - 1) * keyGap) / KEY_COLUMNS)
-  const keyH = Math.floor(Math.min(keyW * 0.92, (H * 0.56 - (KEY_ROWS - 1) * keyGap) / KEY_ROWS, 78))
+  const keyW = Math.floor((Math.min(W - 2 * padX, measure(KEYS_MEASURE)) - (KEY_COLUMNS - 1) * keyGap) / KEY_COLUMNS)
+  const keyH = Math.floor(Math.min(keyW * 0.92, (H * 0.56 - (KEY_ROWS - 1) * keyGap) / KEY_ROWS, measure(KEY_MEASURE)))
   const keysY = H - Math.round(padY * 0.8) - KEY_ROWS * keyH - (KEY_ROWS - 1) * keyGap
 
   const made: Plan = {
     width: W, height: H, k, kt, padX, padY, narrow,
-    title: ft(104, narrow ? 30 : 28), head, body: ft(30, 16), fact, label, button: ft(32, 17), small: ft(22, 14),
+    title: ft(104, narrow ? 30 : 28), head, body, fact, label, button: ft(32, 17), small: ft(22, 14),
     posterX, posterY, posterH, textX, textY, textW, textH,
     heroX: padX, heroY, heroW, heroH, markH, pickTitle,
     stripY, stripH, stripGap: gapOf(stripH),
@@ -331,16 +365,16 @@ export function plan(width: number, height: number, floor = false): Plan {
     peekY: peek < H - 24 ? peek : 0,
     headY: padY, headH, libTop, shelfLabel, shelfRowY, shelfH, shelfGap, shelfPitch, halo,
     columns, tileW, tileH, gridGap, gridInset, gridRows, poolRows,
-    sheetW: Math.round(Math.min(W, clamp(W * 0.3, 260, 420))),
+    sheetW: Math.round(Math.min(W, Math.max(260, Math.min(W * 0.3, measure(SHEET_MEASURE))))),
     detailLogoH, detailLogoW: narrow ? Math.round(W * 0.9) - padX : Math.round(W * 0.5), detailTitle, detailFact: ft(24, 15),
     detailY: narrow ? Math.round(H * 0.3) : Math.round(H * 0.34), detailW,
     stack: narrow,
     pageW, rowHeight, panelBeside, panelW,
     keyW, keyH, keyGap, keysY,
-    curtainW: Math.round(Math.min(W - 2 * padX, clamp(W * 0.6, 280, 980))),
+    curtainW: Math.round(Math.min(W - 2 * padX, Math.max(280, Math.min(W * 0.6, measure(CURTAIN_MEASURE))))),
     kicker: ft(72, 26),
     emptyWide: W / H >= EMPTY_WIDE_RATIO,
-    pauseW: Math.round(Math.min(W, clamp(W * 0.42, 280, 640))),
+    pauseW: Math.round(Math.min(W, Math.max(280, Math.min(W * 0.42, measure(PAUSE_MEASURE))))),
   }
   last = { plan: made, floor }
   return made

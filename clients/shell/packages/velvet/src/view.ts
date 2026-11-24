@@ -156,7 +156,7 @@ function curtainView(asked: Pictures, state: State, model: Model, p: Plan) {
   // has one, else its title at the pick's size, in three fifths of the width.
   const launch = spec.kind === "busy" && spec.game !== undefined
   const mark = launch
-    ? marqueeOf(asked, spec.game!, { width: Math.min(p.width * 0.6, p.width - 2 * p.padX), logoH: Math.round(Math.min(220, Math.max(56, p.height * 0.2))), title: p.title, fact: p.fact, mark: true, badge: false }, model.publishedAt, [])
+    ? marqueeOf(asked, spec.game!, { width: Math.min(p.width * 0.6, p.width - 2 * p.padX), logoH: Math.round(Math.max(56, Math.min(220 * p.kt, p.height * 0.2))), title: p.title, fact: p.fact, mark: true, badge: false }, model.publishedAt, [])
     : undefined
   const layout = curtainLayout(spec, p)
   const line = Math.max(0, Math.min(state.curtain.line, Math.max(0, layout.lines.length - layout.room)))
@@ -211,7 +211,7 @@ function emptyView(state: State, model: Model, p: Plan, live: boolean) {
   const words = catalog._tag === "Error" ? catalog.message
     : catalog._tag === "Empty" ? "Bring your first games in through a plugin. Once you play, the game you come back to waits for you right here."
       : ""
-  const width = p.emptyWide ? p.width * 0.44 : Math.min(p.width - 2 * p.padX, 900)
+  const width = p.emptyWide ? p.width * 0.44 : Math.min(p.width - 2 * p.padX, 900 * p.kt)
   const fit = fitCaps(title, width, p.title * 2.2, Math.min(p.title, p.height * 0.11), 20)
   const stack = pillsStack(buttons, p)
   // The words give way before a button leaves the window: as many lines as the column has

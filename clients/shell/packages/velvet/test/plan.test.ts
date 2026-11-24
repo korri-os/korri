@@ -1,7 +1,8 @@
 /**
  * The plan (src/plan.ts): Velvet's layout as a pure function of the window.
- * One plan drives the views and the focus. Proven here at the six named
- * sizes and over a sweep from 320 x 240 to 2560 x 1440:
+ * One plan drives the views and the focus. Proven here at the named sizes
+ * (test/korri.ts), at a ladder from a 3840 x 2160 television to a 480 x 320
+ * pane, and over a sweep from 320 x 240 to 3840 x 2160:
  *
  *  - the same window gives the same plan; nothing reads anything else;
  *  - every number is finite and no size is negative;
@@ -9,19 +10,27 @@
  *  - what the plan places stays inside the window: the home's strip and
  *    shelf, a set's columns, the keyboard's five rows of ten, the sheet, the
  *    curtain, the overlay's panel;
- *  - a set shows at least two columns and never more pictures than the
- *    pixel budget holds;
+ *  - a set shows at least two columns, and its rows fill the width from pad
+ *    to pad: no empty band at either side;
+ *  - nothing has a ceiling in pixels: type, tiles, pads and gaps grow with
+ *    the window on each axis, and a window twice the size is the same
+ *    composition twice the size;
  *  - the named thresholds decide the structure: narrow under 0.9, the panel
  *    beside from 1.25.
  */
 import { describe, expect, test } from "bun:test"
-import { decodedBytes, logoBox, LOGO_USUAL, PIXEL_BUDGET } from "../src/art"
-import { FOCUS_SCALE, KEY_COLUMNS, KEY_ROWS, MOST_COLUMNS, NARROW_RATIO, PANEL_BESIDE_RATIO, plan, ROW_FACT_LINES, SET_FIT_SHRINK, SHELF_SLOTS, TILE_RATIO } from "../src/plan"
+import { decodedBytes, logoBox, LOGO_USUAL } from "../src/art"
+import { FOCUS_SCALE, KEY_COLUMNS, KEY_ROWS, NARROW_RATIO, PANEL_BESIDE_RATIO, plan, ROW_FACT_LINES, SET_FIT_GROW, SET_LEAST, TILE_RATIO } from "../src/plan"
 import { SIZES } from "./korri"
 
+/**
+ * The ladder: IBUKI's television (3840 x 2160), 1920 x 1080, the Thor's Floor (1240 x
+ * 1080), 1280 x 720, two narrow-tall columns, a wide-short strip, and two small panes.
+ */
+const LADDER: [number, number][] = [[3840, 2160], [1920, 1080], [1240, 1080], [1280, 720], [480, 800], [720, 1600], [1920, 400], [640, 480], [480, 320]]
 const sweep: [number, number][] = []
-for (let width = 320; width <= 2560; width += 80) for (let height = 240; height <= 1440; height += 80) sweep.push([width, height])
-const all: [number, number][] = [...SIZES.map(([w, h]) => [w, h] as [number, number]), ...sweep]
+for (let width = 320; width <= 3840; width += 160) for (let height = 240; height <= 2160; height += 120) sweep.push([width, height])
+const all: [number, number][] = [...SIZES.map(([w, h]) => [w, h] as [number, number]), ...LADDER, ...sweep]
 
 describe("the plan", () => {
   test("pure: the same window, the same plan", () => {
@@ -127,39 +136,88 @@ describe("the plan", () => {
     }
   })
 
-  test("a set: two columns or more, inside the window, never more pictures than the budget", () => {
-    const poster = decodedBytes(600, 900)
+  test("a set: two columns or more, inside the window, rows that a finger and an eye can read", () => {
     for (const [width, height] of all) {
       const p = plan(width, height)
       const at = `${width}x${height}`
       expect(p.columns, at).toBeGreaterThanOrEqual(2)
-      expect(p.columns, at).toBeLessThanOrEqual(MOST_COLUMNS)
       expect(2 * p.padX + p.columns * p.tileW + (p.columns - 1) * p.gridGap, at).toBeLessThanOrEqual(width)
-      expect(p.tileW, at).toBeGreaterThanOrEqual(60)
+      expect(p.tileW, at).toBeGreaterThanOrEqual(SET_LEAST)
       expect(p.tileH / p.tileW, at).toBeCloseTo(1 / TILE_RATIO, 1)
       expect(p.gridRows, at).toBeGreaterThanOrEqual(1)
       expect(p.poolRows, at).toBeGreaterThan(p.gridRows)
-      // The focused row always has its pictures: one row of posters fits several times over.
-      expect(p.columns * poster * 2, at).toBeLessThanOrEqual(PIXEL_BUDGET)
     }
-    expect(SHELF_SLOTS * poster * 2).toBeLessThanOrEqual(PIXEL_BUDGET)
   })
 
-  test("a set leaves no room for another column at its right unless the budget's columns are all there", () => {
+  // The photo from IBUKI (3840 x 2160): five columns of 300 px in the left third, the rest black.
+  test("a set's rows fill the width: the right margin is the left one, at every size, on either window", () => {
     for (const [width, height] of all) {
       for (const floor of [false, true]) {
         const p = plan(width, height, floor)
         const at = `${width}x${height}${floor ? " floor" : ""}`
-        const free = width - 2 * p.padX - (p.columns * p.tileW + (p.columns - 1) * p.gridGap)
-        const lobby = Math.round(Math.max(p.shelfH, 90) * TILE_RATIO)
-        // A tile never grows past the lobby's (owner, 2026-11-13).
-        expect(p.tileW, at).toBeLessThanOrEqual(lobby)
-        expect(p.tileW, at).toBeGreaterThanOrEqual(Math.floor(lobby * (1 - SET_FIT_SHRINK)) - 1)
-        if (p.columns < MOST_COLUMNS) expect(free, at).toBeLessThan(lobby * (1 - SET_FIT_SHRINK) + p.gridGap)
+        const used = p.columns * p.tileW + (p.columns - 1) * p.gridGap
+        const right = width - p.padX - used
+        // What is left over is the rounding of each column's width: under one px a column.
+        expect(right - p.padX, at).toBeGreaterThanOrEqual(0)
+        expect(right - p.padX, at).toBeLessThan(p.columns)
       }
     }
-    // The Thor's Floor: five across, not four with a fifth of the width empty.
+    expect(plan(3840, 2160).columns).toBeGreaterThan(5)
+  })
+
+  test("a set's tiles are the lobby's, given or taken a little to fill the row (owner, 2026-11-13)", () => {
+    for (const [width, height] of all) {
+      for (const floor of [false, true]) {
+        const p = plan(width, height, floor)
+        const at = `${width}x${height}${floor ? " floor" : ""}`
+        const lobby = Math.max(p.shelfH, 90) * TILE_RATIO
+        // Never more than SET_FIT_GROW larger than the lobby's, unless one more column would be under SET_LEAST.
+        const more = (width - 2 * p.padX - p.columns * p.gridGap) / (p.columns + 1)
+        if (more >= SET_LEAST) expect(p.tileW, at).toBeLessThanOrEqual(Math.ceil(lobby * (1 + SET_FIT_GROW)))
+        // As many as stand at the lobby's size, or one more where those would grow past SET_FIT_GROW.
+        const tileOf = (count: number) => (width - 2 * p.padX - (count - 1) * p.gridGap) / count
+        if (p.columns > 2 && more >= SET_LEAST) {
+          const asMany = tileOf(p.columns) >= lobby - 1 && tileOf(p.columns + 1) < lobby
+          const oneMore = tileOf(p.columns - 1) > lobby * (1 + SET_FIT_GROW) - 1
+          expect(asMany || oneMore, at).toBe(true)
+        }
+      }
+    }
+    // The Thor's Floor keeps its five across.
     expect(plan(1240, 1080, true).columns).toBe(5)
+  })
+
+  test("no ceiling: a window twice the size is the same composition twice the size", () => {
+    // From the reference stage up (`k` and `kt` 1 and over), where type and space scale alike.
+    for (const [width, height] of [[1920, 1080], [1600, 900], [2200, 1000], [1600, 1800], [1700, 900]] as [number, number][]) {
+      const one = plan(width, height), two = plan(width * 2, height * 2)
+      const at = `${width}x${height}`
+      expect(two.columns, at).toBe(one.columns)
+      expect(two.gridRows, at).toBe(one.gridRows)
+      for (const key of ["padX", "padY", "title", "head", "body", "fact", "button", "shelfH", "tileW", "tileH", "rowH", "stripH", "posterH", "rowHeight", "pageW", "keyW", "keyH", "sheetW", "curtainW", "pauseW", "detailLogoH", "detailTitle"] as const) {
+        // Where the smaller window sits on a floor, the larger one is at least the floor's twice.
+        if (one[key] * 2 < 60) continue
+        expect(Math.abs(two[key] - one[key] * 2), `${key} at ${at}: ${one[key]} then ${two[key]}`).toBeLessThanOrEqual(Math.max(3, one[key] * 0.04))
+      }
+    }
+  })
+
+  test("type and tiles grow with the window, on each axis, and never shrink when it grows", () => {
+    const keys = ["title", "head", "body", "fact", "label", "button", "small", "kicker", "detailFact", "shelfH", "rowHeight"] as const
+    for (const [width, height] of sweep) {
+      const p = plan(width, height)
+      for (const [w, h] of [[width + 160, height], [width, height + 120]] as [number, number][]) {
+        const q = plan(w, h)
+        // A tile's size may step down where the structure changes (narrow, under NARROW_RATIO); type never does.
+        for (const key of keys) if (p.narrow === q.narrow || !(key === "shelfH" || key === "rowHeight")) expect(q[key], `${key}: ${width}x${height} to ${w}x${h}`).toBeGreaterThanOrEqual(p[key])
+      }
+    }
+    // The ladder, largest to smallest at one shape: every size of type larger at the larger window.
+    const tv = plan(3840, 2160), hd = plan(1920, 1080), small = plan(1280, 720)
+    for (const key of ["title", "head", "body", "fact", "button", "tileW"] as const) {
+      expect(tv[key], key).toBeGreaterThan(hd[key])
+      expect(hd[key], key).toBeGreaterThan(small[key])
+    }
   })
 
   test("the keyboard: five rows of ten inside the window", () => {
