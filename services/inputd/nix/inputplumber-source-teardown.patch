@@ -1,0 +1,208 @@
+Subject: [PATCH] composite: finish source teardown before reopening its slot
+
+A devnode removal does not itself close a running source or release EVIOGRAB.
+Stop and join the owning task before clearing its state. Ignore queued task
+completions from an earlier incarnation of the same eventN/hidrawN. Bound
+teardown to five seconds and keep the slot occupied on timeout.
+
+Regression coverage includes a task-incarnation unit test and Korri's real
+USB HID gadget/udev/DBus/inputd capture VM, including node replay and bounce.
+
+diff --git a/src/input/composite_device/command.rs b/src/input/composite_device/command.rs
+index a326784..49db5ea 100644
+--- a/src/input/composite_device/command.rs
++++ b/src/input/composite_device/command.rs
+@@ -50,7 +50,7 @@ pub enum CompositeCommand {
+     SetForceFeedbackEnabled(bool),
+     SourceDeviceAdded(DeviceInfo),
+     SourceDeviceRemoved(DeviceInfo),
+-    SourceDeviceStopped(DeviceInfo),
++    SourceDeviceStopped(DeviceInfo, tokio::task::Id),
+     #[allow(dead_code)]
+     UpdateSourceCapabilities(String, HashSet<Capability>),
+     UpdateTargetCapabilities(String, HashSet<Capability>),
+diff --git a/src/input/composite_device/mod.rs b/src/input/composite_device/mod.rs
+index c8316c4..3eec6cb 100644
+--- a/src/input/composite_device/mod.rs
++++ b/src/input/composite_device/mod.rs
+@@ -13,7 +13,7 @@ use std::{
+ 
+ use evdev::InputEvent;
+ use targets::CompositeDeviceTargets;
+-use tokio::{sync::mpsc, task::JoinSet, time::Duration};
++use tokio::{sync::mpsc, task::JoinHandle, time::Duration};
+ use zbus::{object_server::Interface, Connection};
+ 
+ use crate::{
+@@ -130,7 +130,7 @@ pub struct CompositeDevice {
+     /// Physical device path for source devices. E.g. ["/dev/input/event0"]
+     source_device_paths: Vec<String>,
+     /// All currently running source device threads
+-    source_device_tasks: JoinSet<()>,
++    source_device_tasks: HashMap<String, JoinHandle<()>>,
+     /// List of unique identifiers for each source device.
+     /// E.g. {"evdev://event0": Some("abc123")}
+     source_device_persistent_ids: HashMap<String, Option<String>>,
+@@ -165,6 +165,15 @@ pub struct CompositeDevice {
+     exclusive_inputs: HashMap<Capability, Capability>,
+ }
+ 
++impl Drop for CompositeDevice {
++    fn drop(&mut self) {
++        // Preserve JoinSet's abort-on-drop behavior on unexpected shutdown.
++        for task in self.source_device_tasks.values() {
++            task.abort();
++        }
++    }
++}
++
+ impl CompositeDevice {
+     pub fn new(
+         conn: Connection,
+@@ -202,7 +211,7 @@ impl CompositeDevice {
+             source_devices_to_hide: Vec::new(),
+             source_devices_blocked: HashSet::new(),
+             source_device_paths: Vec::new(),
+-            source_device_tasks: JoinSet::new(),
++            source_device_tasks: HashMap::new(),
+             source_device_persistent_ids: HashMap::new(),
+             source_devices_used: Vec::new(),
+             targets: CompositeDeviceTargets::new(conn, dbus_path, tx.into(), manager),
+@@ -369,7 +378,17 @@ impl CompositeDevice {
+                             log::error!("Failed to add source device: {:?}", e);
+                         }
+                     }
+-                    CompositeCommand::SourceDeviceStopped(device) => {
++                    CompositeCommand::SourceDeviceStopped(device, task_id) => {
++                        // A queued completion may belong to an earlier incarnation
++                        // of the same eventN/hidrawN. Never remove its replacement.
++                        if !source_task_is_current(
++                            &self.source_device_tasks,
++                            &device.get_id(),
++                            task_id,
++                        ) {
++                            continue;
++                        }
++                        devices_removed = true;
+                         log::debug!("Detected source device stopped: {}", device.path());
+                         if let Err(e) = self.on_source_device_removed(device).await {
+                             log::error!("Failed to remove source device: {:?}", e);
+@@ -615,8 +634,8 @@ impl CompositeDevice {
+ 
+         // Wait on all tasks
+         log::debug!("Waiting for source device tasks to finish");
+-        while let Some(res) = self.source_device_tasks.join_next().await {
+-            res?;
++        for (_, task) in self.source_device_tasks.drain() {
++            task.await?;
+         }
+ 
+         log::info!("CompositeDevice stopped: {}", self.dbus.path());
+@@ -674,16 +693,24 @@ impl CompositeDevice {
+             self.source_devices.insert(device_id.clone(), source_tx);
+             let tx = self.tx.clone();
+             let device = source_device.get_device_ref().to_owned();
++            let source_device_id = device_id.clone();
+ 
+-            self.source_device_tasks.spawn(async move {
++            let task = tokio::spawn(async move {
+                 if let Err(e) = source_device.run().await {
+                     log::error!("Failed running device {}: {:?}", device_id, e);
+                 }
+                 log::debug!("Source device closed");
+-                if let Err(e) = tx.send(CompositeCommand::SourceDeviceStopped(device)).await {
++                if let Err(e) = tx
++                    .send(CompositeCommand::SourceDeviceStopped(
++                        device,
++                        tokio::task::id(),
++                    ))
++                    .await
++                {
+                     log::error!("Failed to send device stop command: {:?}", e);
+                 }
+             });
++            self.source_device_tasks.insert(source_device_id, task);
+         }
+         log::debug!("All source device tasks started");
+         Ok(())
+@@ -1589,6 +1616,32 @@ impl CompositeDevice {
+         let path = device.path();
+         let id = device.get_id();
+ 
++        // A devnode disappearing does not guarantee that its driver has exited
++        // (udev can recreate a node without disconnecting the kernel device).
++        // Release the old EVIOGRAB/hidraw fd before advertising a vacant slot.
++        // Joining also makes an already-queued stop notification harmless: its
++        // task ID no longer belongs to the active source.
++        if let Some(mut task) = self.source_device_tasks.remove(&id) {
++            let result = tokio::time::timeout(Duration::from_secs(5), async {
++                if let Some(source) = self.source_devices.get(&id) {
++                    if let Err(e) = source.stop().await {
++                        log::debug!("Source {id} already stopped: {e}");
++                    }
++                }
++                (&mut task).await
++            })
++            .await;
++            match result {
++                Ok(result) => result?,
++                Err(e) => {
++                    // Keep the slot occupied if the driver cannot stop safely.
++                    self.source_device_tasks.insert(id, task);
++                    return Err(e.into());
++                }
++            }
++        }
++        self.source_devices.remove(&id);
++
+         // Remove any ffb effects this device registered
+         let mut freed_effect_ids = Vec::new();
+ 
+@@ -2218,3 +2271,47 @@ impl CompositeDevice {
+         });
+     }
+ }
++
++// eventN/hidrawN identify a slot, not the task that currently owns it.
++fn source_task_is_current(
++    tasks: &HashMap<String, JoinHandle<()>>,
++    device_id: &str,
++    task_id: tokio::task::Id,
++) -> bool {
++    tasks
++        .get(device_id)
++        .is_some_and(|task| task.id() == task_id)
++}
++
++#[cfg(test)]
++mod source_task_tests {
++    use super::source_task_is_current;
++    use std::collections::HashMap;
++
++    #[tokio::test]
++    async fn late_completion_does_not_own_a_reconnected_source_slot() {
++        let old = tokio::spawn(async {});
++        let old_id = old.id();
++        old.await.unwrap();
++        let replacement = tokio::spawn(async {});
++        let replacement_id = replacement.id();
++        let mut tasks = HashMap::from([("evdev://event12".into(), replacement)]);
++        assert!(!source_task_is_current(&tasks, "evdev://event12", old_id));
++        assert!(source_task_is_current(
++            &tasks,
++            "evdev://event12",
++            replacement_id
++        ));
++        assert!(!source_task_is_current(
++            &tasks,
++            "hidraw://hidraw0",
++            replacement_id
++        ));
++        tasks.remove("evdev://event12").unwrap().await.unwrap();
++        assert!(!source_task_is_current(
++            &tasks,
++            "evdev://event12",
++            replacement_id
++        ));
++    }
++}

@@ -4,6 +4,8 @@
   module,
   inputdPackage,
   inputplumberKorri,
+  testProgram ? ../tests/inputplumber-adoption-vm.py,
+  captureProof ? false,
 }:
 let
   proofName = "korri-inputplumber-adoption";
@@ -35,7 +37,7 @@ let
   };
 in
 pkgs.testers.runNixOSTest {
-  name = proofName;
+  name = if captureProof then "korri-inputplumber-reattach" else proofName;
   nodes.machine = { lib, ... }: {
     imports = [ module ];
     networking.hostName = proofName;
@@ -49,6 +51,11 @@ pkgs.testers.runNixOSTest {
     boot.kernelModules = [
       "uinput"
       "joydev"
+    ]
+    ++ pkgs.lib.optionals captureProof [
+      "dummy_hcd"
+      "libcomposite"
+      "usb_f_hid"
     ];
     users.groups.korri.gid = 1000;
     users.users.korri = {
@@ -92,7 +99,7 @@ pkgs.testers.runNixOSTest {
       serviceConfig = {
         User = "korri-inputd";
         Group = "korri-control";
-        ExecStart = "${reconciler}/bin/inputplumber-adoption-proof ${profile}";
+        ExecStart = "${reconciler}/bin/inputplumber-adoption-proof ${profile}${pkgs.lib.optionalString captureProof " --capture"}";
       };
     };
     # InputPlumber normally skips USB uinput devices before profile matching.
@@ -100,7 +107,7 @@ pkgs.testers.runNixOSTest {
     # Keep their kernel USB IDs/version intact (especially 360 0101 vs 0001).
     # This also admits our output fixtures, so an ignored result proves the
     # explicit exclusion, not InputPlumber's general virtual-device heuristic.
-    services.udev.extraRules = ''
+    services.udev.extraRules = pkgs.lib.optionalString (!captureProof) ''
       SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_BUS}="bluetooth"
     '';
   };
@@ -110,9 +117,10 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("inputplumber.service")
     machine.wait_for_unit("adoption-profile.service")
     try:
-        print(machine.succeed("${python}/bin/python3 ${../tests/inputplumber-adoption-vm.py} ${profile}", timeout=240))
+        print(machine.succeed("${python}/bin/python3 ${testProgram} ${profile} ${../tests/inputplumber-adoption-vm.py}", timeout=240))
         machine.succeed("systemctl is-active --quiet inputplumber.service adoption-profile.service")
     finally:
-        print(machine.succeed("journalctl -u inputplumber -u adoption-profile --no-pager"))
+        print(machine.succeed("journalctl -u inputplumber -u adoption-profile -u systemd-udevd --no-pager"))
+        print(machine.succeed("${pkgs.acl}/bin/getfacl /dev/input/event*"))
   '';
 }

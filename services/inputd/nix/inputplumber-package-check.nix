@@ -32,6 +32,7 @@ assert
     ./inputplumber-startup-unhide-quiet.patch
     ./inputplumber-ignore-before-reconnect.patch
     ./inputplumber-lazy-attributes.patch
+    ./inputplumber-source-teardown.patch
   ];
 assert inputplumberRuntime.patches == inputplumberRuntime.upstream.patches;
 assert inputplumberRuntime.doCheck;

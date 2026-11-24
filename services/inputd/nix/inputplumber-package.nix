@@ -13,6 +13,7 @@ let
     ./inputplumber-startup-unhide-quiet.patch
     ./inputplumber-ignore-before-reconnect.patch
     ./inputplumber-lazy-attributes.patch
+    ./inputplumber-source-teardown.patch
   ];
 in
 assert inputplumber.pname == "inputplumber";
@@ -34,6 +35,8 @@ inputplumber.overrideAttrs (previous: {
   # before target creation. Inputd's one-second retries could not make progress
   # while the composite awaited those queued target requests.
   inherit patches;
+  # Retire each source task before reusing its slot; late completion messages
+  # must not clear a replacement source that now owns the same eventN.
   # Run the upstream unit suite and the patches' unit regressions on builds.
   # Reconnect exclusions need kernel/udev/DBus and run in the adoption VM.
   doCheck = true;
