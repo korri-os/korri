@@ -440,6 +440,15 @@ impl AcquisitionCoordinator {
         }
     }
 
+    /// A waiting install goes to the front of the line, as `Place::Front`
+    /// puts a new one there. An install that runs or left the line stays.
+    pub(super) fn to_front(&self, key: &Path) {
+        let mut queue = self.lock();
+        if queue.waiting.iter().any(|waiting| waiting == key) {
+            queue.place_front(vec![key.to_path_buf()]);
+        }
+    }
+
     /// Move a waiting install to `index` in the line (0 is next). False
     /// when it does not wait.
     #[cfg_attr(not(test), allow(dead_code))] // #553: Velvet's list of installs.

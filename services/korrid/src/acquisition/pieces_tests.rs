@@ -78,6 +78,8 @@ struct Behaviour {
     lose_after: Arc<AtomicUsize>,
     /// Each piece waits this long before it is served.
     delay_ms: Arc<AtomicUsize>,
+    /// Each `/peer-rpc` call (the manifest) waits this long.
+    manifest_delay_ms: Arc<AtomicUsize>,
 }
 async fn behave(
     axum::extract::State(behaviour): axum::extract::State<Behaviour>,
@@ -88,6 +90,10 @@ async fn behave(
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
     let piece = request.uri().path() == "/peer-installs-piece";
+    if request.uri().path() == "/peer-rpc" {
+        let delay = behaviour.manifest_delay_ms.load(Ordering::SeqCst) as u64;
+        tokio::time::sleep(Duration::from_millis(delay)).await;
+    }
     if piece {
         let delay = behaviour.delay_ms.load(Ordering::SeqCst) as u64;
         tokio::time::sleep(Duration::from_millis(delay)).await;
@@ -768,4 +774,228 @@ async fn a_stop_during_publication_does_not_leave_the_release_stuck() {
         2 * served,
         "every piece came again"
     );
+}
+
+/// A failed install keeps its verified pieces for the next try; cancel
+/// deletes them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancel_of_a_failed_install_deletes_its_pieces() {
+    let (rom, key) = release(6 * PIECE_BYTES as usize);
+    let holder = Device::new(18, true).await;
+    let receiver = Device::new(19, false).await;
+    holder.hold(&key, &[("Game.gba", &rom)]);
+    holder.behaviour.lose_after.store(2, Ordering::SeqCst);
+    let pieces = receiver.coordinator.pieces();
+    let job = pieces
+        .start(
+            &receiver.coordinator,
+            &receiver.context,
+            &key,
+            "Game",
+            vec![holder.holder_for(&receiver)],
+            Place::Back,
+        )
+        .unwrap();
+    assert_eq!(
+        pieces.wait(&job).await.unwrap_err().code,
+        "InstallSourceUnavailable"
+    );
+    let receive =
+        super::pieces::receive_path(&receiver.context.root, placement::ready_name(&key).unwrap());
+    assert!(
+        receive.exists(),
+        "the verified pieces stay for the next try"
+    );
+    let status = pieces.cancel(&job).await.unwrap();
+    assert!(
+        matches!(status.state, super::pieces::DeviceInstallState::Cancelled),
+        "{status:?}"
+    );
+    assert!(!receive.exists());
+    holder.lose();
+}
+
+/// A failed install is kept until it is cancelled or a new install of its
+/// release starts; a pruned id is not known.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failed_install_stays_until_a_new_install_of_its_release() {
+    let (rom, key) = release(4 * PIECE_BYTES as usize);
+    let holder = Device::new(27, true).await;
+    let receiver = Device::new(28, false).await;
+    holder.hold(&key, &[("Game.gba", &rom)]);
+    holder.behaviour.lose_after.store(1, Ordering::SeqCst);
+    let pieces = receiver.coordinator.pieces();
+    let start = || {
+        pieces
+            .start(
+                &receiver.coordinator,
+                &receiver.context,
+                &key,
+                "Game",
+                vec![holder.holder_for(&receiver)],
+                Place::Back,
+            )
+            .unwrap()
+    };
+    let failed = start();
+    assert!(pieces.wait(&failed).await.is_err());
+    pieces.prune(std::time::Instant::now() + Duration::from_secs(3600));
+    assert!(matches!(
+        pieces.status(&failed).unwrap().state,
+        super::pieces::DeviceInstallState::Failed { .. }
+    ));
+    let again = start();
+    assert_ne!(again, failed);
+    assert!(
+        pieces.status(&failed).is_none(),
+        "the new install replaced it"
+    );
+    assert!(pieces.status("unknown").is_none());
+    pieces.cancel(&again).await;
+    holder.lose();
+}
+
+/// #553: a caller that joins a waiting install at the front moves it to
+/// the front of the line.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_caller_that_joins_at_the_front_moves_the_install_there() {
+    let receiver = Device::new(20, false).await;
+    let holder = Device::new(21, true).await;
+    // Another install runs, so the two below wait.
+    let mut blocker = receiver.coordinator.queue_turn(
+        receiver.context.root.join("cache").join("b".repeat(64)),
+        Place::Back,
+        super::Listed::Hidden,
+    );
+    let turn = blocker.turn().await;
+    let pieces = receiver.coordinator.pieces();
+    let (_, first_key) = release(100);
+    let (_, second_key) = release(200);
+    let start = |key: &str, place| {
+        pieces
+            .start(
+                &receiver.coordinator,
+                &receiver.context,
+                key,
+                "Game",
+                vec![holder.holder_for(&receiver)],
+                place,
+            )
+            .unwrap()
+    };
+    let first = start(&first_key, Place::Back);
+    let second = start(&second_key, Place::Back);
+    assert_eq!(
+        receiver.coordinator.line(),
+        [
+            super::Member::Job(first.clone()),
+            super::Member::Job(second.clone())
+        ]
+    );
+    assert_eq!(start(&second_key, Place::Back), second);
+    assert_eq!(
+        receiver.coordinator.line()[0],
+        super::Member::Job(first.clone())
+    );
+    assert_eq!(start(&second_key, Place::Front), second);
+    assert_eq!(
+        receiver.coordinator.line(),
+        [
+            super::Member::Job(second.clone()),
+            super::Member::Job(first.clone())
+        ]
+    );
+    pieces.cancel(&first).await;
+    pieces.cancel(&second).await;
+    drop(turn);
+    blocker.end();
+}
+
+/// A holder store that cannot be read is rebuilt, and the receive stores
+/// beside it stay.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_rebuilt_holder_store_keeps_the_receive_stores() {
+    let (rom, key) = release(4096);
+    let holder = Device::new(22, false).await;
+    holder.hold(&key, &[("Game.gba", &rom)]);
+    let store = super::pieces::store_path(&holder.context.root);
+    fs::create_dir_all(&store).unwrap();
+    fs::write(store.join("blobs.db"), b"not a database").unwrap();
+    let receive = super::pieces::receive_path(&holder.context.root, &"c".repeat(64));
+    fs::create_dir_all(receive.join("0123")).unwrap();
+    fs::write(receive.join("0123").join("kept"), b"pieces").unwrap();
+    holder
+        .coordinator
+        .pieces()
+        .manifest(&holder.context, &key)
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(receive.join("0123").join("kept")).unwrap(),
+        b"pieces"
+    );
+}
+
+/// Cancel is heard while the holders are asked for the manifest.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancel_stops_an_install_that_asks_for_the_manifest() {
+    let (rom, key) = release(4096);
+    let holder = Device::new(23, true).await;
+    let receiver = Device::new(24, false).await;
+    holder.hold(&key, &[("Game.gba", &rom)]);
+    holder
+        .behaviour
+        .manifest_delay_ms
+        .store(30_000, Ordering::SeqCst);
+    let pieces = receiver.coordinator.pieces();
+    let job = pieces
+        .start(
+            &receiver.coordinator,
+            &receiver.context,
+            &key,
+            "Game",
+            vec![holder.holder_for(&receiver)],
+            Place::Back,
+        )
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let status = tokio::time::timeout(Duration::from_secs(5), pieces.cancel(&job))
+        .await
+        .expect("cancel ends the install at once")
+        .unwrap();
+    assert!(
+        matches!(status.state, super::pieces::DeviceInstallState::Cancelled),
+        "{status:?}"
+    );
+    assert!(receiver.coordinator.line().is_empty());
+    holder.lose();
+}
+
+/// Ended installs are forgotten some time after they end; live ones stay.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ended_installs_are_pruned() {
+    let (rom, key) = release(4096);
+    let holder = Device::new(25, true).await;
+    let receiver = Device::new(26, false).await;
+    holder.hold(&key, &[("Game.gba", &rom)]);
+    let pieces = receiver.coordinator.pieces();
+    let job = pieces
+        .start(
+            &receiver.coordinator,
+            &receiver.context,
+            &key,
+            "Game",
+            vec![holder.holder_for(&receiver)],
+            Place::Back,
+        )
+        .unwrap();
+    pieces.wait(&job).await.unwrap();
+    pieces.prune(std::time::Instant::now());
+    assert!(
+        pieces.status(&job).is_some(),
+        "an ended status stays a while"
+    );
+    pieces.prune(std::time::Instant::now() + Duration::from_secs(3600));
+    assert!(pieces.status(&job).is_none());
+    holder.lose();
 }
