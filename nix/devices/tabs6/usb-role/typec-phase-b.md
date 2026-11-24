@@ -29,8 +29,15 @@ Charger unplug must remove the host controller by returning to device role.
 Replug must requalify from zero. This full data-role cycle matters: the live
 manual-host experiment left the host controller up across charger unplug and
 InputPlumber retained a dead source, then failed the evdev re-add with EBUSY.
-Role cycling is the first fix, not an InputPlumber service restart. Live
-acceptance must prove that controls return without a reboot. A normal PC
+Role cycling alone did not recover input in the live replug test. The provider
+kept the old composite and dead source even after USB re-enumerated. Restarting
+InputPlumber and inputd while the host controller was absent recovered shell
+navigation without reboot (same boot ID). The automatic `sink-device` path
+therefore requests off/device, waits up to 3 seconds for device role and zero
+host USB devices, then restarts both providers with a 10-second deadline.
+Failure stops policy in device role; host qualification cannot run during
+teardown. Manual role commands do not restart input providers. Live acceptance
+must prove that controls return without a reboot. A normal PC
 reports UFP rather than DFP and keeps the gadget lifeline in device role.
 
 Tests replay Phase A's charger transitions (which do **not** yet carry the

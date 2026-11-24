@@ -232,6 +232,29 @@ to_device() {
 	return "$failed"
 }
 
+# InputPlumber 0.75.2 can retain a dead evdev source across Kishi power loss.
+# Retire that provider while the host controller is absent, before any new
+# qualification can enumerate the Kishi. Manual role commands stay unchanged.
+to_sink_device() {
+	local ready=0
+	[ "${TABS6_AUTOMATIC:-0}" = 1 ] || die "sink-device is automatic-only"
+	to_device || return 1
+	for _ in $(seq 1 30); do
+		if [ "$(role)" = device ] && [ "$(usb_devices)" = 0 ]; then
+			ready=1
+			break
+		fi
+		sleep 0.1
+	done
+	[ "$ready" = 1 ] || { log "host controller teardown not verified; staying device"; return 1; }
+	if timeout --signal=KILL 10s systemctl restart inputplumber.service korri-inputd.service; then
+		log "Kishi input providers restarted with USB absent; staying device"
+	else
+		log "Kishi input provider teardown failed; staying device"
+		return 1
+	fi
+}
+
 # Every boot starts as the gadget with the boost off. The role switch
 # registers when dwc3 probes, which can be late; the gadget unit runs after
 # this. Missing the switch is logged, never fatal.
@@ -288,7 +311,7 @@ host|device)
 	;;
 esac
 case "${1:-status}" in
-host|sink-host|device|boot-vbus)
+host|sink-host|sink-device|device|boot-vbus)
 	# boot-vbus can precede tmpfiles, which normally creates /run/lock.
 	mkdir -p "${LOCK%/*}"
 	exec 9>"$LOCK"
@@ -300,11 +323,12 @@ case "${1:-status}" in
 status) status ;;
 host) to_host ;;
 sink-host) to_sink_host ;;
+sink-device) to_sink_device ;;
 device) to_device ;;
 boot-role) boot_role ;;
 boot-vbus) boot_vbus ;;
 *)
-	echo "usage: tabs6-usb-role [status|host|sink-host|device|boot-role|boot-vbus]" >&2
+	echo "usage: tabs6-usb-role [status|host|sink-host|sink-device|device|boot-role|boot-vbus]" >&2
 	exit 2
 	;;
 esac
