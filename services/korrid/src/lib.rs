@@ -6646,13 +6646,33 @@ fn secure_host_routers_with_federation(
     stream_play::person_name::device::spawn_publish(lan.clone());
     lan.identity_switch = identity_switch.clone();
     local.identity_switch = identity_switch;
+    let slot = surfaces.clone();
     let shell = surface_host_router_for(&lan, surface_host_access, surfaces).map(|router| {
         match native_router {
             Some(native) => router.merge(native),
             None => router,
         }
     });
-    let cli = cli::router(lan.clone(), resources.clone());
+    // korri#603: the person socket reads the surface model too, so a device
+    // with no shell can sign in to an account from a terminal. It shares the
+    // shell's hub when there is one. A device with no shell gets its own,
+    // which starts nothing until the first call asks for a model.
+    let mut person = lan.clone();
+    person.surfaces = Some(match slot.as_ref().and_then(|link| link.hub.get()) {
+        Some(hub) => Arc::clone(hub),
+        None => {
+            let controllers = slot
+                .as_ref()
+                .map(|link| Arc::clone(&link.controllers))
+                .unwrap_or_default();
+            let hub = surface_hub_for(&person, controllers);
+            if let Some(link) = &slot {
+                let _ = link.hub.set(Arc::clone(&hub));
+            }
+            hub
+        }
+    });
+    let cli = cli::router(person, resources.clone());
     // Only the peer-only router receives QUIC traffic.
     let peer = peer_rpc::PeerRpcServer::with_shared_authority(
         lan,

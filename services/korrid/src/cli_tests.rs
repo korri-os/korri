@@ -193,6 +193,43 @@ async fn identity_status_reads_owned_and_unowned_live_authority_without_creating
     }
 }
 
+/// korri#603: a device with no shell has no surface host router. Its person
+/// socket still answers the surface model, so `korri accounts` can sign in.
+#[tokio::test]
+async fn person_router_serves_the_surface_model_on_a_device_with_no_shell() {
+    let (_root, cli, control, _) = fixture();
+    let call = |app: Router, value: serde_json::Value| async move {
+        let response = post_json(app, "/rpc", &value).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["outcome"].clone()
+    };
+    let declared = call(
+        cli.clone(),
+        serde_json::json!({"_tag":"app.surface.declare","payload":{"surfaceId":"korri-cli","preferences":{}}}),
+    )
+    .await;
+    assert_eq!(declared["_tag"], "Ok", "{declared}");
+    let model = call(
+        cli.clone(),
+        serde_json::json!({"_tag":"app.surface.model","payload":{"surfaceId":"korri-cli"}}),
+    )
+    .await;
+    assert_eq!(model["_tag"], "Ok", "{model}");
+    // No plugin has an account here: the list is empty, which the treaty
+    // leaves out of the model.
+    assert_eq!(model["payload"]["status"]["_tag"], "Browsing", "{model}");
+    assert!(model["payload"].get("accountSignIns").is_none(), "{model}");
+    // The private control socket still refuses surface calls.
+    let refused = post_json(
+        control,
+        "/rpc",
+        &serde_json::json!({"_tag":"app.surface.model","payload":{"surfaceId":"korri-cli"}}),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+}
+
 fn socket_exists(path: &std::path::Path) -> bool {
     std::fs::symlink_metadata(path).is_ok()
 }
