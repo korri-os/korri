@@ -33,7 +33,7 @@ variable; its default is the same `korrid-cli/cli.sock` path as the Rust client.
 
 Run `korri --help` or `korri <area> --help` for exact arguments. Product areas
 are `devices`, `library`, `launch-settings`, `downloads`, `controllers`,
-`plugins`, `wifi`, `saves`, `identity`, `join` and `setup`. Session actions
+`plugins`, `wifi`, `saves`, `accounts`, `identity`, `join` and `setup`. Session actions
 are `play`, `leave`, `resume` and `end`. Provider acquisition is `get`.
 [Play and library details](PLAY-LIBRARY.md) include launch-setting constraints.
 [Settings parity audit](PARITY.md) maps the actual shell settings and actions,
@@ -594,3 +594,23 @@ without opening or creating identity storage. Invalid identity diagnostics use
 safe failure text. Typeshare's exact internal-tag mapping follows the existing
 artifact-state mapping pattern. Regenerate it with
 `nix run .#korrid-check -- --types-only`; never edit generated TypeScript.
+
+## Account sign-ins
+
+`korri accounts` shows the account sign-ins the shell shows
+(`SurfaceModel.accountSignIns`, ADR 0089): one line per account with its id,
+title and state. `korri accounts sign-in <id>` runs the account's own sign-in
+action and draws the service's QR code in the terminal until the account is
+signed in, the sign-in fails, or 10 minutes pass. `korri accounts sign-out
+<id>` signs out after a confirmation. It is the sign-in for a device with no
+shell (korri#603), for example Steam for the engine runner (ADR 0083):
+
+```sh
+korri accounts
+korri accounts sign-in @korri:steam
+```
+
+The command reads the model and sends `RunAction` through `app.surface.model`
+and `app.surface.request`, under the surface id `korri-cli`. It adds no call
+and no state to korrid, and it stays local: it takes no `--device`.
+

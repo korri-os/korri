@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod acquisition;
 pub mod client;
 pub mod controllers;
@@ -45,6 +46,7 @@ pub static MODULES: &[&dyn Module] = &[
     &plugins::Plugins,
     &wifi::Wifi,
     &saves::Saves,
+    &accounts::Accounts,
     &identity::Identity,
     &join::Join,
     &setup::Setup,

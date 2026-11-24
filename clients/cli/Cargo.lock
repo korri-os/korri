@@ -2398,6 +2398,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "korri-settings-treaty",
+ "korri-surface-treaty",
  "korrid",
  "libc",
  "qrcode",

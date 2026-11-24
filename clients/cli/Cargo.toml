@@ -12,6 +12,8 @@ sha2 = "0.10"
 tempfile = "3"
 korrid = { path = "../../services/korrid" }
 korri-settings-treaty = { path = "../../contracts/settings" }
+# korri#603: account sign-ins from a terminal read the shell's own model.
+korri-surface-treaty = { path = "../../contracts/surface" }
 libc = "0.2"
 # ADR 0072: the recovery QR code. Encoding only; no image renderers.
 qrcode = { version = "0.14", default-features = false }
