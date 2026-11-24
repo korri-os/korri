@@ -210,3 +210,26 @@ Owner decisions, 2026-11-23 (korri#518).
 - The move of installed games takes each game's files and its Wine prefix,
   with the saves in it. aka moves first, before the default changes there.
 - Every device runs the current published Gamescope plugin release.
+
+## Steam names FEX and Proton by artifact, not by build
+
+2026-11-23, for the owner decision above that Steam must not fix their
+versions. The Proton and FEX choice is a launch setting of the Steam runners,
+in the existing cascade (owner decision, 2026-11-23).
+
+- `@korri:steam` requires no exact FEX or Proton package. Its runners name
+  the artifacts `@korri:fex/rootfs` and `@korri:proton/cachyos`, which korrid
+  resolves from whichever enabled plugin declares them. The three plugins
+  then move to a new release one at a time.
+- A runner that names another plugin's artifact is off while no enabled
+  plugin declares that artifact, and says which artifact it lacks. Before,
+  that state stopped the whole plugin registry. A plugin that names an
+  artifact of its own that it does not declare is still refused.
+- A runner reads the files of a plugin whose artifact it names, under
+  `<pluginId>/<key>`, as it reads an exactly required plugin's files.
+- Steam reads Proton's tool name from the ready artifact at launch. It is no
+  longer built into Steam's programs.
+- Not used: ADR 0049's release requirements. They need the required plugin
+  installed from the repository URL the requirement names, and image seeding
+  refuses them today. Cost of this choice: an install of Steam alone does not
+  bring Proton; the runner then names what it lacks.

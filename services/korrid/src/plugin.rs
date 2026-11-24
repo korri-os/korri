@@ -548,6 +548,10 @@ pub struct PluginRegistry {
     runners: BTreeMap<String, RunnerRecord>,
     artifacts: BTreeMap<String, ArtifactRecord>,
     skipped_artifacts: BTreeSet<String>,
+    /// Runners left out because an artifact they name has no loaded, enabled
+    /// plugin, with the missing artifact's id (ADR 0083: a runner names
+    /// another plugin's artifact without fixing that plugin's build).
+    missing_artifact_runners: BTreeMap<String, String>,
     modifiers: BTreeMap<String, ModifierRecord>,
     transports: BTreeMap<String, TransportRecord>,
     session_controls: BTreeMap<String, SessionControlRecord>,
@@ -677,16 +681,34 @@ impl PluginRegistry {
             }
         }
 
+        // A runner may name another plugin's artifact. When that plugin is
+        // not loaded and enabled, only this runner is off: the other plugins
+        // of the device stay loaded. A plugin's own missing artifact is still
+        // a broken declaration.
+        let mut missing_artifact_runners = BTreeMap::new();
         for runner in runners.values() {
+            let owner = runner.id.split_once('/').map_or("", |(owner, _)| owner);
             for id in &runner.artifacts {
-                if !artifacts.contains_key(id) && !skipped_artifacts.contains(id) {
+                if artifacts.contains_key(id) || skipped_artifacts.contains(id) {
+                    continue;
+                }
+                // A bare key names no plugin: it is a broken declaration too.
+                if id.split_once('/').is_none_or(|(plugin, _)| plugin == owner) {
                     return Err(invalid_contribution(
                         "runner",
                         &runner.id,
                         "artifact is not loaded and enabled",
                     ));
                 }
+                missing_artifact_runners.insert(runner.id.clone(), id.clone());
+                break;
             }
+        }
+        for (runner, artifact) in &missing_artifact_runners {
+            eprintln!(
+                "korrid plugins: runner {runner} is off: no enabled plugin provides {artifact}"
+            );
+            runners.remove(runner);
         }
 
         // BTreeSet iteration supplies the contract's plugin-id precedence.
@@ -783,6 +805,7 @@ impl PluginRegistry {
             runners,
             artifacts,
             skipped_artifacts,
+            missing_artifact_runners,
             modifiers,
             transports,
             session_controls,
@@ -863,9 +886,10 @@ impl PluginRegistry {
     }
 
     /// Files a runner's launch input names: its own package's files under their
-    /// bare keys, plus each exactly required plugin's files under
-    /// `<pluginId>/<key>`. A required output that is not installed and enabled
-    /// refuses the launch. Packages the runner does not require stay hidden.
+    /// bare keys, plus, under `<pluginId>/<key>`, the files of each exactly
+    /// required plugin and of each plugin whose artifact the runner names
+    /// (ADR 0083). A required output that is not installed and enabled
+    /// refuses the launch. Every other package stays hidden.
     pub fn launch_files(
         &self,
         contribution: &str,
@@ -890,6 +914,26 @@ impl PluginRegistry {
                 }
             }
         }
+        // The plugins whose artifacts the runner names, by id. A required
+        // plugin's files are already there under the same keys.
+        let named: BTreeSet<&str> = self
+            .runners
+            .get(contribution)
+            .into_iter()
+            .flat_map(|runner| &runner.artifacts)
+            .filter_map(|artifact| artifact.split_once('/').map(|(plugin, _)| plugin))
+            .filter(|plugin| *plugin != package.id)
+            .collect();
+        for plugin in named {
+            let Some(provider) = self.installed.get(plugin) else {
+                continue;
+            };
+            for (key, path) in &provider.files {
+                files
+                    .entry(format!("{}/{key}", provider.id))
+                    .or_insert_with(|| path.clone());
+            }
+        }
         Ok(files)
     }
 
@@ -904,10 +948,17 @@ impl PluginRegistry {
     }
 
     pub fn artifacts_for_runner(&self, id: &str) -> Result<Vec<&ArtifactRecord>, PluginError> {
-        let runner = self
-            .runners
-            .get(id)
-            .ok_or_else(|| invalid_contribution("runner", id, "runner is unavailable"))?;
+        let runner =
+            self.runners
+                .get(id)
+                .ok_or_else(|| match self.missing_artifact_runners.get(id) {
+                    Some(artifact) => invalid_contribution(
+                        "runner",
+                        id,
+                        &format!("no enabled plugin provides {artifact}"),
+                    ),
+                    None => invalid_contribution("runner", id, "runner is unavailable"),
+                })?;
         // An artifact with no files for this platform is not this device's
         // to acquire, and its runner starts without it (ADR 0052).
         runner
@@ -2882,11 +2933,22 @@ mod artifact_tests {
     fn runners_resolve_only_enabled_artifacts() {
         let runtime = decode(declaration()).unwrap();
         let runner = load_plugin_source("@test", "export const name='player'; export const runners={play:{command:'play', artifacts:['@test:runtime/rootfs']}};").unwrap();
-        assert!(PluginRegistry::new(
+        // ADR 0083: the other plugin is off. Only this runner is off, with
+        // the artifact it lacks; the registry still loads.
+        let registry = PluginRegistry::new(
             vec![runner.clone(), runtime.clone()],
-            ["@test:player".into()]
+            ["@test:player".into()],
         )
-        .is_err());
+        .unwrap();
+        assert!(!registry.runners().contains_key("@test:player/play"));
+        let error = registry
+            .artifacts_for_runner("@test:player/play")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("no enabled plugin provides @test:runtime/rootfs"),
+            "{error}"
+        );
         let registry = PluginRegistry::new(
             vec![runner, runtime],
             ["@test:player".into(), "@test:runtime".into()],
@@ -2895,6 +2957,60 @@ mod artifact_tests {
         assert_eq!(
             registry.artifacts_for_runner("@test:player/play").unwrap()[0].id,
             "@test:runtime/rootfs"
+        );
+    }
+
+    #[test]
+    fn a_runner_that_names_its_own_missing_artifact_is_a_broken_declaration() {
+        let runner = load_plugin_source("@test", "export const name='player'; export const runners={play:{command:'play', artifacts:['@test:player/rootfs']}};").unwrap();
+        assert!(PluginRegistry::new(vec![runner], ["@test:player".into()]).is_err());
+    }
+
+    /// ADR 0083: a runner names another plugin's artifact and requires no
+    /// exact build of it. It still reads that plugin's files.
+    #[test]
+    fn a_runner_reads_the_files_of_a_plugin_whose_artifact_it_names() {
+        let temp = tempfile::tempdir().unwrap();
+        let package = |name: &str, source: &str, files: &[(&str, &str)]| {
+            let dir = temp.path().join(name);
+            std::fs::create_dir(&dir).unwrap();
+            std::fs::write(dir.join("plugin.ts"), source).unwrap();
+            crate::plugin_installation::EnabledPackage {
+                id: format!("@test:{name}"),
+                package: dir,
+                entry: "plugin.ts".into(),
+                sources: vec!["plugin.ts".into()],
+                requires: vec![],
+                hosts: vec![],
+                credential_host: None,
+                credential_token_url: None,
+                files: files
+                    .iter()
+                    .map(|(key, path)| ((*key).to_owned(), std::path::PathBuf::from(path)))
+                    .collect(),
+            }
+        };
+        let hash = "a".repeat(64);
+        let runtime = package(
+            "runtime",
+            &format!("export const name='runtime'; export const artifacts={{rootfs:{{id:'@test:runtime/rootfs', version:'1', files:[{{url:'https://example.com/a', sha256:'sha256:{hash}'}}]}}}};"),
+            &[("config", "/nix/store/runtime/config")],
+        );
+        let other = package(
+            "other",
+            "export const name='other';",
+            &[("secret", "/nix/store/other/secret")],
+        );
+        let player = package(
+            "player",
+            "export const name='player'; export const runners={play:{program:'play', systems:['s'], artifacts:['@test:runtime/rootfs']}}; export const systems={s:{title:'S'}};",
+            &[("play", "/nix/store/player/play")],
+        );
+        let registry = PluginRegistry::from_installed(vec![runtime, other, player]).unwrap();
+        let files = registry.launch_files("@test:player/play").unwrap();
+        assert_eq!(
+            files.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["@test:runtime/config", "play"]
         );
     }
 }

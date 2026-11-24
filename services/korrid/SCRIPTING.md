@@ -238,8 +238,9 @@ The evaluator performs no effects. `launcher/plugin_launch.rs` defines the
 Rust/Typeshare `PluginLaunchInput` and `PluginLaunchOutput` treaties. Input
 contains the selected full launcher/kind/runtime IDs, program and core file paths,
 existing account root, the cache root (the storage root's `cache` directory),
-kind-owned manifest files under their bare keys, and each exactly required
-plugin's files under `<pluginId>/<key>`
+kind-owned manifest files under their bare keys, and, under
+`<pluginId>/<key>`, the files of each exactly required plugin and of each
+plugin whose artifact the runner names (ADR 0083)
 (ADR 0012 records artifact acquisition; ADR 0010 records the original file
 keying). Ready artifact paths arrive separately in `artifacts`. A file route supplies
 `contentPath`; a provider location supplies `ref` instead, named after
