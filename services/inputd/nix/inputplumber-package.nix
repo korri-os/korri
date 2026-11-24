@@ -12,6 +12,7 @@ let
     ./inputplumber-target-device-paths.patch
     ./inputplumber-startup-unhide-quiet.patch
     ./inputplumber-ignore-before-reconnect.patch
+    ./inputplumber-lazy-attributes.patch
   ];
 in
 assert inputplumber.pname == "inputplumber";
@@ -28,6 +29,10 @@ inputplumber.overrideAttrs (previous: {
   # (2026-10-01) queued 628 change events behind boot coldplug.
   # Resolve ordered ignore policy before a persistent composite can reclaim
   # a source slot; profile ordering must also hold across device reconnects.
+  # Match only requested sysfs attributes. Enumerating all ancestor attributes
+  # blocked the Tab S6 manager queue for ~40 s before Kishi matching, then ~50 s
+  # before target creation. Inputd's one-second retries could not make progress
+  # while the composite awaited those queued target requests.
   inherit patches;
   # Run the upstream unit suite and the patches' unit regressions on builds.
   # Reconnect exclusions need kernel/udev/DBus and run in the adoption VM.

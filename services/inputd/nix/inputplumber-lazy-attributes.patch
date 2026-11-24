@@ -1,0 +1,179 @@
+Subject: [PATCH] config: read only requested sysfs attributes during matching
+Full ancestor attribute enumeration performs hardware I/O for unrelated
+attributes on every matcher. This blocks the manager command queue both
+before composite creation and while composites await target creation.
+Reject cheap subsystem/sysname mismatches first and look up only named
+attributes, preserving nearest-ancestor, empty-value and glob semantics.
+
+--- a/src/config/mod.rs
++++ b/src/config/mod.rs
+@@ -586,26 +586,21 @@
+     pub fn has_matching_udev(&self, device: &UdevDevice, udev_config: &Udev) -> bool {
+         log::debug!("Checking udev config '{:?}'", udev_config);
+ 
++        // Reject cheap identity mismatches before touching sysfs. Reading every
++        // attribute on every ancestor can perform slow hardware I/O (USB, PMIC).
++        if let Some(subsystem) = udev_config.subsystem.as_ref() {
++            if !glob_match(subsystem, &device.subsystem()) {
++                return false;
++            }
++        }
++        if let Some(sys_name) = udev_config.sys_name.as_ref() {
++            if !glob_match(sys_name, &device.sysname()) {
++                return false;
++            }
++        }
+         if let Some(attributes) = udev_config.attributes.as_ref() {
+-            let device_attributes = device.get_attributes();
+-
+-            for attribute in attributes {
+-                let Some(device_attr_value) = device_attributes.get(&attribute.name) else {
+-                    // If the device does not have this attribute, return false
+-                    return false;
+-                };
+-
+-                // If no value was specified in the config, then only match on
+-                // the presence of the attribute and not the value.
+-                let Some(attr_value) = attribute.value.as_ref() else {
+-                    continue;
+-                };
+-
+-                // Glob match on the attribute value
+-                log::debug!("Checking attribute: {attr_value} against {device_attr_value}");
+-                if !glob_match(attr_value.as_str(), device_attr_value.as_str()) {
+-                    return false;
+-                }
++            if !has_matching_attributes(attributes, |name| device.attribute_value_from_tree(name)) {
++                return false;
+             }
+         }
+ 
+@@ -665,22 +660,6 @@
+             }
+         }
+ 
+-        if let Some(subsystem) = udev_config.subsystem.as_ref() {
+-            let device_subsystem = device.subsystem();
+-            log::debug!("Checking subsystem: {subsystem} against {device_subsystem}");
+-            if !glob_match(subsystem.as_str(), device_subsystem.as_str()) {
+-                return false;
+-            }
+-        }
+-
+-        if let Some(sys_name) = udev_config.sys_name.as_ref() {
+-            let device_sys_name = device.sysname();
+-            log::debug!("Checking sys_name: {sys_name} against {device_sys_name}");
+-            if !glob_match(sys_name.as_str(), device_sys_name.as_str()) {
+-                return false;
+-            }
+-        }
+-
+         if let Some(sys_path) = udev_config.sys_path.as_ref() {
+             let device_sys_path = device.syspath();
+             log::debug!("Checking sys_path: {sys_path} against {device_sys_path}");
+@@ -1122,3 +1101,84 @@
+         Some(matches)
+     }
+ }
++
++// Query only attributes named by this matcher, stopping at the first mismatch.
++fn has_matching_attributes(
++    attributes: &[UdevAttribute],
++    mut lookup: impl FnMut(&str) -> Option<String>,
++) -> bool {
++    attributes.iter().all(|attribute| {
++        let Some(value) = lookup(&attribute.name) else {
++            return false;
++        };
++        attribute
++            .value
++            .as_ref()
++            .is_none_or(|pattern| glob_match(pattern, &value))
++    })
++}
++
++#[cfg(test)]
++mod attribute_matching_tests {
++    use super::{has_matching_attributes, UdevAttribute};
++
++    fn attribute(name: &str, value: Option<&str>) -> UdevAttribute {
++        UdevAttribute {
++            name: name.into(),
++            value: value.map(str::to_owned),
++        }
++    }
++
++    #[test]
++    fn matching_reads_only_requested_attributes_and_short_circuits() {
++        let attributes = [
++            attribute("id/vendor", Some("1532")),
++            attribute("id/product", Some("0712")),
++        ];
++        let mut reads = Vec::new();
++        assert!(!has_matching_attributes(&attributes, |name| {
++            reads.push(name.to_owned());
++            Some("045e".into())
++        }));
++        assert_eq!(reads, ["id/vendor"]);
++        let mut reads = Vec::new();
++        assert!(has_matching_attributes(&attributes, |name| {
++            reads.push(name.to_owned());
++            Some(
++                match name {
++                    "id/vendor" => "1532",
++                    "id/product" => "0712",
++                    _ => panic!("unrequested sysfs read"),
++                }
++                .into(),
++            )
++        }));
++        assert_eq!(reads, ["id/vendor", "id/product"]);
++    }
++
++    #[test]
++    fn matching_preserves_globs_presence_missing_and_empty_values() {
++        assert!(has_matching_attributes(
++            &[attribute("name", Some("Razer*"))],
++            |_| Some("Razer Kishi V2".into())
++        ));
++        assert!(!has_matching_attributes(
++            &[attribute("name", Some("Razer*"))],
++            |_| Some("Xbox".into())
++        ));
++        assert!(!has_matching_attributes(
++            &[attribute("missing", None)],
++            |_| None
++        ));
++        assert!(has_matching_attributes(&[attribute("empty", None)], |_| {
++            Some(String::new())
++        }));
++        assert!(has_matching_attributes(
++            &[attribute("empty", Some(""))],
++            |_| Some(String::new())
++        ));
++        assert!(has_matching_attributes(&[], |_| panic!(
++            "no attributes requested"
++        )));
++    }
++}
+--- a/src/udev/device.rs
++++ b/src/udev/device.rs
+@@ -636,6 +636,18 @@
+         device.get_attributes()
+     }
+ 
++    /// Read only the named attribute, using the nearest ancestor's value.
++    /// Unlike get_attribute_from_tree, preserve empty-but-present attributes.
++    pub fn attribute_value_from_tree(&self, attribute: &str) -> Option<String> {
++        let mut device = self.get_device().ok()?;
++        loop {
++            if let Some(value) = device.attribute_value(attribute) {
++                return Some(value.to_string_lossy().into_owned());
++            }
++            device = device.parent()?;
++        }
++    }
++
+     /// Gets an attribute from the first device in the device tree to match the attribute.
+     pub fn get_attribute_from_tree(&self, attribute: &str) -> Option<String> {
+         let Ok(device) = self.get_device() else {
