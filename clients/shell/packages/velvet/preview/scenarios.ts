@@ -184,7 +184,7 @@ const peerInstall = (here: object | undefined, installs: object[] | undefined = 
   catalog: {
     ...ready.catalog,
     games: ready.catalog.games.map((entry: any) => entry.id !== "glass-garden" ? entry : {
-      ...entry, media: [hero("tide", "#2a7a8c"), logo("tide", 2364, 704)], ...(here === undefined ? {} : { installHere: here }), ...game,
+      ...entry, media: [hero("dusk", "#5a3a8a")], ...(here === undefined ? {} : { installHere: here }), ...game,
     }),
   },
   ...(installs === undefined ? {} : { installs }),
