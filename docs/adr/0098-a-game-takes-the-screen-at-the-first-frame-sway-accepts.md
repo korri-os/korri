@@ -1,0 +1,61 @@
+# A game takes the screen at the first frame Sway accepts
+
+**Status:** accepted. Owner decisions, 2026-11-19 to 2026-11-24, issue #510.
+
+When a game started on aka, Korri revealed the stream as soon as the game's
+unit started. The person then saw 3 to 4 s of aka's empty black desktop before
+the game had a window (launch `ee96cbbe…`, #510). Locally, korrid noticed the
+game's window by checking about once a second.
+
+## Decision
+
+- A game **takes the screen** at its first frame: the first picture that the
+  compositor accepts from any window of that launch, a launcher included, once
+  per launch (`CONTEXT.md`). Korri reports that the game drew, not what it drew.
+- korrid on the device that runs the game learns that moment from Sway's
+  window events, through an IPC subscription, not from polling and not from
+  inside the game's unit. The gamescope plugin always nests gamescope on Sway
+  (`--backend wayland`), and nested gamescope maps its Sway window at its first
+  composite. So one event covers every runner. korrid makes the window full
+  screen the moment Sway reports it, and a rule in Korri's Sway config keeps a
+  game window off screen until korrid places it, so it never shows beside the
+  shell.
+- The session status records the moment in `initial_handoff`: `Observed` now
+  means the first frame. There is no second field and no old meaning.
+- Until then, Korri's starting screen stays in front and the launch can be
+  cancelled. On the device that runs the game, korrid mutes the game's sound and
+  drops its controller presses, the device's own and the stream's alike. One
+  place covers local play and every stream. Neither is replayed later.
+- A stream's viewer connects at once and stays hidden. It appears when both are
+  true: the device that runs the game says the game took the screen, and the
+  viewer has shown its first frame. The Rust viewer reports its first frame to
+  korrid through its lifecycle treaty. The target is about 100 ms from the
+  first frame to the reveal.
+- The device that runs the game sends session status changes to the viewer's
+  korrid as they happen, on a session-events stream over the iroh connection
+  they already share (ADR 0095). The viewer stops polling for that session.
+- If no first frame comes within 30 s, Korri shows the game anyway. If the
+  game's unit exits first, Korri shows an error at once.
+- This applies to Linux devices. The Android app keeps its current reveal at
+  the first decoded frame; Android work is parked.
+
+## Considered options
+
+- **Pixels:** sampling the screen for a non-black frame. The owner rejected it
+  as too weak to be the product signal.
+- **gamescope's own property:** `GAMESCOPE_FOCUSED_WINDOW` moves only to a
+  window with a done commit. It matched Sway's `new` event within 18 ms in all
+  28 pairs measured. Reading it needs root to enter the unit's mount namespace
+  and the unit's uid, which weakens the sandbox for no gain in timing.
+- **A ready report from each runner:** more accurate for games that draw black
+  while they load, but every runner needs its own work. A runner that draws
+  black for long, such as Mario Kart World in one crashed launch, is fixed in
+  that runner's own project.
+
+## Evidence
+
+Spike on aka, 2026-11-19, 40 launches: the signal never came after the first
+non-black frame, worst case 3 ms behind the 33–60 ms capture step. It also
+fires on Steam dialogs, Proton error dialogs and black fade-ins. The slowest
+signal came after 17.4 s. Raw data on zao at
+`/home/simonwjackson/korri-510-spike/`; summary in #510.
