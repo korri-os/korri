@@ -1,5 +1,5 @@
-//! USB-C safety observer and bounded candidate policy. Automatic HOST is
-//! blocked until power direction is proven; all effects use tabs6-usb-role.
+//! USB-C data-role policy and bounded VBUS candidate observer. Automatic
+//! sourcing remains blocked; sink-host never powers VBUS. Effects use tabs6-usb-role.
 mod typec;
 use std::fs;
 use std::path::Path;
@@ -19,6 +19,7 @@ struct Sample {
     state: u8,
     attached: bool,
     source: bool,
+    dfp: bool,
     muic_vbus: u8,
     charger: u8,
     gauge: String,
@@ -30,6 +31,19 @@ struct Sample {
 }
 
 impl Sample {
+    fn permits_sink_host(&self) -> bool {
+        // Measured on this board with the Kishi pass-through charger:
+        // SNK_Ready + DFP is a data role, not permission to source VBUS.
+        self.state == 21
+            && self.attached
+            && !self.source
+            && self.dfp
+            && self.muic_vbus == 1
+            && self.gauge == "Charging"
+            && self.cntl & 7 == 5
+            && !self.sourcing
+    }
+
     fn safe_power(&self) -> bool {
         // STATUS1 does NOT distinguish OTG output from external VBUS.
         // Only the measured no-input/own-output values are accepted. This
@@ -90,6 +104,7 @@ fn sample(sysfs: &Path) -> Result<Sample, String> {
         state: func[0],
         attached: func[3] & 1 != 0,
         source: func[3] & 2 != 0,
+        dfp: func[3] & 4 != 0,
         muic_vbus,
         charger,
         gauge: gauge.trim().into(),
@@ -106,6 +121,7 @@ enum Action {
     Device,
     Wait,
     Host,
+    SinkHost,
 }
 
 #[derive(Default)]
@@ -214,6 +230,28 @@ impl Policy {
     }
 }
 
+// Independent from the blocked VBUS-on policy. Each update consumes a new
+// hardware read; one bad read revokes immediately and clears qualification.
+#[derive(Default)]
+struct SinkHostPolicy {
+    consecutive: u8,
+}
+
+impl SinkHostPolicy {
+    fn update(&mut self, sample: Result<&Sample, &str>) -> Action {
+        if !sample.is_ok_and(Sample::permits_sink_host) {
+            self.consecutive = 0;
+            return Action::Device;
+        }
+        self.consecutive = (self.consecutive + 1).min(3);
+        if self.consecutive == 3 {
+            Action::SinkHost
+        } else {
+            Action::Device
+        }
+    }
+}
+
 fn apply(role: &str) -> Result<(), String> {
     let helper = std::env::var("TABS6_USB_ROLE_HELPER").unwrap_or("tabs6-usb-role".into());
     let status = Command::new(helper)
@@ -244,14 +282,27 @@ fn run() -> Result<(), String> {
                 Err(format!("host refused: {s:?}"))
             };
         }
+        Some("--check-sink-host") if std::env::args().len() == 2 => {
+            let s = sample(sysfs)?;
+            return if s.permits_sink_host() {
+                Ok(())
+            } else {
+                Err(format!("sink-host refused: {s:?}"))
+            };
+        }
         None => (),
-        _ => return Err("usage: tabs6-typec-auto [--check-host|--sm-bus]".into()),
+        _ => {
+            return Err("usage: tabs6-typec-auto [--check-host|--check-sink-host|--sm-bus]".into())
+        }
     }
     // Never inherit permission or boost across restart. ExecStopPost also
     // requests off/device after SIGTERM, SIGKILL, or any failure here.
     apply("device")?;
-    println!("mode=observe automatic_host=blocked reason=no_verified_power_direction");
+    println!(
+        "mode=observe automatic_host=blocked reason=no_verified_power_direction sink_host=enabled"
+    );
     let mut policy = Policy::default();
+    let mut sink_host = SinkHostPolicy::default();
     let start = Instant::now();
     let mut host_trace = None;
     loop {
@@ -263,7 +314,7 @@ fn run() -> Result<(), String> {
         // MUIC cannot distinguish our output from charger input. No runtime
         // opt-in may bypass this block. --check-host remains the manual
         // helper's fresh interlock, not automatic sourcing permission.
-        let action = if requested == Action::Host {
+        let sourcing_action = if requested == Action::Host {
             policy.state = State::Device;
             println!(
                 "automatic_host=blocked reason=no_verified_power_direction staying_device=true"
@@ -271,6 +322,15 @@ fn run() -> Result<(), String> {
             Action::Device
         } else {
             requested
+        };
+        let sink_action = sink_host.update(current.as_ref().map_err(String::as_str));
+        let action = if sink_action == Action::SinkHost {
+            sink_action
+        } else if sourcing_action == Action::Wait {
+            // Qualification of a blocked sourcing candidate grants no role.
+            Action::Device
+        } else {
+            sourcing_action
         };
         if current.as_ref().is_ok_and(|s| s.sourcing) && host_trace.is_none() {
             host_trace = Some(Instant::now());
@@ -289,6 +349,13 @@ fn run() -> Result<(), String> {
             policy.next_host.saturating_sub(start.elapsed()).as_millis()
         );
         match action {
+            Action::SinkHost if current.as_ref().is_ok_and(|s| s.role != "host") => {
+                if let Err(error) = apply("sink-host") {
+                    eprintln!("tabs6-typec-auto: sink-host failed, returning to device: {error}");
+                    sink_host.consecutive = 0;
+                    apply("device")?;
+                }
+            }
             Action::Device
                 if was_host
                     || current
@@ -324,6 +391,7 @@ mod tests {
             state: 14,
             attached: true,
             source: true,
+            dfp: true,
             muic_vbus: 0,
             charger: 0x22,
             gauge: "Discharging".into(),
@@ -632,6 +700,142 @@ mod tests {
                 policy.update(Duration::ZERO, Err("read failed")),
                 Action::Device
             );
+        }
+    }
+
+    fn phase_a_sample(line: &str) -> Sample {
+        let field = |key| {
+            line.split_whitespace()
+                .find_map(|part| part.strip_prefix(key))
+                .unwrap()
+        };
+        let cntl = u8::from_str_radix(field("chg_mode="), 16).unwrap();
+        Sample {
+            state: field("state=").parse().unwrap(),
+            attached: field("attached=") == "1",
+            source: field("source=") == "1",
+            dfp: field("dfp=") == "1",
+            muic_vbus: u8::from_str_radix(field("muic_vbus="), 16).unwrap(),
+            charger: u8::from_str_radix(field("chg_status="), 16).unwrap(),
+            gauge: field("gauge=").trim_matches('"').into(),
+            sourcing: cntl & 7 == 7,
+            cntl,
+            ..kishi()
+        }
+    }
+
+    fn charging_kishi() -> Sample {
+        phase_a_sample(
+            include_str!("sink-host-charging.txt")
+                .lines()
+                .next()
+                .unwrap(),
+        )
+    }
+
+    #[test]
+    fn replay_charging_kishi_then_unplug_and_pc_preserves_device_lifeline() {
+        let mut policy = SinkHostPolicy::default();
+        // Phase A includes charging before the data-role swap, including
+        // SNK_Ready/UFP and state 42/DFP: neither permits host.
+        for line in include_str!("phase-a-transition.txt").lines() {
+            assert_eq!(policy.update(Ok(&phase_a_sample(line))), Action::Device);
+        }
+        for (i, line) in include_str!("sink-host-charging.txt").lines().enumerate() {
+            assert_eq!(
+                policy.update(Ok(&phase_a_sample(line))),
+                if i < 2 {
+                    Action::Device
+                } else {
+                    Action::SinkHost
+                }
+            );
+        }
+        let unplugged: Vec<_> = include_str!("phase-a-transition.txt")
+            .lines()
+            .skip(10)
+            .map(phase_a_sample)
+            .collect();
+        // First detach revokes, including a stale Charging gauge. Continuing
+        // Kishi source-ready samples cannot enable boost or host for 60 s.
+        for sample in &unplugged {
+            assert_eq!(sample.cntl & 7, 5);
+            assert_eq!(policy.update(Ok(sample)), Action::Device);
+        }
+        for _ in 0..200 {
+            assert_eq!(policy.update(Ok(unplugged.last().unwrap())), Action::Device);
+        }
+        // Conventional PC: same sink-ready signature but UFP, as recorded
+        // before the data-role swap in phase A. Gadget stays available.
+        let pc = phase_a_sample(
+            include_str!("phase-a-transition.txt")
+                .lines()
+                .nth(8)
+                .unwrap(),
+        );
+        for _ in 0..3 {
+            assert_eq!(policy.update(Ok(&pc)), Action::Device);
+        }
+        for expected in [Action::Device, Action::Device, Action::SinkHost] {
+            assert_eq!(policy.update(Ok(&charging_kishi())), expected);
+        }
+    }
+
+    #[test]
+    fn sink_host_each_interlock_and_read_error_revokes_and_requalifies() {
+        for failure in 0..10 {
+            let mut policy = SinkHostPolicy::default();
+            let good = charging_kishi();
+            for _ in 0..3 {
+                policy.update(Ok(&good));
+            }
+            let mut bad = charging_kishi();
+            match failure {
+                0 => bad.state = 20,
+                1 => bad.attached = false,
+                2 => bad.source = true,
+                3 => bad.dfp = false,
+                4 => bad.muic_vbus = 0,
+                5 => bad.muic_vbus = 2,
+                6 => bad.gauge = "Discharging".into(),
+                7 => bad.cntl = 7,
+                8 => bad.sourcing = true,
+                _ => (),
+            }
+            assert_eq!(
+                policy.update(if failure == 9 {
+                    Err("read failed")
+                } else {
+                    Ok(&bad)
+                }),
+                Action::Device
+            );
+            for expected in [Action::Device, Action::Device, Action::SinkHost] {
+                assert_eq!(policy.update(Ok(&good)), expected);
+            }
+            // A read error part way through qualification resets it too.
+            policy.update(Err("read failed"));
+            policy.update(Ok(&good));
+            policy.update(Ok(&good));
+            assert_eq!(policy.update(Err("read failed")), Action::Device);
+            assert_eq!(policy.update(Ok(&good)), Action::Device);
+            assert_eq!(policy.update(Ok(&good)), Action::Device);
+        }
+    }
+
+    #[test]
+    fn sink_host_accepts_only_sink_ready_attached_dfp() {
+        for state in 0..=255 {
+            for flags in 0..8 {
+                let sample = Sample {
+                    state,
+                    attached: flags & 1 != 0,
+                    source: flags & 2 != 0,
+                    dfp: flags & 4 != 0,
+                    ..charging_kishi()
+                };
+                assert_eq!(sample.permits_sink_host(), state == 21 && flags == 5);
+            }
         }
     }
 

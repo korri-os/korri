@@ -51,6 +51,12 @@ echo "$*" >> "$TABS6_TEST_REGS/systemctl"
 I2CTRANSFER = """#!/usr/bin/env bash
 set -eu
 [ ! -e "$TABS6_TEST_REGS/offline" ] || exit 1
+if [ "$(cat "$TABS6_SYSFS"/class/usb_role/*/role)" = host ]; then
+    [ ! -e "$TABS6_TEST_REGS/fail-after-switch" ] || exit 1
+    if [ -e "$TABS6_TEST_REGS/cntl-after-switch" ]; then
+        cp "$TABS6_TEST_REGS/cntl-after-switch" "$TABS6_TEST_REGS/0x0c"
+    fi
+fi
 [ ! -e "$TABS6_TEST_REGS/fail-transfer-$3-$4-${5:-}" ] || exit 1
 [ ! -e "$TABS6_TEST_REGS/short-transfer" ] || { echo 0x00; exit 0; }
 [ ! -e "$TABS6_TEST_REGS/slow-transfer" ] || sleep 5
@@ -172,6 +178,100 @@ class UsbRole(unittest.TestCase):
         self.assertIn(reason, r.stderr)
         self.assertFalse(any(w == "0x0c 247" for w in self.writes()))
         self.assertEqual(self.role(), "device")
+
+    def charging_kishi(self):
+        (self.regs / "func").write_text("0x15 0x21 0xff 0x9d\n")
+        self.reg("muic", 1)
+        self.reg("charger", 0x29)
+        self.gauge("Charging")
+
+    def test_sink_host_changes_only_data_role_without_register_writes(self):
+        self.charging_kishi()
+        r = self.run_role("sink-host", TABS6_AUTOMATIC=1)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.role(), "host")
+        self.assertEqual(self.reg(CNTL), 0xF5)
+        self.assertEqual(self.writes(), [])
+        self.assertNotIn("stop tabs6-typec-auto.service", self.systemctl())
+
+    def test_sink_host_post_switch_mode_change_or_error_restores_gadget(self):
+        for fault in ("cntl-after-switch", "fail-after-switch"):
+            with self.subTest(fault=fault):
+                self.charging_kishi()
+                self.reg(CNTL, 0xF5)
+                (self.regs / fault).write_text("247\n")
+                r = self.run_role("sink-host", TABS6_AUTOMATIC=1)
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn("returning to device role", r.stdout)
+                self.assertEqual(self.role(), "device")
+                self.assertEqual(self.writes(), [])
+                self.assertIn("restart --no-block usb-gadget.service", self.systemctl())
+                (self.regs / fault).unlink()
+
+    def test_sink_host_requires_fresh_reads_and_no_configured_pc(self):
+        self.charging_kishi()
+        self.udc("configured")
+        r = self.run_role("sink-host", TABS6_AUTOMATIC=1)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.role(), "device")
+        self.udc("not attached")
+        (self.regs / "offline").touch()
+        r = self.run_role("sink-host", TABS6_AUTOMATIC=1)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.role(), "device")
+        self.assertEqual(self.writes(), [])
+
+    def test_real_daemon_sink_host_unplug_errors_and_pc_lifeline(self):
+        helper = self.bin / "tabs6-usb-role"
+        helper.write_text(f"#!{shutil.which('bash')}\nexec bash {SCRIPT} \"$@\"\n")
+        helper.chmod(0o755)
+        self.charging_kishi()
+        env = self.env(TABS6_USB_ROLE_HELPER=helper)
+        with (self.tmp / "daemon.log").open("w+") as log:
+            proc = subprocess.Popen([os.environ["TABS6_TEST_AUTO"]], env=env,
+                                    stdout=log, stderr=subprocess.STDOUT)
+            def wait_role(expected):
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    self.assertIsNone(proc.poll(), (self.tmp / "daemon.log").read_text())
+                    if self.role() == expected:
+                        return
+                    time.sleep(0.01)
+                self.fail((self.tmp / "daemon.log").read_text())
+            try:
+                wait_role("host")
+                self.assertEqual(self.reg(CNTL) & 7, 5)
+                # Unplug charger: fail closed even before gauge catches up.
+                self.reg("muic", 0)
+                wait_role("device")
+                self.gauge("Discharging")
+                (self.regs / "func").write_text("0x0e 0x24 0xff 0x8f\n")
+                time.sleep(1.2)
+                self.assertEqual(self.role(), "device")
+                self.charging_kishi()
+                wait_role("host")
+                failure = self.regs / "fail-transfer-w2@0x33-0x00-0x20"
+                failure.touch()
+                wait_role("device")
+                time.sleep(0.4)
+                self.assertEqual(self.role(), "device")
+                failure.unlink()
+                wait_role("host")
+                # Kishi/charger removed, then PC attached in UFP role.
+                (self.regs / "func").write_text("0x00 0x44 0xff 0x88\n")
+                wait_role("device")
+                self.charging_kishi()
+                (self.regs / "func").write_text("0x15 0x24 0xff 0x99\n")
+                self.udc("configured")
+                time.sleep(1.2)
+                self.assertEqual(self.role(), "device")
+                self.assertIn("restart --no-block usb-gadget.service", self.systemctl())
+                self.assertEqual(self.reg(CNTL) & 7, 5)
+                self.assertFalse(any(int(w.split()[1]) & 7 == 7
+                                     for w in self.writes() if w.startswith("0x0c ")))
+            finally:
+                proc.terminate()
+                proc.wait(timeout=5)
 
     def test_host_powers_the_port_then_switches(self):
         r = self.run_role("host")
