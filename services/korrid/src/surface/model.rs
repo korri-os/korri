@@ -177,6 +177,7 @@ fn bare_game(id: String, title: String) -> SurfaceGame {
         system_id: None,
         system: None,
         media: None,
+        install_here: None,
     }
 }
 

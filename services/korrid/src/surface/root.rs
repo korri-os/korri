@@ -1330,6 +1330,7 @@ impl Root {
                 .into_iter()
                 .chain(self.accounts.snapshot())
                 .collect(),
+            installs: None,
         };
         Facts { base, games, state }
     }
@@ -2081,6 +2082,11 @@ impl Root {
             SurfaceRequest::FocusGame { .. }
             | SurfaceRequest::RememberPreference { .. }
             | SurfaceRequest::MoveCatalog { .. } => {}
+            // #553: performed by the install controller (next commit).
+            SurfaceRequest::InstallGame { .. }
+            | SurfaceRequest::MoveInstall { .. }
+            | SurfaceRequest::CancelInstall { .. }
+            | SurfaceRequest::AnswerStreamMeanwhile { .. } => {}
         }
     }
 }

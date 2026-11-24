@@ -379,6 +379,7 @@ mod tests {
             system_id: None,
             system: None,
             media: None,
+            install_here: None,
         }
     }
 

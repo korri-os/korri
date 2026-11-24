@@ -64,6 +64,52 @@ export type SurfaceIdentityDisposition = "transfer" | "delete";
 export type SurfaceIdentityStatus = { _tag: "Idle" } | { _tag: "Working"; operation: string } | { _tag: "Problem"; message: string } | { _tag: "Switched"; ownerPublicKey: string };
 
 /**
+ * Why this device cannot install a game now (ADR 0092). The surface words
+ * it. `noRunner`: no runner here plays the game's system, and no plugin
+ * offers one. `notEnoughSpace`: the release does not fit in the free
+ * storage. `noSource`: no device that holds the release answered.
+ * `notAllowed`: the devices that hold it do not serve installs to this
+ * device (only the owner's and family members' devices may install, ADR
+ * 0077).
+ */
+export type SurfaceInstallBlock = "noRunner" | "notEnoughSpace" | "noSource" | "notAllowed";
+
+/**
+ * Whether this device can install a game that other devices hold. Korri
+ * learns the release's size from those devices only when the person asks
+ * (`InstallGame`), never from the catalog, so free space and a reachable
+ * source are known only after that.
+ *
+ * - `Offered`: this device has a runner for the game. `InstallGame` asks
+ * the devices that hold it for its size, checks the free space, and
+ * installs.
+ * - `NeedsPlugin`: no runner here, but the plugin `pluginTitle` offers
+ * one. `InstallGame` first asks to install that plugin, with its
+ * permission review (a `Confirm` status, as for netplay), then goes on
+ * as for `Offered`.
+ * - `Checking`: Korri is asking the devices that hold it for its size.
+ * - `Installing`: the install is in the line: `installs` holds the entry
+ * whose id is `installId`.
+ * - `Unavailable`: not possible now, and why. `bytes` is the release's
+ * size when Korri learned it. `InstallGame` checks again.
+ */
+export type SurfaceInstallHere = { _tag: "Offered" } | { _tag: "NeedsPlugin"; pluginTitle: string } | { _tag: "Checking" } | { _tag: "Installing"; installId: string } | { _tag: "Unavailable"; reason: SurfaceInstallBlock; bytes?: number };
+
+/**
+ * Where one install stands (ADR 0092). One install runs at a time.
+ *
+ * - `Waiting`: in the line, behind the one that runs. `bytes` is the size
+ * when Korri knows it.
+ * - `Installing`: the one that runs. `progress.total` is the size; absent
+ * while the size is unknown (unpacking). `secondsLeft` is Korri's
+ * prediction of the time left; absent until Korri has measured a speed.
+ * - `Failed`: it stopped, and `reason` says why in user-facing words. Its
+ * verified pieces may stay so that a new try resumes; `CancelInstall`
+ * throws it away.
+ */
+export type SurfaceInstallState = { _tag: "Waiting"; bytes?: number } | { _tag: "Installing"; progress: SurfaceProgress; secondsLeft?: number } | { _tag: "Failed"; reason: string };
+
+/**
  * The launch settings editor for one game, opened from a game action and
  * closed by the host's close action, as `runnerChoice` is. Unlike the runner
  * chooser, Back reaches the surface while the editor is open, because the
@@ -129,7 +175,7 @@ export type SurfacePresentation = SurfaceCatalogPresentation | SurfaceGameplayOv
  * hands them to korrid. Each is fire-and-forget: the consequence arrives as
  * a new model.
  */
-export type SurfaceRequest = { _tag: "LaunchGame"; gameId: string; launchLocationId?: string } | { _tag: "RunAction"; actionId: string } | { _tag: "ChangeSetting"; settingId: string; value: string } | { _tag: "DismissSettingsProblem" } | { _tag: "SwitchIdentityToNip46"; bunkerUri: string; disposition: SurfaceIdentityDisposition; trustLossConfirmed: boolean } | { _tag: "DismissIdentityStatus" } | { _tag: "RunGameAction"; gameId: string; actionId: string } | { _tag: "InvokeGameplayControl"; controlId: string; value?: SurfaceGameplayControlValue } | { _tag: "DismissGameplayOverlay" } | { _tag: "Retry" } | { _tag: "Dismiss" } | { _tag: "Reload" } | { _tag: "ScanWifi" } | { _tag: "ConnectWifi"; networkId: string; password?: string } | { _tag: "ConnectHiddenWifi"; ssid: string; password?: string } | { _tag: "FinishOnboarding" } | { _tag: "OpenStore" } | { _tag: "SearchStore"; providerId: string; query: string } | { _tag: "OpenStoreEntry"; entryId: string } | { _tag: "FocusGame"; gameId?: string } | { _tag: "RememberPreference"; key: string; value: string } | { _tag: "MoveCatalog"; query: CatalogQuery; from: CatalogFrom; count: number };
+export type SurfaceRequest = { _tag: "LaunchGame"; gameId: string; launchLocationId?: string } | { _tag: "RunAction"; actionId: string } | { _tag: "ChangeSetting"; settingId: string; value: string } | { _tag: "DismissSettingsProblem" } | { _tag: "SwitchIdentityToNip46"; bunkerUri: string; disposition: SurfaceIdentityDisposition; trustLossConfirmed: boolean } | { _tag: "DismissIdentityStatus" } | { _tag: "RunGameAction"; gameId: string; actionId: string } | { _tag: "InvokeGameplayControl"; controlId: string; value?: SurfaceGameplayControlValue } | { _tag: "DismissGameplayOverlay" } | { _tag: "Retry" } | { _tag: "Dismiss" } | { _tag: "Reload" } | { _tag: "ScanWifi" } | { _tag: "ConnectWifi"; networkId: string; password?: string } | { _tag: "ConnectHiddenWifi"; ssid: string; password?: string } | { _tag: "FinishOnboarding" } | { _tag: "OpenStore" } | { _tag: "SearchStore"; providerId: string; query: string } | { _tag: "OpenStoreEntry"; entryId: string } | { _tag: "FocusGame"; gameId?: string } | { _tag: "RememberPreference"; key: string; value: string } | { _tag: "MoveCatalog"; query: CatalogQuery; from: CatalogFrom; count: number } | { _tag: "InstallGame"; gameId: string; play: boolean } | { _tag: "MoveInstall"; installId: string; index: number } | { _tag: "CancelInstall"; installId: string } | { _tag: "AnswerStreamMeanwhile"; installId: string; stream: boolean; launchLocationId?: string };
 
 export type SurfaceRunnerChoice = { _tag: "Closed" } | ({ _tag: "Loading" | "Ready" | "Stale" | "Conflict" | "Error" | "Busy" | "Warnings" } & SurfaceRunnerChoiceContent);
 
@@ -489,6 +535,14 @@ export interface SurfaceGame {
 	 * `coverArtUrl` stays the square cover.
 	 */
 	media?: SurfaceMedia[];
+	/**
+	 * Whether this device can install the game (ADR 0092): present only on
+	 * a game that only other devices hold, as a file release. Play here is
+	 * `InstallGame` with `play`; Korri never picks it for the person. While
+	 * the install is in the line, `download` says where it stands, as for
+	 * every download. Absent once this device holds the game.
+	 */
+	installHere?: SurfaceInstallHere;
 }
 
 export interface SurfaceGameplayControl {
@@ -540,6 +594,31 @@ export interface SurfaceGameplayOverlayPresentation {
 
 export interface SurfaceIdentityManagement {
 	status: SurfaceIdentityStatus;
+}
+
+/** One entry of the list of installs (`SurfaceModel.installs`). */
+export interface SurfaceInstall {
+	/**
+	 * Opaque. Hand it back unchanged to `MoveInstall`, `CancelInstall` and
+	 * `AnswerStreamMeanwhile`.
+	 */
+	id: string;
+	title: string;
+	/** The `SurfaceGame.id` of the game, when the catalog holds it. */
+	gameId?: string;
+	state: SurfaceInstallState;
+	/**
+	 * Play here started it: Korri starts the game when it is installed,
+	 * unless the person started something else meanwhile.
+	 */
+	playWhenReady?: true;
+	/**
+	 * Korri asks whether to stream the game meanwhile, because the
+	 * predicted time is longer than 2 minutes. The install goes on either
+	 * way. Answer with `AnswerStreamMeanwhile`; until then the question
+	 * stands.
+	 */
+	streamMeanwhile?: true;
 }
 
 /**
@@ -776,6 +855,13 @@ export interface SurfaceModel {
 	 * person, in a stable order. Empty when no plugin has one.
 	 */
 	accountSignIns?: SurfaceAccountSignIn[];
+	/**
+	 * The list of installs on this device (ADR 0092), in the line's order:
+	 * the one that runs (`Installing`) first, then those that wait, then
+	 * those that failed. Absent in hosts without installs. Empty when
+	 * nothing installs.
+	 */
+	installs?: SurfaceInstall[];
 }
 
 /**

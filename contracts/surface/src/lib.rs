@@ -224,6 +224,119 @@ pub struct SurfaceGame {
     /// `coverArtUrl` stays the square cover.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media: Option<Vec<SurfaceMedia>>,
+    /// Whether this device can install the game (ADR 0092): present only on
+    /// a game that only other devices hold, as a file release. Play here is
+    /// `InstallGame` with `play`; Korri never picks it for the person. While
+    /// the install is in the line, `download` says where it stands, as for
+    /// every download. Absent once this device holds the game.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_here: Option<SurfaceInstallHere>,
+}
+
+/// Why this device cannot install a game now (ADR 0092). The surface words
+/// it. `noRunner`: no runner here plays the game's system, and no plugin
+/// offers one. `notEnoughSpace`: the release does not fit in the free
+/// storage. `noSource`: no device that holds the release answered.
+/// `notAllowed`: the devices that hold it do not serve installs to this
+/// device (only the owner's and family members' devices may install, ADR
+/// 0077).
+#[typeshare(serialized_as = "SurfaceInstallBlockWire")]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SurfaceInstallBlock {
+    NoRunner,
+    NotEnoughSpace,
+    NoSource,
+    NotAllowed,
+}
+
+/// Whether this device can install a game that other devices hold. Korri
+/// learns the release's size from those devices only when the person asks
+/// (`InstallGame`), never from the catalog, so free space and a reachable
+/// source are known only after that.
+///
+/// - `Offered`: this device has a runner for the game. `InstallGame` asks
+///   the devices that hold it for its size, checks the free space, and
+///   installs.
+/// - `NeedsPlugin`: no runner here, but the plugin `pluginTitle` offers
+///   one. `InstallGame` first asks to install that plugin, with its
+///   permission review (a `Confirm` status, as for netplay), then goes on
+///   as for `Offered`.
+/// - `Checking`: Korri is asking the devices that hold it for its size.
+/// - `Installing`: the install is in the line: `installs` holds the entry
+///   whose id is `installId`.
+/// - `Unavailable`: not possible now, and why. `bytes` is the release's
+///   size when Korri learned it. `InstallGame` checks again.
+#[typeshare(serialized_as = "SurfaceInstallHereWire")]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "_tag", rename_all_fields = "camelCase")]
+pub enum SurfaceInstallHere {
+    Offered,
+    NeedsPlugin {
+        plugin_title: String,
+    },
+    Checking,
+    Installing {
+        install_id: String,
+    },
+    Unavailable {
+        reason: SurfaceInstallBlock,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bytes: Option<f64>,
+    },
+}
+
+/// Where one install stands (ADR 0092). One install runs at a time.
+///
+/// - `Waiting`: in the line, behind the one that runs. `bytes` is the size
+///   when Korri knows it.
+/// - `Installing`: the one that runs. `progress.total` is the size; absent
+///   while the size is unknown (unpacking). `secondsLeft` is Korri's
+///   prediction of the time left; absent until Korri has measured a speed.
+/// - `Failed`: it stopped, and `reason` says why in user-facing words. Its
+///   verified pieces may stay so that a new try resumes; `CancelInstall`
+///   throws it away.
+#[typeshare(serialized_as = "SurfaceInstallStateWire")]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "_tag", rename_all_fields = "camelCase")]
+pub enum SurfaceInstallState {
+    Waiting {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bytes: Option<f64>,
+    },
+    Installing {
+        progress: SurfaceProgress,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        seconds_left: Option<f64>,
+    },
+    Failed {
+        reason: String,
+    },
+}
+
+/// One entry of the list of installs (`SurfaceModel.installs`).
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceInstall {
+    /// Opaque. Hand it back unchanged to `MoveInstall`, `CancelInstall` and
+    /// `AnswerStreamMeanwhile`.
+    pub id: String,
+    pub title: String,
+    /// The `SurfaceGame.id` of the game, when the catalog holds it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_id: Option<String>,
+    pub state: SurfaceInstallState,
+    /// Play here started it: Korri starts the game when it is installed,
+    /// unless the person started something else meanwhile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub play_when_ready: Option<SurfaceTrue>,
+    /// Korri asks whether to stream the game meanwhile, because the
+    /// predicted time is longer than 2 minutes. The install goes on either
+    /// way. Answer with `AnswerStreamMeanwhile`; until then the question
+    /// stands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_meanwhile: Option<SurfaceTrue>,
 }
 
 /// What a stored image of a game is, in three broad kinds (ADR 0091).
@@ -1589,6 +1702,12 @@ pub struct SurfaceModel {
     /// person, in a stable order. Empty when no plugin has one.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub account_sign_ins: Vec<SurfaceAccountSignIn>,
+    /// The list of installs on this device (ADR 0092), in the line's order:
+    /// the one that runs (`Installing`) first, then those that wait, then
+    /// those that failed. Absent in hosts without installs. Empty when
+    /// nothing installs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installs: Option<Vec<SurfaceInstall>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1777,6 +1896,37 @@ pub enum SurfaceRequest {
         from: CatalogFrom,
         count: u16,
     },
+    /// Install a game that other devices hold, while its `installHere` is
+    /// `Offered`, `NeedsPlugin` or `Unavailable` (ADR 0092). With `play`
+    /// (play here) it goes to the front of the line and the game starts when
+    /// it is installed; without, it goes to the back. With `play` on a game
+    /// that is `Installing`, the game starts when it is installed.
+    InstallGame {
+        game_id: String,
+        play: bool,
+    },
+    /// Move an install to `index` in `installs`. The install that runs goes
+    /// on running, so an index at or before it means next.
+    MoveInstall {
+        install_id: String,
+        index: u32,
+    },
+    /// Cancel an install that waits or runs, or throw away one that failed.
+    CancelInstall {
+        install_id: String,
+    },
+    /// The answer to `SurfaceInstall.streamMeanwhile`. With `stream`, Korri
+    /// starts stream play of the game now and the install goes on in the
+    /// background; the game then does not start when it is installed.
+    /// `launchLocationId` is required with `stream` when the game publishes
+    /// `launchLocations`, as for `LaunchGame`. Without `stream`, the person
+    /// waits, and the game starts when it is installed.
+    AnswerStreamMeanwhile {
+        install_id: String,
+        stream: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        launch_location_id: Option<String>,
+    },
 }
 
 impl SurfaceRequest {
@@ -1805,6 +1955,10 @@ impl SurfaceRequest {
             Self::FocusGame { .. } => "FocusGame",
             Self::RememberPreference { .. } => "RememberPreference",
             Self::MoveCatalog { .. } => "MoveCatalog",
+            Self::InstallGame { .. } => "InstallGame",
+            Self::MoveInstall { .. } => "MoveInstall",
+            Self::CancelInstall { .. } => "CancelInstall",
+            Self::AnswerStreamMeanwhile { .. } => "AnswerStreamMeanwhile",
         }
     }
 }
@@ -2384,6 +2538,104 @@ mod tests {
             serde_json::to_value(&bare).unwrap(),
             json!({"id": "s", "title": "Steam", "state": {"_tag": "SignedOut", "actions": []}})
         );
+    }
+
+    /// The JSON that typeshare.toml's install wires spell (ADR 0092).
+    #[test]
+    fn install_wire() {
+        assert_eq!(
+            serde_json::to_value(SurfaceInstallHere::Offered).unwrap(),
+            json!({"_tag": "Offered"})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceInstallHere::NeedsPlugin {
+                plugin_title: "mGBA".into()
+            })
+            .unwrap(),
+            json!({"_tag": "NeedsPlugin", "pluginTitle": "mGBA"})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceInstallHere::Installing {
+                install_id: "i".into()
+            })
+            .unwrap(),
+            json!({"_tag": "Installing", "installId": "i"})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceInstallHere::Unavailable {
+                reason: SurfaceInstallBlock::NotEnoughSpace,
+                bytes: Some(4.0e9),
+            })
+            .unwrap(),
+            json!({"_tag": "Unavailable", "reason": "notEnoughSpace", "bytes": 4.0e9})
+        );
+        for (block, wire) in [
+            (SurfaceInstallBlock::NoRunner, "noRunner"),
+            (SurfaceInstallBlock::NoSource, "noSource"),
+            (SurfaceInstallBlock::NotAllowed, "notAllowed"),
+        ] {
+            assert_eq!(serde_json::to_value(block).unwrap(), json!(wire));
+        }
+        let install = SurfaceInstall {
+            id: "i".into(),
+            title: "Anguna".into(),
+            game_id: Some("g".into()),
+            state: SurfaceInstallState::Installing {
+                progress: SurfaceProgress {
+                    done: 1.0,
+                    total: Some(4.0),
+                },
+                seconds_left: Some(300.0),
+            },
+            play_when_ready: Some(SurfaceTrue),
+            stream_meanwhile: Some(SurfaceTrue),
+        };
+        let wire = json!({"id": "i", "title": "Anguna", "gameId": "g",
+            "state": {"_tag": "Installing", "progress": {"done": 1.0, "total": 4.0}, "secondsLeft": 300.0},
+            "playWhenReady": true, "streamMeanwhile": true});
+        assert_eq!(serde_json::to_value(&install).unwrap(), wire);
+        assert_eq!(serde_json::from_value::<SurfaceInstall>(wire).unwrap(), install);
+        assert_eq!(
+            serde_json::to_value(SurfaceInstallState::Waiting { bytes: None }).unwrap(),
+            json!({"_tag": "Waiting"})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceInstallState::Failed { reason: "r".into() }).unwrap(),
+            json!({"_tag": "Failed", "reason": "r"})
+        );
+        for (request, wire) in [
+            (
+                SurfaceRequest::InstallGame {
+                    game_id: "g".into(),
+                    play: true,
+                },
+                json!({"_tag": "InstallGame", "gameId": "g", "play": true}),
+            ),
+            (
+                SurfaceRequest::MoveInstall {
+                    install_id: "i".into(),
+                    index: 0,
+                },
+                json!({"_tag": "MoveInstall", "installId": "i", "index": 0}),
+            ),
+            (
+                SurfaceRequest::CancelInstall {
+                    install_id: "i".into(),
+                },
+                json!({"_tag": "CancelInstall", "installId": "i"}),
+            ),
+            (
+                SurfaceRequest::AnswerStreamMeanwhile {
+                    install_id: "i".into(),
+                    stream: false,
+                    launch_location_id: None,
+                },
+                json!({"_tag": "AnswerStreamMeanwhile", "installId": "i", "stream": false}),
+            ),
+        ] {
+            assert_eq!(serde_json::to_value(&request).unwrap(), wire);
+            assert_eq!(serde_json::from_value::<SurfaceRequest>(wire).unwrap(), request);
+        }
     }
 
     #[test]

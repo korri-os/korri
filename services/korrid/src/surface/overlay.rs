@@ -205,6 +205,7 @@ fn model_for(launch_id: &str, title: Option<String>) -> SurfaceModel {
         systems: None,
         published_at: None,
         account_sign_ins: Vec::new(),
+        installs: None,
     }
 }
 
