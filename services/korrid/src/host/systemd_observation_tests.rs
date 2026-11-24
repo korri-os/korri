@@ -100,6 +100,10 @@ impl ServiceState {
         0
     }
     #[zbus(property)]
+    fn exec_main_start_timestamp_monotonic(&self) -> u64 {
+        1
+    }
+    #[zbus(property)]
     fn status_text(&self) -> &str {
         "ready"
     }

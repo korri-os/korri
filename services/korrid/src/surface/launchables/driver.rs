@@ -688,7 +688,7 @@ impl Launchables {
         })
     }
 
-    async fn poll_local_session(self: &Arc<Self>) {
+    pub(crate) async fn poll_local_session(self: &Arc<Self>) {
         let (operation, load_operation, local_launch_id, observing) = {
             let inner = self.lock();
             let observing = matches!(

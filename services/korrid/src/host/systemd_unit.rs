@@ -1,3 +1,5 @@
+#[path = "game_audio.rs"]
+mod game_audio;
 #[path = "viewer_units.rs"]
 mod viewer_units;
 use std::{
@@ -205,6 +207,10 @@ pub trait LaunchUnitBackend: Send + Sync {
             "live hook execution unavailable",
         ))
     }
+    /// Release the exact launch's already-muted playback path.
+    fn release_audio(&self, _launch_id: &str) -> Result<(), LaunchUnitError> {
+        Ok(())
+    }
     fn exit_status(&self, _launch_id: &str) -> Result<Option<i32>, LaunchUnitError> {
         Ok(None)
     }
@@ -213,6 +219,10 @@ pub trait LaunchUnitBackend: Send + Sync {
         Ok(())
     }
 
+    /// Linux's monotonic unit start, not the end of the launch RPC.
+    fn started_at(&self, _launch_id: &str) -> Result<Option<Instant>, LaunchUnitError> {
+        Ok(None)
+    }
     fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError>;
     /// State and runner status from one native property observation.
     fn state_with_status(
@@ -1024,7 +1034,7 @@ impl SystemdLaunchUnitBackend {
         Ok(())
     }
 
-    fn unit_properties(
+    pub(super) fn unit_properties(
         &self,
         unit: &str,
         _properties: &[&str],
@@ -2310,7 +2320,7 @@ impl SystemdLaunchUnitBackend {
         error
     }
 
-    fn require_success(
+    pub(super) fn require_success(
         &self,
         program: &Path,
         arguments: &[String],
@@ -2601,8 +2611,12 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         environment: &BTreeMap<String, String>,
         sandbox: &super::systemd_unit::LaunchSandbox,
     ) -> Result<(), LaunchUnitError> {
+        let mut environment = environment.clone();
+        if sandbox.pulse_audio {
+            environment.insert("PULSE_SINK".into(), format!("korri-game-{launch_id}"));
+        }
         let arguments =
-            self.launch_arguments_in_sandbox(launch_id, configured_command, environment, sandbox)?;
+            self.launch_arguments_in_sandbox(launch_id, configured_command, &environment, sandbox)?;
         // Before-hook channels were removed when those units finished. The
         // game gets a fresh inode, never an exit value authored by a hook.
         if sandbox.plugin {
@@ -2629,8 +2643,16 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
                 )
             })?;
         }
-        self.require_success(&self.systemd_run, &arguments)
-            .map(|_| ())
+        if sandbox.pulse_audio {
+            self.prepare_audio(launch_id)?;
+        }
+        let result = self
+            .require_success(&self.systemd_run, &arguments)
+            .map(|_| ());
+        if result.is_err() && sandbox.pulse_audio {
+            let _ = self.audio_verb(launch_id, "stop");
+        }
+        result
     }
 
     fn run_hook(
@@ -2742,8 +2764,13 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         result
     }
 
+    fn release_audio(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
+        self.audio_verb(launch_id, "reload")
+    }
+
     fn cleanup_completed(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
         validate_launch_id(launch_id)?;
+        self.audio_verb(launch_id, "stop")?;
         // ADR 0083: the engine host stops after the exit sync, before the
         // session's save capture reads what it exported.
         self.steam_engine_sessions()
@@ -2786,6 +2813,47 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
                 None
             },
         )
+    }
+
+    fn started_at(&self, launch_id: &str) -> Result<Option<Instant>, LaunchUnitError> {
+        #[cfg(test)]
+        if matches!(self.observation, UnitObservation::Commands) {
+            return Ok(None);
+        }
+        let snapshot = self.unit_properties(
+            &Self::unit_name(launch_id)?,
+            &["ExecMainStartTimestampMonotonic"],
+        )?;
+        let started = snapshot
+            .values
+            .get("ExecMainStartTimestampMonotonic")
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|value| *value > 0)
+            .ok_or_else(|| {
+                LaunchUnitError::new(
+                    LaunchUnitErrorKind::Protocol,
+                    "game unit start timestamp unavailable",
+                )
+            })?;
+        let mut time = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) } != 0 {
+            return Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Failed,
+                io::Error::last_os_error().to_string(),
+            ));
+        }
+        let now = Instant::now();
+        let micros = time.tv_sec as u64 * 1_000_000 + time.tv_nsec as u64 / 1000;
+        let elapsed = micros.checked_sub(started).ok_or_else(|| {
+            LaunchUnitError::new(
+                LaunchUnitErrorKind::Protocol,
+                "game unit start is in the future",
+            )
+        })?;
+        Ok(now.checked_sub(Duration::from_micros(elapsed)))
     }
 
     fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError> {
@@ -4393,8 +4461,9 @@ KORRID_TEST_PLUGIN_EXIT_WRITER=1 KORRID_TEST_PLUGIN_EXIT_STATUS="$status" KORRID
         fs::remove_file(marker).unwrap(); // systemd collected the cleanly exited unit
         assert_eq!(
             control.status(),
-            HostSessionStatus::Completed {
-                launch_id: launched.session.launch_id
+            HostSessionStatus::Failed {
+                launch_id: launched.session.launch_id,
+                message: "The game exited before its first frame.".into(),
             }
         );
         let args = fs::read_to_string(observed).unwrap();

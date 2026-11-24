@@ -121,7 +121,10 @@ let
   # Only turned displays get a line, so a display without a transform keeps
   # the configuration it had before the field existed.
   displayTransforms = lib.concatMapStrings (
-    display: lib.optionalString (display.transform != "normal") "output ${display.name} transform ${display.transform}\n"
+    display:
+    lib.optionalString (
+      display.transform != "normal"
+    ) "output ${display.name} transform ${display.transform}\n"
   ) cfg.compositor.displays;
   deviceConfig = if cfg.deviceConfig == null then generatedDeviceConfig else cfg.deviceConfig;
   swayConfig = pkgs.writeText "korri-sway.conf" ''
@@ -129,6 +132,10 @@ let
     default_floating_border none
     hide_edge_borders both
     xwayland force
+    # New clients cannot tile beside the shell or steal its starting screen.
+    # korrid reveals only windows proven from the exact launch/shell unit PIDs.
+    for_window [all] move scratchpad
+    no_focus [all]
     seat * hide_cursor 1500
     ${lib.optionalString (!cfg.compositor.localInput.enable) ''
       input "*" events disabled
@@ -519,7 +526,9 @@ in
       }
       {
         assertion = lib.all (
-          display: touchPathParts display.touch != null && builtins.stringLength (builtins.elemAt (touchPathParts display.touch) 2) <= 4
+          display:
+          touchPathParts display.touch != null
+          && builtins.stringLength (builtins.elemAt (touchPathParts display.touch) 2) <= 4
         ) touchDisplays;
         message = "services.korriLinuxHost compositor display touch must be an I2C touch controller's devicetree path, [/parent]/i2c@<controller>/touchscreen@<address>.";
       }

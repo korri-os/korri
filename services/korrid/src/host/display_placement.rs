@@ -365,6 +365,9 @@ pub(crate) fn game_commands(
         .filter(|command| !command.ends_with(" off"))
         .cloned()
         .collect();
+    commands.push(format!(
+        "[con_id={node}] move container to workspace current"
+    ));
     commands.push(format!("[con_id={node}] fullscreen disable"));
     commands.push(format!("[con_id={node}] floating disable"));
     commands.push(format!(
@@ -582,6 +585,7 @@ pub(crate) fn pane_window_commands(
     for (pane, node) in windows {
         if panes.panes.iter().skip(1).any(|p| *p == pane) {
             commands.extend([
+                format!("[con_id={node}] move container to workspace current"),
                 format!("[con_id={node}] fullscreen disable"),
                 format!("[con_id={node}] floating disable"),
                 format!("[con_id={node}] move container to output {lower}"),
@@ -725,6 +729,7 @@ pub(crate) fn place_surface_timed(
         // output even when the previous shell presentation was a free-display
         // overlay. Focus before the blocking unused-output power-off tail.
         commands.extend([
+            format!("[con_id={shell}] move container to workspace current"),
             format!("[con_id={shell}] fullscreen disable"),
             format!("[con_id={shell}] floating disable"),
             format!("[con_id={shell}] move container to output {}", origin.name),
@@ -742,6 +747,7 @@ pub(crate) fn place_surface_timed(
         );
     } else {
         commands.extend([
+            format!("[con_id={shell}] move container to workspace current"),
             format!("[con_id={shell}] fullscreen disable"),
             format!("[con_id={shell}] floating enable"),
             format!(
@@ -1084,7 +1090,7 @@ mod tests {
                 );
                 if count == 2 && restores {
                     assert!(batches.lines().nth(1).unwrap().starts_with(
-                        "output DSI-2 mode 1920x1080@60Hz; [con_id=10] fullscreen disable"
+                        "output DSI-2 mode 1920x1080@60Hz; [con_id=10] move container to workspace current; [con_id=10] fullscreen disable"
                     ));
                 }
             }
@@ -1284,7 +1290,7 @@ fi
             batches.lines().next().unwrap(),
             "output DSI-2 power on; output DSI-1 power on"
         );
-        assert_eq!(batches.lines().nth(1).unwrap(), "[con_id=10] fullscreen disable; [con_id=10] floating disable; [con_id=10] move container to output DSI-2; [con_id=10] fullscreen enable; [con_id=11] fullscreen disable; [con_id=11] floating disable; [con_id=11] move container to output DSI-1; [con_id=11] fullscreen enable; [con_id=10] focus");
+        assert_eq!(batches.lines().nth(1).unwrap(), "[con_id=10] move container to workspace current; [con_id=10] fullscreen disable; [con_id=10] floating disable; [con_id=10] move container to output DSI-2; [con_id=10] fullscreen enable; [con_id=11] move container to workspace current; [con_id=11] fullscreen disable; [con_id=11] floating disable; [con_id=11] move container to output DSI-1; [con_id=11] fullscreen enable; [con_id=10] focus");
         assert!(!batches.contains("power off"), "{batches}");
         // The pane window does not count as the shell's own window.
         assert_eq!(
@@ -1316,7 +1322,7 @@ fi
         let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
         assert_eq!(batches.lines().count(), 2, "{batches}");
         assert_eq!(batches.lines().next().unwrap(), "output DSI-2 power on");
-        assert_eq!(batches.lines().nth(1).unwrap(), "[con_id=10] fullscreen disable; [con_id=10] floating disable; [con_id=10] move container to output DSI-2; [con_id=10] fullscreen enable; [con_id=10] focus; output DSI-1 power off");
+        assert_eq!(batches.lines().nth(1).unwrap(), "[con_id=10] move container to workspace current; [con_id=10] fullscreen disable; [con_id=10] floating disable; [con_id=10] move container to output DSI-2; [con_id=10] fullscreen enable; [con_id=10] focus; output DSI-1 power off");
         assert!(!batches.contains(" global"), "{batches}");
         assert!(!batches.contains("resize set"), "{batches}");
     }
@@ -1423,7 +1429,7 @@ fi
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(dir.path().join("batches")).unwrap(),
-            "output DSI-2 power on; [con_id=20] fullscreen disable; [con_id=20] floating disable; [con_id=20] move container to output DSI-2; [con_id=20] fullscreen enable; [con_id=20] opacity 1; [con_id=20] focus; output DSI-1 power off\n");
+            "output DSI-2 power on; [con_id=20] move container to workspace current; [con_id=20] fullscreen disable; [con_id=20] floating disable; [con_id=20] move container to output DSI-2; [con_id=20] fullscreen enable; [con_id=20] opacity 1; [con_id=20] focus; output DSI-1 power off\n");
     }
 
     #[test]
@@ -1579,6 +1585,7 @@ fi
             vec![
                 "output DSI-2 power on",
                 "output DSI-1 power on",
+                "[con_id=20] move container to workspace current",
                 "[con_id=20] fullscreen disable",
                 "[con_id=20] floating disable",
                 "[con_id=20] move container to output DSI-2",
@@ -1586,6 +1593,7 @@ fi
                 "[con_id=20] opacity 1",
                 "[con_id=20] focus",
                 "output DSI-2 power on",
+                "[con_id=20] move container to workspace current",
                 "[con_id=20] fullscreen disable",
                 "[con_id=20] floating disable",
                 "[con_id=20] move container to output DSI-2",

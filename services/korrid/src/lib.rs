@@ -757,14 +757,15 @@ pub enum FocusOwnership {
     Other,
 }
 
-/// Initial window handoff history, separate from current focus ownership.
+/// Initial first-frame history, separate from current focus ownership.
 #[typeshare]
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum InitialHandoff {
-    /// This daemon accepted the launch but has not observed exact screen ownership.
+    /// This daemon accepted the launch and is waiting for Sway's first new window.
     Waiting,
-    /// Exact compositor ownership was observed in this daemon; later loss does not reset it.
+    /// Sway accepted a first frame, or the 30 s limit released this launch.
+    /// Later focus loss does not reset it.
     Observed,
     /// An existing live unit has no initial-startup history in this runtime.
     /// Journal reconstruction must not manufacture a new startup or past focus proof.
@@ -6213,6 +6214,12 @@ fn surface_hub_for(
     let network = surface_host.network.clone();
     let korrid = surface::korrid::Korrid::new(send)
         .with_idle_power(surface_host.idle_power.clone())
+        .with_session_changes(match &surface_host.mode {
+            ServerMode::Host(runtime) => runtime
+                .session_changes()
+                .map(|receiver| Arc::new(move || receiver.clone()) as surface::korrid::Changes),
+            _ => None,
+        })
         .with_network_changes(Arc::new(move || network.changes()))
         .with_onboarding_changes(Arc::new(onboarding::changes));
     // ADR 0094: korrid reads the battery itself on Linux. The Android app's

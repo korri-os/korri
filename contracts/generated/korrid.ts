@@ -221,11 +221,14 @@ export interface StreamPlayer {
 	label: string;
 }
 
-/** Initial window handoff history, separate from current focus ownership. */
+/** Initial first-frame history, separate from current focus ownership. */
 export enum InitialHandoff {
-	/** This daemon accepted the launch but has not observed exact screen ownership. */
+	/** This daemon accepted the launch and is waiting for Sway's first new window. */
 	Waiting = "waiting",
-	/** Exact compositor ownership was observed in this daemon; later loss does not reset it. */
+	/**
+	 * Sway accepted a first frame, or the 30 s limit released this launch.
+	 * Later focus loss does not reset it.
+	 */
 	Observed = "observed",
 	/**
 	 * An existing live unit has no initial-startup history in this runtime.

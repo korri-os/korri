@@ -180,6 +180,8 @@ assert lib.hasInfix "workspace \"korri:game:active\"\noutput DSI-2 transform 90\
 );
 assert !(lib.hasInfix "output DSI-1 transform" (swayText turned));
 assert !(lib.hasInfix "transform" (swayText touchUnmapped));
+assert lib.hasInfix "for_window [all] move scratchpad" (swayText touchUnmapped);
+assert lib.hasInfix "no_focus [all]" (swayText touchUnmapped);
 assert
   map (display: display.transform) (displayFacts turned) == [
     "90"

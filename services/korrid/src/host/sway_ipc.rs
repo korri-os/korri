@@ -78,6 +78,34 @@ impl SwayIpc {
         Ok(socket.into())
     }
 
+    /// Events have their own connection; they must never consume command replies.
+    pub(super) fn subscribe_windows(&self) -> io::Result<SwayWindowEvents> {
+        let deadline = Instant::now() + self.timeout;
+        let stamp = SocketStamp::read(&self.socket)?;
+        let mut stream = self.connect(deadline)?;
+        if SocketStamp::read(&self.socket)? != stamp {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Sway socket changed during subscription",
+            ));
+        }
+        let reply = exchange(&mut stream, deadline, 2, br#"["window"]"#)?;
+        #[derive(serde::Deserialize)]
+        struct Reply {
+            success: bool,
+        }
+        let reply: Reply = serde_json::from_str(&reply)?;
+        if !reply.success {
+            return Err(io::Error::other("Sway refused window subscription"));
+        }
+        Ok(SwayWindowEvents {
+            stream,
+            timeout: self.timeout,
+            socket: self.socket.clone(),
+            stamp,
+        })
+    }
+
     pub(super) fn request(&self, kind: u32, payload: &[u8]) -> io::Result<String> {
         if payload.len() > MAX_PAYLOAD {
             return Err(io::Error::new(
@@ -120,6 +148,42 @@ impl SwayIpc {
             *connection = None;
         }
         result
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct SwayWindowEvents {
+    stream: UnixStream,
+    timeout: Duration,
+    socket: PathBuf,
+    stamp: SocketStamp,
+}
+
+impl SwayWindowEvents {
+    pub(super) fn next(&mut self, wait: Duration) -> io::Result<Option<String>> {
+        use std::os::fd::AsRawFd;
+        if SocketStamp::read(&self.socket)? != self.stamp {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Sway socket authority changed",
+            ));
+        }
+        let mut poll = libc::pollfd {
+            fd: self.stream.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let ready =
+            unsafe { libc::poll(&mut poll, 1, wait.as_millis().min(i32::MAX as u128) as i32) };
+        if ready < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if ready == 0 {
+            return Ok(None);
+        }
+        // Once a frame begins, bound the whole read. An incomplete frame retires
+        // this subscription rather than interpreting its tail as a new header.
+        read_frame(&mut self.stream, Instant::now() + self.timeout, 0x8000_0003).map(Some)
     }
 }
 
@@ -174,6 +238,10 @@ fn exchange(
             Err(error) => return Err(error),
         }
     }
+    read_frame(stream, deadline, kind)
+}
+
+fn read_frame(stream: &mut UnixStream, deadline: Instant, kind: u32) -> io::Result<String> {
     let mut header = [0; 14];
     read_exact(stream, &mut header, deadline)?;
     let length = u32::from_le_bytes(header[6..10].try_into().expect("length field")) as usize;
@@ -207,6 +275,35 @@ mod tests {
             .unwrap();
         stream.write_all(&kind.to_le_bytes()).unwrap();
         stream.write_all(bytes).unwrap();
+    }
+
+    #[test]
+    fn window_subscription_uses_a_separate_socket_and_bounded_event_frames() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sway.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut events, _) = listener.accept().unwrap();
+            reply(&mut events, 2, br#"{"success":true}"#);
+            let event = br#"{"change":"new","container":{"id":3,"pid":9100}}"#;
+            events.write_all(MAGIC).unwrap();
+            events
+                .write_all(&(event.len() as u32).to_le_bytes())
+                .unwrap();
+            events.write_all(&0x8000_0003u32.to_le_bytes()).unwrap();
+            events.write_all(event).unwrap();
+            let (mut requests, _) = listener.accept().unwrap();
+            reply(&mut requests, 4, b"{}");
+        });
+        let control = SwayIpc::new(path, Duration::from_secs(1)).unwrap();
+        let mut events = control.subscribe_windows().unwrap();
+        assert!(events
+            .next(Duration::from_secs(1))
+            .unwrap()
+            .unwrap()
+            .contains("9100"));
+        assert_eq!(control.request(4, b"").unwrap(), "{}");
+        server.join().unwrap();
     }
 
     #[test]

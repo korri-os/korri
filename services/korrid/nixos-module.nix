@@ -14,6 +14,14 @@ let
       launcherPackage = null;
     };
   system = pkgs.stdenv.hostPlatform.system;
+  gameAudio = pkgs.writeShellApplication {
+    name = "korri-game-audio";
+    runtimeInputs = [
+      pkgs.pulseaudio
+      pkgs.coreutils
+    ];
+    text = builtins.readFile ./game-audio.sh;
+  };
   serviceUser = "korrid";
   serviceGroup = "korrid";
   # systemd 261 uses stop/start for FreezeUnit/ThawUnit. Only this message
@@ -734,6 +742,7 @@ in
         KORRID_UPSTREAMS = nativePeersJson;
         KORRID_LIMITS_SOCKET = cfg.limitsSocket;
         KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
+        KORRID_GAME_AUDIO_HELPER = "${gameAudio}/bin/korri-game-audio";
         KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
         # A lifecycle viewer's unit grants korrid search access to its runtime
         # directory with this (linux_viewer/selection.rs, ADR 0060).
@@ -883,6 +892,16 @@ in
             subject.user == "korrid" &&
             action.lookup("polkit.message") != "${freezerMessage}" &&
             typeof unit == "string" && /^korri-hook-[0-9a-f]{32}-[0-9]{1,3}\.service$/.test(unit)) {
+          return polkit.Result.YES;
+        }
+      });
+      // First-frame audio uses only an exact launch's unprivileged sink unit.
+      polkit.addRule(function(action, subject) {
+        var unit = action.lookup("unit");
+        if (action.id == "org.freedesktop.systemd1.manage-units" &&
+            subject.user == "korrid" &&
+            action.lookup("polkit.message") != "${freezerMessage}" &&
+            typeof unit == "string" && /^korri-game-audio-[0-9a-f]{32}\.service$/.test(unit)) {
           return polkit.Result.YES;
         }
       });

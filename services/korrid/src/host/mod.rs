@@ -1786,8 +1786,15 @@ impl HostRuntime {
         .map_err(host_worker_failure)?
     }
 
+    pub(crate) fn session_changes(&self) -> Option<tokio::sync::watch::Receiver<()>> {
+        self.control().ok().map(|control| control.session_changes())
+    }
+
     /// Observe session completion and input focus even without a shell freezer.
     pub fn spawn_shell_watch(&self) {
+        if let Ok(control) = self.control() {
+            control.spawn_first_frame_watch();
+        }
         if let Some(watch) = self.shell_watch(SHELL_WATCH_INTERVAL) {
             tokio::spawn(watch);
         }
@@ -2524,9 +2531,13 @@ esac
         fixture.state("inactive", 1, 0);
         let completed = fixture.status().await;
         assert_eq!(
-            completed["outcome"]["payload"]["code"], "SessionCompleted",
+            completed["outcome"]["payload"]["code"], "HostLaunchFailed",
             "{completed}"
         );
+        assert!(completed["outcome"]["payload"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("before its first frame"));
     }
 
     #[tokio::test]

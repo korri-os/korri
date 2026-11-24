@@ -10,6 +10,9 @@ use std::{collections::BTreeSet, path::PathBuf, sync::Arc, time::Duration};
 /// behind a trait means session tests never depend on a live compositor.
 pub(crate) trait CompositorControl: Send + Sync + std::fmt::Debug {
     fn tree(&self) -> Result<String, String>;
+    fn subscribe_windows(&self) -> Result<Box<dyn CompositorEvents>, String> {
+        Err("window subscription unavailable".into())
+    }
     fn outputs(&self) -> Result<String, String> {
         Err("output observation unavailable".into())
     }
@@ -20,6 +23,46 @@ pub(crate) trait CompositorControl: Send + Sync + std::fmt::Debug {
     fn command(&self, _command: &str) -> Result<(), String> {
         Err("compositor placement unavailable".into())
     }
+}
+
+pub(crate) trait CompositorEvents: Send {
+    fn next(&mut self, wait: Duration) -> Result<Option<String>, String>;
+}
+
+impl CompositorEvents for super::sway_ipc::SwayWindowEvents {
+    fn next(&mut self, wait: Duration) -> Result<Option<String>, String> {
+        self.next(wait).map_err(|error| error.to_string())
+    }
+}
+
+/// Only a new window of the exact launch can end its first-frame wait.
+/// PID membership is supplied by the existing unit/cgroup owner, not metadata.
+pub(crate) fn first_frame_window(
+    event: &str,
+    launch_pids: &BTreeSet<i32>,
+    shell_pids: &BTreeSet<i32>,
+) -> Result<Option<FocusCandidate>, String> {
+    #[derive(Deserialize)]
+    struct Event {
+        change: String,
+        container: TreeNode,
+    }
+    let event: Event = serde_json::from_str(event).map_err(|error| error.to_string())?;
+    Ok((event.change == "new")
+        .then_some(event.container)
+        .and_then(|node| {
+            node.pid
+                .filter(|pid| {
+                    node.id > 0
+                        && *pid > 0
+                        && launch_pids.contains(pid)
+                        && !shell_pids.contains(pid)
+                })
+                .map(|pid| FocusCandidate {
+                    node_id: node.id,
+                    pid,
+                })
+        }))
 }
 
 /// Native Sway IPC. Clones share one bounded request/reply connection.
@@ -40,11 +83,17 @@ impl SwayCompositorControl {
     /// RG353M's screen for a stream. Focusing the shell later leaves
     /// fullscreen again, so each return to the viewer requests it anew.
     pub(crate) fn focus_fullscreen(&self, node_id: i64) -> Result<(), String> {
-        self.command(&format!("[con_id={node_id}] focus, fullscreen enable"))
+        self.command(&format!("[con_id={node_id}] move container to workspace current; [con_id={node_id}] fullscreen enable; [con_id={node_id}] focus"))
     }
 }
 
 impl CompositorControl for SwayCompositorControl {
+    fn subscribe_windows(&self) -> Result<Box<dyn CompositorEvents>, String> {
+        self.ipc
+            .subscribe_windows()
+            .map(|events| Box::new(events) as Box<dyn CompositorEvents>)
+            .map_err(|error| error.to_string())
+    }
     fn outputs(&self) -> Result<String, String> {
         self.ipc.request(3, b"").map_err(|error| error.to_string())
     }
@@ -330,7 +379,9 @@ pub(crate) fn present_shell_window(
     let id = shell_node(&control.tree()?, pids)?;
     // A refused fullscreen leaves the two windows side by side, but input
     // still reaches the shell: report it, and let the proven focus decide.
-    if let Err(reason) = control.command(&format!("[con_id={id}] fullscreen enable")) {
+    if let Err(reason) = control.command(&format!(
+        "[con_id={id}] move container to workspace current; [con_id={id}] fullscreen enable"
+    )) {
         eprintln!("korrid: ShellFullscreenFailed {{ node: {id}, reason: {reason} }}");
     }
     control.focus(id)?;
@@ -405,7 +456,7 @@ fn front_launch_window(
             let node = candidate.node_id;
             // As in `present_shell_window`: only the proven focus decides.
             if fullscreen {
-                if let Err(reason) = control.command(&format!("[con_id={node}] fullscreen enable"))
+                if let Err(reason) = control.command(&format!("[con_id={node}] move container to workspace current; [con_id={node}] fullscreen enable"))
                 {
                     eprintln!("korrid: GameFullscreenFailed {{ node: {node}, reason: {reason} }}");
                 }
@@ -448,6 +499,33 @@ mod tests {
                 None => Ok(()),
             }
         }
+    }
+
+    #[test]
+    fn first_frame_matches_only_new_windows_of_the_exact_launch() {
+        for (event, matches) in [
+            (r#"{"change":"new","container":{"id":3,"pid":9100}}"#, true),
+            (
+                r#"{"change":"focus","container":{"id":3,"pid":9100}}"#,
+                false,
+            ),
+            (r#"{"change":"new","container":{"id":3,"pid":9200}}"#, false),
+            (r#"{"change":"new","container":{"id":3,"pid":4100}}"#, false),
+            (
+                r#"{"change":"new","container":{"id":3,"app_id":"game"}}"#,
+                false,
+            ),
+            (r#"{"change":"new","container":{"id":0,"pid":9100}}"#, false),
+        ] {
+            assert_eq!(
+                first_frame_window(event, &pids(&[9100, 4100]), &pids(&[4100]))
+                    .unwrap()
+                    .is_some(),
+                matches,
+                "{event}"
+            );
+        }
+        assert!(first_frame_window("bad", &pids(&[9100]), &pids(&[])).is_err());
     }
 
     #[test]

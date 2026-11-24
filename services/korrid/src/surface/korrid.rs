@@ -69,6 +69,7 @@ pub struct Korrid {
     pub(crate) network_changes: Option<Changes>,
     /// ADR 0094: korrid's own changes of the setup marker.
     pub(crate) onboarding_changes: Option<Changes>,
+    pub(crate) session_changes: Option<Changes>,
     /// ADR 0094: this device's battery, where korrid reads one.
     pub(crate) battery: Option<Battery>,
     /// ADR 0089: the generic account host's facts for plugin sign-ins.
@@ -166,6 +167,7 @@ impl Korrid {
             steam_engine: None,
             network_changes: None,
             onboarding_changes: None,
+            session_changes: None,
             battery: None,
             idle_power: None,
             plugin_accounts: None,
@@ -178,6 +180,11 @@ impl Korrid {
         access: Arc<dyn super::installs::InstallsAccess>,
     ) -> Self {
         self.installs = Some(access);
+        self
+    }
+
+    pub(crate) fn with_session_changes(mut self, changes: Option<Changes>) -> Self {
+        self.session_changes = changes;
         self
     }
 

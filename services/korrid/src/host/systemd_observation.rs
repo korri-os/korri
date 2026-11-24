@@ -239,6 +239,14 @@ impl Bus {
                 .clone(),
         );
         values.insert("MainPID".into(), main_pid.to_string());
+        values.insert(
+            "ExecMainStartTimestampMonotonic".into(),
+            entry
+                .service
+                .get_property::<u64>("ExecMainStartTimestampMonotonic")
+                .await?
+                .to_string(),
+        );
         let environment = entry
             .service
             .get_property::<Vec<String>>("Environment")

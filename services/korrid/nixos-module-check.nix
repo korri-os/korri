@@ -299,8 +299,14 @@ assert service.serviceConfig.User == "korrid";
 assert service.serviceConfig.LimitCORE == 0;
 assert service.serviceConfig.TimeoutStopSec >= 120;
 assert service.serviceConfig.User != "korri";
+assert lib.hasPrefix "/nix/store/" service.environment.KORRID_GAME_AUDIO_HELPER;
+assert lib.hasSuffix "/bin/korri-game-audio" service.environment.KORRID_GAME_AUDIO_HELPER;
+assert lib.hasInfix "korri-game-audio-" enabled.config.security.polkit.extraConfig;
 assert
-  builtins.removeAttrs service.environment [ "PATH" ] == {
+  builtins.removeAttrs service.environment [
+    "PATH"
+    "KORRID_GAME_AUDIO_HELPER"
+  ] == {
     HOSTNAME = enabled.config.networking.hostName;
     KORRID_ADDRESS = "127.0.0.1:43117";
     KORRID_CERTIFICATE_CONTROL_DIRECTORY = "/run/korri-certificate-control";

@@ -1,3 +1,5 @@
+#[path = "first_frame.rs"]
+mod first_frame;
 #[path = "session_rights.rs"]
 mod session_rights;
 #[path = "stream_players.rs"]
@@ -36,6 +38,38 @@ use super::systemd_unit::{
     LaunchUnitBackend, LaunchUnitError, LaunchUnitErrorKind, LaunchUnitState, ShellUnit,
     RUNNER_ID_ENV,
 };
+
+/// Runtime-only first-frame authority. Timing and its end cause live with the
+/// phase; the wire still has exactly one `initial_handoff` field.
+#[derive(Clone, Copy, Debug)]
+enum FirstFrameHandoff {
+    Waiting { since: Instant },
+    Observed { ended_by: HandoffEnd },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HandoffEnd {
+    Signal,
+    TimeLimit,
+}
+
+impl HandoffEnd {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Signal => "signal",
+            Self::TimeLimit => "time_limit",
+        }
+    }
+}
+
+impl FirstFrameHandoff {
+    fn phase(self) -> InitialHandoff {
+        match self {
+            Self::Waiting { .. } => InitialHandoff::Waiting,
+            Self::Observed { .. } => InitialHandoff::Observed,
+        }
+    }
+}
 
 /// The exact launch's immutable declaration and monotonic runner position.
 #[derive(Clone, Debug)]
@@ -420,11 +454,9 @@ pub struct HostSessionControl {
     recovered_overlay_intent: Arc<Mutex<Option<String>>>,
     /// One process-local focus observation for the accepted exact launch.
     /// The journal deliberately contains no historical screen ownership.
-    initial_handoff: Arc<Mutex<Option<(String, InitialHandoff)>>>,
+    initial_handoff: Arc<Mutex<Option<(String, FirstFrameHandoff)>>>,
     runner_steps: Arc<Mutex<Option<(String, RunnerProgress)>>>,
-    /// When the exact launch's unit started, until its window is observed.
-    /// Feeds the LaunchHandoff journal line.
-    handoff_since: Arc<Mutex<Option<(String, std::time::Instant)>>>,
+    session_changes: tokio::sync::watch::Sender<()>,
     /// Required to prove that an exact launch owns focus before Game input can
     /// return. Absence is a product-path focus failure, never implicit success.
     compositor: Option<Arc<dyn CompositorControl>>,
@@ -498,7 +530,7 @@ impl HostSessionControl {
             recovered_overlay_intent: Arc::new(Mutex::new(None)),
             initial_handoff: Arc::new(Mutex::new(None)),
             runner_steps: Arc::new(Mutex::new(None)),
-            handoff_since: Arc::new(Mutex::new(None)),
+            session_changes: tokio::sync::watch::channel(()).0,
             compositor: None,
             placement_applied: Arc::new(Mutex::new(None)),
             live_shape: Arc::new(Mutex::new(None)),
@@ -703,10 +735,27 @@ impl HostSessionControl {
             return Err("input coordination is fenced; run korri end after the exact unit ends; restart korrid if the input transport was lost".into());
         }
         let freeze = matches!(state, ActiveState::Running { .. })
+            && self.initial_handoff_for(state) != Some(InitialHandoff::Waiting)
             && ownership == Some(FocusOwnership::Launch);
 
+        let timed_out = ownership.is_none()
+            && self
+                .initial_handoff
+                .lock()
+                .expect("handoff mutex poisoned")
+                .as_ref()
+                .is_some_and(|(_, phase)| {
+                    matches!(
+                        phase,
+                        FirstFrameHandoff::Observed {
+                            ended_by: HandoffEnd::TimeLimit
+                        }
+                    )
+                });
         let route = match state {
-            ActiveState::Running { launch_id, .. } if freeze => Some(launch_id.as_str()),
+            ActiveState::Running { launch_id, .. } if freeze || timed_out => {
+                Some(launch_id.as_str())
+            }
             _ => None,
         };
         let Some(shell) = &self.shell else {
@@ -720,6 +769,14 @@ impl HostSessionControl {
         let unknown = *shell.applied.lock().unwrap_or_else(PoisonError::into_inner)
             == ShellFreezerState::Unknown;
         if !freeze {
+            if timed_out && route.is_some() {
+                // The limit releases input even if there is no window to
+                // focus. Keep model delivery live, but do not also navigate
+                // the shell or reset the game's route on each observation.
+                self.thaw_shell_unit()?;
+                self.retire_native()?;
+                return self.input_seats.route(route);
+            }
             return self.thaw_shell();
         }
         if unknown {
@@ -928,20 +985,19 @@ impl HostSessionControl {
             .window_pids(launch_id)
             .map_err(|error| error.message)?;
         let excluded = self.shell_pids()?;
-        let waiting = self
-            .initial_handoff
-            .lock()
-            .expect("initial handoff mutex poisoned")
-            .as_ref()
-            .is_some_and(|(id, phase)| id == launch_id && *phase == InitialHandoff::Waiting);
-        if waiting {
-            let _ = self.ensure_display_placement(launch_id, false, &pids, &excluded);
-        }
         let tree = compositor.tree()?;
         let ownership = focused_ownership(&tree, &pids, &excluded)?;
-        if ownership == FocusOwnership::Launch {
+        if ownership == FocusOwnership::Launch
+            && !self
+                .initial_handoff
+                .lock()
+                .expect("handoff mutex poisoned")
+                .as_ref()
+                .is_some_and(|(exact, phase)| {
+                    exact == launch_id && phase.phase() == InitialHandoff::Waiting
+                })
+        {
             let _ = self.ensure_display_placement(launch_id, false, &pids, &excluded);
-            self.record_initial_handoff(launch_id);
         }
         Ok(ownership)
     }
@@ -959,24 +1015,36 @@ impl HostSessionControl {
         };
     }
 
-    fn record_initial_handoff(&self, launch_id: &str) {
+    fn record_initial_handoff(
+        &self,
+        launch_id: &str,
+        reason: HandoffEnd,
+        now: Instant,
+    ) -> Result<(), String> {
         let mut handoff = self
             .initial_handoff
             .lock()
             .expect("initial handoff mutex poisoned");
-        if let Some((exact, phase)) = handoff.as_mut() {
-            if exact == launch_id {
-                *phase = InitialHandoff::Observed;
-            }
-        }
-        let since = self
-            .handoff_since
-            .lock()
-            .expect("handoff mutex poisoned")
-            .take_if(|(exact, _)| exact == launch_id);
-        if let Some((_, since)) = since {
-            eprintln!("{}", handoff_line(launch_id, since.elapsed()));
-        }
+        let Some((exact, phase)) = handoff.as_mut().filter(|(exact, _)| exact == launch_id) else {
+            return Ok(());
+        };
+        let FirstFrameHandoff::Waiting { since } = *phase else {
+            return Ok(());
+        };
+        self.backend
+            .release_audio(exact)
+            .map_err(|error| error.message)?;
+        *phase = FirstFrameHandoff::Observed { ended_by: reason };
+        eprintln!(
+            "{}",
+            handoff_line(
+                launch_id,
+                now.saturating_duration_since(since),
+                reason.name()
+            )
+        );
+        self.session_changes.send_replace(());
+        Ok(())
     }
 
     fn retire_initial_handoff(&self, state: &ActiveState) {
@@ -1001,7 +1069,7 @@ impl HostSessionControl {
         self.runner_steps.lock().expect("runner steps poisoned").take_if(|(exact, _)| {
             matches!(state, ActiveState::NoActive)
                 || matches!(state, ActiveState::Completed { launch_id } | ActiveState::Failed { launch_id, .. } if launch_id == exact)
-                || handoff.as_ref().is_some_and(|(id, phase)| id == exact && *phase == InitialHandoff::Observed)
+                || handoff.as_ref().is_some_and(|(id, phase)| id == exact && phase.phase() == InitialHandoff::Observed)
         });
     }
 
@@ -1018,7 +1086,7 @@ impl HostSessionControl {
             .lock()
             .expect("initial handoff mutex poisoned");
         match handoff.as_ref() {
-            Some((launch_id, phase)) if launch_id == exact => Some(*phase),
+            Some((launch_id, phase)) if launch_id == exact => Some(phase.phase()),
             _ => {
                 handoff.take();
                 Some(InitialHandoff::Recovered)
@@ -1706,11 +1774,6 @@ impl HostSessionControl {
             Ok(None) => focus_launch_window(compositor.as_ref(), &pids, &excluded),
             Err(reason) => FocusOutcome::Failed(reason),
         };
-        // Focused is returned only after the compositor tree proves exact
-        // ownership, never from the focus command's acknowledgement alone.
-        if matches!(outcome, FocusOutcome::Focused(_)) {
-            self.record_initial_handoff(launch_id);
-        }
         Some(outcome)
     }
 
@@ -1723,6 +1786,10 @@ impl HostSessionControl {
             }
             Some(FocusOutcome::Failed(message)) => Some(message),
         }
+    }
+
+    pub(crate) fn session_changes(&self) -> tokio::sync::watch::Receiver<()> {
+        self.session_changes.subscribe()
     }
 
     pub(crate) fn play_log(&self) -> &PlayLogStore {
@@ -2863,6 +2930,7 @@ impl HostSessionControl {
                 ));
             }
         }
+        let launch_requested = Instant::now();
         if let Err(error) = self.backend.launch(
             &launch_id,
             configured_command,
@@ -2909,6 +2977,13 @@ impl HostSessionControl {
                 }
             }
         }
+        let unit_started = match self.backend.started_at(&launch_id) {
+            Ok(since) => since.unwrap_or(launch_requested),
+            Err(error) => {
+                *state = ActiveState::RecoveryBlocked;
+                return Err(failure("HostLaunchFailed", error.message));
+            }
+        };
         if let Some(limits) = limits {
             if let Some(warning) = limits.apply(&self.limits_client, &launch_id) {
                 warnings.push(warning);
@@ -2941,10 +3016,12 @@ impl HostSessionControl {
                 *self
                     .initial_handoff
                     .lock()
-                    .expect("initial handoff mutex poisoned") =
-                    Some((launch_id.clone(), InitialHandoff::Waiting));
-                *self.handoff_since.lock().expect("handoff mutex poisoned") =
-                    Some((launch_id.clone(), std::time::Instant::now()));
+                    .expect("initial handoff mutex poisoned") = Some((
+                    launch_id.clone(),
+                    FirstFrameHandoff::Waiting {
+                        since: unit_started,
+                    },
+                ));
                 *state = active_from_observed(observed, launch_id.clone(), Some(game_id.into()));
                 if let Err(message) = self.reconcile_shell(&state) {
                     let _ = self.record_focus_failure(
@@ -2964,10 +3041,12 @@ impl HostSessionControl {
                 *self
                     .initial_handoff
                     .lock()
-                    .expect("initial handoff mutex poisoned") =
-                    Some((launch_id.clone(), InitialHandoff::Waiting));
-                *self.handoff_since.lock().expect("handoff mutex poisoned") =
-                    Some((launch_id.clone(), std::time::Instant::now()));
+                    .expect("initial handoff mutex poisoned") = Some((
+                    launch_id.clone(),
+                    FirstFrameHandoff::Waiting {
+                        since: unit_started,
+                    },
+                ));
                 let _ = seat_lease.stop(&launch_id);
                 *state = ActiveState::Stopping {
                     launch_id,
@@ -3158,9 +3237,19 @@ impl HostSessionControl {
                     };
                 }
                 Ok(LaunchUnitState::Completed) => {
+                    let before_first_frame = self.initial_handoff_for(state)
+                        == Some(InitialHandoff::Waiting)
+                        && !matches!(state, ActiveState::Stopping { .. });
                     if self.complete_active().is_ok() {
-                        *state = ActiveState::Completed {
-                            launch_id: launch_id.clone(),
+                        *state = if before_first_frame {
+                            ActiveState::Failed {
+                                launch_id: launch_id.clone(),
+                                message: "The game exited before its first frame.".into(),
+                            }
+                        } else {
+                            ActiveState::Completed {
+                                launch_id: launch_id.clone(),
+                            }
                         };
                     } else {
                         *state = ActiveState::RecoveryBlocked;
@@ -4175,12 +4264,10 @@ impl HostSessionControl {
 /// a freezer transition is tracked as `Frozen`: its processes may not be
 /// scheduled, and the next freeze or thaw request re-reads the unit before
 /// acting.
-/// From the exact launch's unit start to the first compositor observation of
-/// its window owning focus. korrid sees the window, not a presented frame,
-/// and observes it on status reads and the shell watch, about once a second.
-fn handoff_line(launch_id: &str, elapsed: std::time::Duration) -> String {
+/// ADR 0098: the first new window is Sway accepting this launch's first frame.
+fn handoff_line(launch_id: &str, elapsed: std::time::Duration, reason: &str) -> String {
     format!(
-        "<6>korrid: LaunchHandoff {{ launch_id: {launch_id}, unit_start_to_window_ms: {} }}",
+        "<6>korrid: LaunchHandoff {{ launch_id: {launch_id}, unit_start_to_first_frame_ms: {}, ended_by: {reason} }}",
         elapsed.as_millis()
     )
 }
@@ -4781,10 +4868,259 @@ mod tests {
     }
 
     #[test]
+    fn first_frame_event_alone_releases_the_exact_launch_and_input() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let shell = Arc::new(RecordingShellUnit::default());
+        let control = shell_control(
+            root.path(),
+            backend.clone(),
+            compositor.clone(),
+            shell.clone(),
+        );
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.status();
+        assert!(!shell.frozen(), "status cannot trigger the first frame");
+        for event in [
+            r#"{"change":"focus","container":{"id":3,"pid":9100}}"#,
+            r#"{"change":"new","container":{"id":3,"pid":9200}}"#,
+        ] {
+            control.observe_first_frame(Some(event), Instant::now());
+            assert!(!shell.frozen());
+        }
+        control.observe_first_frame(
+            Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+            Instant::now(),
+        );
+        assert!(shell.frozen());
+        assert_eq!(backend.state.lock().unwrap().audio_released, [id.clone()]);
+        control.observe_first_frame(
+            Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+            Instant::now(),
+        );
+        assert_eq!(backend.state.lock().unwrap().audio_released, [id]);
+        assert_eq!(
+            control.initial_handoff_for(&control.lock_state()),
+            Some(InitialHandoff::Observed)
+        );
+    }
+
+    #[test]
+    fn first_frame_drops_local_and_sunshine_presses_without_replaying_held_state() {
+        use super::super::input_seat::RecordingInputPool;
+        use korri_input_contract::{GamepadState, SeatOrder, SeatRequest};
+        use korri_inputd::input_seat::{MirrorOutcome, SeatBackend, SeatRuntime, SeatSpec};
+        #[derive(Clone, Default)]
+        struct InputTrace(Arc<Mutex<Vec<GamepadState>>>);
+        impl SeatBackend for InputTrace {
+            fn create(&mut self, _: &SeatSpec) -> Result<(), String> {
+                Ok(())
+            }
+            fn event_device(&self, slot: u8) -> Result<PathBuf, String> {
+                Ok(format!("/dev/input/event{slot}").into())
+            }
+            fn write_state(&mut self, _: u8, state: GamepadState) -> Result<(), String> {
+                self.0.lock().unwrap().push(state);
+                Ok(())
+            }
+            fn destroy(&mut self, _: u8) -> Result<(), String> {
+                Ok(())
+            }
+        }
+        let trace = InputTrace::default();
+        let receiver = Arc::new(Mutex::new(SeatRuntime::boot(trace.clone()).unwrap()));
+        assert!(receiver
+            .lock()
+            .unwrap()
+            .coordinate(SeatRequest::ApplyCount { count: 2 }, 0)
+            .failure
+            .is_none());
+        let pool = Arc::new(RecordingInputPool::default());
+        let route_receiver = receiver.clone();
+        *pool.on_route.lock().unwrap() = Some(Box::new(move |launch| {
+            let reply = route_receiver.lock().unwrap().coordinate(
+                SeatRequest::Route {
+                    launch_id: launch.map(str::to_owned),
+                },
+                0,
+            );
+            assert!(reply.failure.is_none());
+            Ok(())
+        }));
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control = HostSessionControl::with_input_seats(root.path(), backend.clone(), pool)
+            .with_compositor(compositor.clone());
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        let token = "ab".repeat(32);
+        {
+            let mut receiver = receiver.lock().unwrap();
+            assert!(receiver
+                .coordinate(
+                    SeatRequest::BeginSession {
+                        launch_id: id.clone(),
+                        seat_order: SeatOrder::FirstPress
+                    },
+                    0
+                )
+                .failure
+                .is_none());
+            receiver.bind(&id, &token).unwrap();
+            assert!(receiver
+                .coordinate(
+                    SeatRequest::PhysicalConnected {
+                        device_id: "pad".into(),
+                        name: "Pad".into(),
+                        state: GamepadState::neutral()
+                    },
+                    0
+                )
+                .failure
+                .is_none());
+        }
+        let send = |buttons: u32| {
+            let mut receiver = receiver.lock().unwrap();
+            assert!(receiver
+                .coordinate(
+                    SeatRequest::PhysicalState {
+                        device_id: "pad".into(),
+                        state: GamepadState {
+                            buttons,
+                            ..GamepadState::neutral()
+                        }
+                    },
+                    0
+                )
+                .failure
+                .is_none());
+            let packet = format!(
+                "{}\n",
+                serde_json::json!({"mirrorToken": token, "frame": {
+                    "kind":"source-state", "clientId":"sunshine", "launchId":id, "controllerNumber":0,
+                    "buttons":buttons, "leftTrigger":0, "rightTrigger":0, "leftStickX":0,"leftStickY":0,"rightStickX":0,"rightStickY":0
+                }})
+            );
+            assert!(matches!(
+                receiver.accept(packet.as_bytes(), 0),
+                MirrorOutcome::Accepted { .. } | MirrorOutcome::NoSeat
+            ));
+        };
+        send(0);
+        send(0x1000);
+        send(0);
+        control.status();
+        assert!(trace
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|state| state.buttons == 0));
+        send(0x1000); // A held press must not cross the gate either.
+        control.observe_first_frame(
+            Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+            Instant::now(),
+        );
+        send(0x1000);
+        assert!(trace
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|state| state.buttons == 0));
+        send(0);
+        send(0x1000);
+        assert_eq!(
+            trace
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|state| state.buttons == 0x1000)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn first_frame_keeps_input_gated_if_unmuting_fails() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let manager = Arc::new(ResetSeatManager::default());
+        let control =
+            HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
+                .with_compositor(compositor.clone());
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        backend.state.lock().unwrap().audio_release_fails = true;
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.observe_first_frame(
+            Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+            Instant::now(),
+        );
+        assert_eq!(
+            control.initial_handoff_for(&control.lock_state()),
+            Some(InitialHandoff::Waiting)
+        );
+        assert!(backend.state.lock().unwrap().audio_released.is_empty());
+    }
+
+    #[test]
+    fn first_frame_wait_ends_at_thirty_seconds_even_without_a_window() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let control = HostSessionControl::new(root.path(), backend);
+        let id = prepare(&control, "one").launch_id;
+        let FirstFrameHandoff::Waiting { since } =
+            control.initial_handoff.lock().unwrap().as_ref().unwrap().1
+        else {
+            panic!("waiting")
+        };
+        control.observe_first_frame(None, since + Duration::from_millis(29_999));
+        assert_eq!(
+            control.initial_handoff_for(&control.lock_state()),
+            Some(InitialHandoff::Waiting)
+        );
+        control.observe_first_frame(None, since + Duration::from_secs(30));
+        assert_eq!(
+            control.initial_handoff_for(&control.lock_state()),
+            Some(InitialHandoff::Observed)
+        );
+        assert!(matches!(
+            control.initial_handoff.lock().unwrap().as_ref().unwrap().1,
+            FirstFrameHandoff::Observed {
+                ended_by: HandoffEnd::TimeLimit
+            }
+        ));
+        assert!(
+            matches!(control.status(), HostSessionStatus::Running { launch_id, .. } if launch_id == id)
+        );
+    }
+
+    #[test]
+    fn a_clean_unit_exit_before_the_first_frame_is_a_launch_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let control = HostSessionControl::new(root.path(), backend.clone());
+        let id = prepare(&control, "one").launch_id;
+        backend.insert(&id, LaunchUnitState::Completed);
+        control.observe_first_frame(None, Instant::now());
+        assert!(
+            matches!(control.status(), HostSessionStatus::Failed { launch_id, message } if launch_id == id && message.contains("before its first frame"))
+        );
+    }
+
+    #[test]
     fn handoff_line_names_the_launch_and_the_time_to_its_window() {
         assert_eq!(
-            handoff_line("launch-1", std::time::Duration::from_millis(6830)),
-            "<6>korrid: LaunchHandoff { launch_id: launch-1, unit_start_to_window_ms: 6830 }"
+            handoff_line("launch-1", std::time::Duration::from_millis(6830), "signal"),
+            "<6>korrid: LaunchHandoff { launch_id: launch-1, unit_start_to_first_frame_ms: 6830, ended_by: signal }"
         );
     }
     use crate::host::play_log::PlayEntry;
@@ -5490,6 +5826,10 @@ printf '[{{"success":true}}]'
         }
         assert!(!root.path().join("commands").exists());
         fs::write(root.path().join("tree"), compositor_tree_with_focus(200, 2)).unwrap();
+        control.observe_first_frame(
+            Some(r#"{"change":"new","container":{"id":3,"pid":200}}"#),
+            Instant::now(),
+        );
         assert!(matches!(
             control.status(),
             HostSessionStatus::Running { .. }
@@ -5706,6 +6046,10 @@ printf '[{{"success":true}}]'
         // process/window through the normal public session-control path.
         let prepared = prepare(&control, "one");
         backend.set_pids(&prepared.launch_id, &[200]);
+        control.observe_first_frame(
+            Some(r#"{"change":"new","container":{"id":3,"pid":200}}"#),
+            Instant::now(),
+        );
         assert!(matches!(
             control.status(),
             HostSessionStatus::Running { .. }
@@ -5868,6 +6212,8 @@ printf '[{{"success":true}}]'
         record_state_reads: bool,
         window_pids: BTreeMap<String, BTreeSet<i32>>,
         window_pids_fail: bool,
+        audio_released: Vec<String>,
+        audio_release_fails: bool,
         runners: BTreeMap<String, String>,
         return_events: Option<Arc<Mutex<Vec<&'static str>>>>,
         sway_events_file: Option<PathBuf>,
@@ -5900,6 +6246,17 @@ printf '[{{"success":true}}]'
     }
 
     impl LaunchUnitBackend for DeterministicBackend {
+        fn release_audio(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
+            let mut state = self.state.lock().unwrap();
+            if state.audio_release_fails {
+                return Err(LaunchUnitError::new(
+                    LaunchUnitErrorKind::Failed,
+                    "audio release refused",
+                ));
+            }
+            state.audio_released.push(launch_id.into());
+            Ok(())
+        }
         fn window_pids(&self, launch_id: &str) -> Result<BTreeSet<i32>, LaunchUnitError> {
             let state = self.state.lock().unwrap();
             if state.window_pids_fail {
@@ -6604,6 +6961,9 @@ printf '[{{"success":true}}]'
         let backend = Arc::new(DeterministicBackend::default());
         let control = control(root.path(), backend.clone());
         let first = prepare(&control, "one");
+        control
+            .record_initial_handoff(&first.launch_id, HandoffEnd::Signal, Instant::now())
+            .unwrap();
         backend.insert(&first.launch_id, LaunchUnitState::Completed);
         assert!(matches!(
             control.status(),
@@ -7576,6 +7936,10 @@ printf '[{{"success":true}}]'
             assert!(!shell.frozen());
         }
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.observe_first_frame(
+            Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+            Instant::now(),
+        );
         for _ in 0..3 {
             control.status();
         }
@@ -7638,7 +8002,15 @@ printf '[{{"success":true}}]'
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
-        let fullscreen = |node: i64| format!("[con_id={node}] fullscreen enable");
+        control.observe_first_frame(
+            Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+            Instant::now(),
+        );
+        compositor.commands.lock().unwrap().clear();
+        compositor.focused.lock().unwrap().clear();
+        let fullscreen = |node: i64| {
+            format!("[con_id={node}] move container to workspace current; [con_id={node}] fullscreen enable")
+        };
 
         assert!(matches!(
             control.freeze(&id),
@@ -7720,6 +8092,10 @@ printf '[{{"success":true}}]'
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.observe_first_frame(
+            Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+            Instant::now(),
+        );
         control.freeze(&id);
         events.lock().unwrap().clear();
 
@@ -7747,6 +8123,10 @@ printf '[{{"success":true}}]'
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.observe_first_frame(
+            Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+            Instant::now(),
+        );
         control.status();
         control.freeze(&id);
         compositor.focus_fails.store(true, Ordering::SeqCst);
@@ -7780,6 +8160,10 @@ printf '[{{"success":true}}]'
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.observe_first_frame(
+            Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+            Instant::now(),
+        );
         control.status();
         events.lock().unwrap().clear();
 
@@ -7809,6 +8193,10 @@ printf '[{{"success":true}}]'
             let id = prepare(&control, "one").launch_id;
             backend.set_pids(&id, &[9100]);
             *compositor.tree.lock().unwrap() = compositor_tree(9100);
+            control.observe_first_frame(
+                Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+                Instant::now(),
+            );
             control.status();
             assert!(shell.frozen());
             backend.insert(&id, ending);
@@ -8040,7 +8428,13 @@ printf '[{{"success":true}}]'
                     .with_native_input(source.clone());
             control.initialize_input(4).unwrap();
             let observe = control.clone();
-            let frozen = tokio::task::spawn_blocking(move || observe.status());
+            let frozen = tokio::task::spawn_blocking(move || {
+                observe.observe_first_frame(
+                    Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+                    Instant::now(),
+                );
+                observe.status()
+            });
             let retire: serde_json::Value =
                 serde_json::from_str(client.next().await.unwrap().unwrap().to_text().unwrap())
                     .unwrap();
@@ -8189,6 +8583,10 @@ printf '[{{"success":true}}]'
             let id = prepare(&control, "one").launch_id;
             backend.set_pids(&id, &[9100]);
             *compositor.tree.lock().unwrap() = compositor_tree(9100);
+            control.observe_first_frame(
+                Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+                Instant::now(),
+            );
             control.status();
             assert!(shell.frozen());
             let (entered, enter) = std::sync::mpsc::sync_channel(1);
@@ -8243,6 +8641,10 @@ printf '[{{"success":true}}]'
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.observe_first_frame(
+            Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+            Instant::now(),
+        );
         control.status();
         assert_eq!(
             pool.calls.lock().unwrap().last().unwrap(),
@@ -8363,7 +8765,13 @@ printf '[{{"success":true}}]'
             backend.set_pids(&id, &[9100]);
             *compositor.tree.lock().unwrap() = compositor_tree(9100);
             let observe = control.clone();
-            let frozen = tokio::task::spawn_blocking(move || observe.status());
+            let frozen = tokio::task::spawn_blocking(move || {
+                observe.observe_first_frame(
+                    Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+                    Instant::now(),
+                );
+                observe.status()
+            });
             let retire: serde_json::Value =
                 serde_json::from_str(client.next().await.unwrap().unwrap().to_text().unwrap())
                     .unwrap();
@@ -8440,6 +8848,10 @@ printf '[{{"success":true}}]'
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
         shell.refuse_freeze();
         tokio::task::spawn_blocking(move || {
+            control.observe_first_frame(
+                Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+                Instant::now(),
+            );
             assert!(matches!(
                 control.status(),
                 HostSessionStatus::Running { .. }
@@ -8467,6 +8879,10 @@ printf '[{{"success":true}}]'
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.observe_first_frame(
+            Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+            Instant::now(),
+        );
         control.status();
         shell.refuse_next_thaws(1);
 
@@ -8553,6 +8969,10 @@ printf '[{{"success":true}}]'
             let id = prepare(&control, "one").launch_id;
             backend.set_pids(&id, &[9100]);
             *compositor.tree.lock().unwrap() = compositor_tree(9100);
+            control.observe_first_frame(
+                Some(r#"{"change":"new","container":{"id":3,"pid":9100}}"#),
+                Instant::now(),
+            );
             control.status();
             if already {
                 backend.insert(&id, LaunchUnitState::Frozen);
@@ -8583,6 +9003,9 @@ printf '[{{"success":true}}]'
         let control =
             HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone());
         let first = prepare(&control, "one");
+        control
+            .record_initial_handoff(&first.launch_id, HandoffEnd::Signal, Instant::now())
+            .unwrap();
         backend.insert(&first.launch_id, LaunchUnitState::Completed);
         assert!(matches!(
             control.status(),
@@ -9741,6 +10164,9 @@ printf '[{{"success":true}}]'
                 &BTreeMap::new(),
             )
             .unwrap();
+        control
+            .record_initial_handoff(&prepared.launch_id, HandoffEnd::Signal, Instant::now())
+            .unwrap();
         clock.advance(42);
         backend.insert(&prepared.launch_id, LaunchUnitState::Completed);
 
@@ -10824,6 +11250,13 @@ mod launch_settings_completion_tests {
             )
             .unwrap();
         assert!(launch.warnings.is_empty());
+        control
+            .record_initial_handoff(
+                &launch.session.launch_id,
+                HandoffEnd::Signal,
+                Instant::now(),
+            )
+            .unwrap();
         backend.complete_live();
         assert!(matches!(
             control.status(),

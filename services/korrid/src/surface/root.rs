@@ -1135,6 +1135,16 @@ impl Root {
                 this.steam_cloud.poll();
             }
         });
+        if let Some(changes) = &self.korrid.session_changes {
+            let mut changes = changes();
+            let this = Arc::clone(self);
+            tokio::spawn(async move {
+                while changes.changed().await.is_ok() {
+                    this.launchables.poll_local_session().await;
+                    this.inspect_overlay(false).await;
+                }
+            });
+        }
         self.shared.start();
         self.installs.start();
         let launch = Arc::clone(&self.launch);
