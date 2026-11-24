@@ -2262,3 +2262,41 @@ fn a_stop_keeps_the_order_of_three_queued_installs() {
     });
     second.shutdown_timeout(Duration::from_secs(5));
 }
+
+/// N3: a failed install that kept its bytes can be thrown away: cancel of
+/// the failed job deletes its record and its bytes, and the next Get starts
+/// from byte 0.
+#[tokio::test(flavor = "multi_thread")]
+async fn cancel_throws_away_a_failed_install_that_kept_its_bytes() {
+    let (server, body) = resumable_site();
+    let half = RESUMABLE / 2;
+    server.route(
+        "/files/slow.gba",
+        Route::ok("application/octet-stream", body[..half].to_vec())
+            .header("Content-Length", &RESUMABLE.to_string())
+            .ranges(ETAG),
+    );
+    let world = world_with(server, None);
+    world.search().await;
+    let broken = world.get("slow").await;
+    assert!(
+        matches!(broken.state, AcquireJobState::Failed { .. }),
+        "{broken:?}"
+    );
+    let staging = world.cache().join(".downloads");
+    assert_eq!(names(&staging).len(), 2, "bytes and record are kept");
+    let cancelled = world.api().cancel(&broken.job_id).await.unwrap();
+    assert!(
+        matches!(cancelled.state, AcquireJobState::Cancelled),
+        "{cancelled:?}"
+    );
+    assert!(names(&staging).is_empty(), "{:?}", names(&staging));
+    world.server.route(
+        "/files/slow.gba",
+        Route::ok("application/octet-stream", body.clone()).ranges(ETAG),
+    );
+    let done = world.get("slow").await;
+    imported(&done);
+    assert_ne!(done.job_id, broken.job_id, "a new install");
+    assert_eq!(game_requests(&world)[1], (None, None), "from byte 0");
+}

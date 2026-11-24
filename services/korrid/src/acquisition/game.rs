@@ -60,6 +60,9 @@ struct Job {
     status: AcquireJobStatus,
     cancel: watch::Sender<bool>,
     done: watch::Receiver<bool>,
+    /// A failed install whose bytes and record stay for a resume (ADR
+    /// 0092): its staging folder and its record. Cancel throws them away.
+    kept: Option<(PathBuf, InstallRecord)>,
 }
 
 #[derive(Clone, Default)]
@@ -322,7 +325,16 @@ impl GameAcquisition {
         self.status(job_id)?;
         let job = self.jobs.lock().expect("jobs mutex poisoned")[job_id].clone();
         let done = {
-            let job = job.lock().expect("job mutex poisoned");
+            let mut job = job.lock().expect("job mutex poisoned");
+            // ADR 0092: a failed install that kept its bytes for a resume
+            // can be thrown away: its record and bytes go.
+            if matches!(job.status.state, AcquireJobState::Failed { .. }) {
+                if let Some((staging, record)) = job.kept.take() {
+                    record.discard(&staging);
+                    job.status.state = AcquireJobState::Cancelled;
+                    job.status.message = None;
+                }
+            }
             // ADR 0030: a store job can be cancelled while it unpacks;
             // korrid has published nothing yet.
             matches!(
@@ -534,12 +546,13 @@ impl GameAcquisition {
             hold_unpack: self.hold_unpack.clone(),
         };
         tokio::spawn(async move {
-            let (state, record) = pipeline.run(cancelled).await;
-            if let Some((staging, record)) = record {
-                record.discard(&staging);
+            let (state, record, keep) = pipeline.run(cancelled).await;
+            if !keep {
+                record.1.discard(&record.0);
             }
             {
                 let mut job = job.lock().expect("job mutex poisoned");
+                job.kept = keep.then_some(record);
                 job.status.message = match &state {
                     AcquireJobState::Failed { reason } => Some(reason.message.clone()),
                     _ => None,
@@ -563,6 +576,7 @@ impl GameAcquisition {
             status,
             cancel,
             done,
+            kept: None,
         }));
         self.jobs
             .lock()
@@ -927,13 +941,13 @@ impl Pipeline {
         Ok((request, name, rules))
     }
 
-    /// Run the install. Returns its end state, and its record and staging
-    /// folder when they must go: only a network failure or a stall keeps
-    /// them, so the install resumes on the next Get or after a restart.
+    /// Run the install. Returns its end state, its staging folder and record,
+    /// and whether they stay: only a network failure or a stall keeps them,
+    /// so the install resumes on the next Get or after a restart.
     async fn run(
         mut self,
         cancelled: watch::Receiver<bool>,
-    ) -> (AcquireJobState, Option<(PathBuf, InstallRecord)>) {
+    ) -> (AcquireJobState, (PathBuf, InstallRecord), bool) {
         let mut wait = self.turn.take().expect("one turn per job");
         let state = match self.steps(&mut wait, cancelled).await {
             Ok(state) | Err(state) => state,
@@ -941,8 +955,11 @@ impl Pipeline {
         // The install ends here and leaves the person's order. A korrid
         // that stops before this keeps it there.
         wait.end();
-        let discard = (!self.keep).then(|| (self.staging.clone(), self.record.clone()));
-        (state, discard)
+        (
+            state,
+            (self.staging.clone(), self.record.clone()),
+            self.keep,
+        )
     }
 
     async fn steps(
