@@ -513,3 +513,205 @@ async fn every_acquisition_request_and_hop_carries_korris_user_agent() {
         .collect();
     assert_eq!(agents, ["user-agent: plugin/2"]);
 }
+
+/// ADR 0092 resume (#551, N4): staged bytes and the validator kept with
+/// them. Each case ends with the whole file or keeps the staged bytes.
+mod resume {
+    use super::super::download::Validator;
+    use super::*;
+
+    const GAME: usize = 8192;
+    const STAGED: usize = 3000;
+
+    fn game() -> Vec<u8> {
+        (0..GAME).map(|index| (index % 253) as u8).collect()
+    }
+
+    fn header<'a>(
+        request: &'a super::super::http_fixture::Received,
+        name: &str,
+    ) -> Option<&'a str> {
+        request
+            .headers
+            .iter()
+            .find_map(|header| header.strip_prefix(&format!("{name}: ")))
+    }
+
+    struct Resume {
+        server: HttpFixture,
+        _dir: tempfile::TempDir,
+        staged: std::path::PathBuf,
+        kept: Vec<Option<Validator>>,
+    }
+
+    fn staged(bytes: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let staged = dir.path().join(format!("{STAGING_PREFIX}job"));
+        std::fs::write(&staged, bytes).unwrap();
+        (dir, staged)
+    }
+
+    async fn resume(
+        server: HttpFixture,
+        stage: &[u8],
+        request: GameRequest,
+        validator: Option<Validator>,
+    ) -> (Resume, Result<u64, Failure>) {
+        let (dir, staged) = staged(stage);
+        let mut kept = Vec::new();
+        let result = engine()
+            .fetch_game_into(
+                &request,
+                &hosts(),
+                &staged,
+                validator.as_ref(),
+                |validator| kept.push(validator.cloned()),
+                |_| {},
+            )
+            .await
+            // A complete game removes its staging file when it is dropped;
+            // keep the file for the checks.
+            .map(|game| {
+                let bytes = game.bytes;
+                std::mem::forget(game);
+                bytes
+            });
+        (
+            Resume {
+                server,
+                _dir: dir,
+                staged,
+                kept,
+            },
+            result,
+        )
+    }
+
+    fn get(server: &HttpFixture) -> GameRequest {
+        GameRequest::get(server.url(HOST, "/game.gba"))
+    }
+
+    /// The file changed on the server: `If-Range` names the old entity tag,
+    /// the server answers 200 with the whole new file, which replaces the
+    /// staged bytes, and its new tag is kept.
+    #[tokio::test]
+    async fn a_changed_validator_gets_the_whole_file_again() {
+        let server = HttpFixture::start([(
+            "/game.gba",
+            Route::ok("application/octet-stream", game()).ranges("\"v2\""),
+        )]);
+        let request = get(&server);
+        let (run, result) = resume(
+            server,
+            &[9u8; STAGED],
+            request,
+            Some(Validator::ETag("\"v1\"".into())),
+        )
+        .await;
+        assert_eq!(result, Ok(GAME as u64));
+        assert_eq!(std::fs::read(&run.staged).unwrap(), game());
+        assert_eq!(run.kept, [Some(Validator::ETag("\"v2\"".into()))]);
+        let received = run.server.received();
+        assert_eq!(header(&received[0], "range"), Some("bytes=3000-"));
+        assert_eq!(header(&received[0], "if-range"), Some("\"v1\""));
+    }
+
+    /// A server with no ETag and no Last-Modified gives no validator, so
+    /// the bytes cannot be resumed: korrid asks for the whole file.
+    #[tokio::test]
+    async fn a_server_with_no_validator_starts_from_byte_zero() {
+        let server =
+            HttpFixture::start([("/game.gba", Route::ok("application/octet-stream", game()))]);
+        let request = get(&server);
+        let (run, result) = resume(server, &game()[..STAGED], request, None).await;
+        assert_eq!(result, Ok(GAME as u64));
+        assert_eq!(run.kept, [None]);
+        let received = run.server.received();
+        assert_eq!(header(&received[0], "range"), None);
+        assert_eq!(std::fs::read(&run.staged).unwrap(), game());
+    }
+
+    /// A POST never asks for a range, even with a validator.
+    #[tokio::test]
+    async fn a_post_download_never_resumes() {
+        let server = HttpFixture::start([(
+            "/game.gba",
+            Route::ok("application/octet-stream", game()).ranges("\"v1\""),
+        )]);
+        let request = GameRequest {
+            url: server.url(HOST, "/game.gba"),
+            form: Some("token=abc".into()),
+        };
+        let (run, result) = resume(
+            server,
+            &game()[..STAGED],
+            request,
+            Some(Validator::ETag("\"v1\"".into())),
+        )
+        .await;
+        assert_eq!(result, Ok(GAME as u64));
+        let received = run.server.received();
+        assert_eq!(received[0].method, "POST");
+        assert_eq!(header(&received[0], "range"), None);
+        assert_eq!(header(&received[0], "if-range"), None);
+        assert_eq!(std::fs::read(&run.staged).unwrap(), game());
+    }
+
+    /// 416: the staged bytes are not a prefix the server can continue;
+    /// korrid asks once more for the whole file.
+    #[tokio::test]
+    async fn a_416_asks_again_for_the_whole_file() {
+        let server = HttpFixture::start([]);
+        server.queue(
+            "/game.gba",
+            vec![
+                Route {
+                    status: 416,
+                    ..Route::ok("application/octet-stream", "")
+                },
+                Route::ok("application/octet-stream", game()).header("ETag", "\"v1\""),
+            ],
+        );
+        let request = get(&server);
+        let (run, result) = resume(
+            server,
+            &[9u8; STAGED],
+            request,
+            Some(Validator::ETag("\"v1\"".into())),
+        )
+        .await;
+        assert_eq!(result, Ok(GAME as u64));
+        let received = run.server.received();
+        assert_eq!(received.len(), 2);
+        assert_eq!(header(&received[0], "range"), Some("bytes=3000-"));
+        assert_eq!(header(&received[1], "range"), None);
+        assert_eq!(std::fs::read(&run.staged).unwrap(), game());
+    }
+
+    /// A 206 whose Content-Range does not start at the staged length is
+    /// not the rest of the file: the download fails as a network failure
+    /// and keeps the staged bytes as they were.
+    #[tokio::test]
+    async fn a_content_range_that_does_not_start_at_the_offset_is_refused() {
+        let server = HttpFixture::start([(
+            "/game.gba",
+            Route {
+                status: 206,
+                ..Route::ok("application/octet-stream", game())
+            }
+            .header("Content-Range", &format!("bytes 0-{}/{GAME}", GAME - 1)),
+        )]);
+        let request = get(&server);
+        let stage = game()[..STAGED].to_vec();
+        let (run, result) = resume(
+            server,
+            &stage,
+            request,
+            Some(Validator::ETag("\"v1\"".into())),
+        )
+        .await;
+        assert_eq!(result, Err(Failure::Network));
+        assert_eq!(std::fs::read(&run.staged).unwrap(), stage);
+        assert!(run.kept.is_empty());
+    }
+}
