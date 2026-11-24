@@ -14,6 +14,7 @@
  *    one pass over its lists, not a loop.
  */
 import { describe, expect, test } from "bun:test"
+import { decodedBytes } from "../src/art"
 import { sameGame } from "../src/lists"
 import { Play, scenario, targets } from "./korri"
 
@@ -213,8 +214,8 @@ describe("the pixel budget goes to what is in sight", () => {
     },
   })
 
-  test("in the library the shelves' tiles get their pictures before the row that left the stage", () => {
-    // A stored poster of 800x1200 is 3.7 MiB: six to the budget.
+  test("drawn-size decodes leave room for the shelves and the row that left the stage", () => {
+    // A stored poster of 800x1200 is 3.7 MiB; its drawn decode is much smaller.
     const run = new Play(library(800), 1280, 720)
     const games = (tiles: any[]) => tiles.filter(tile => tile.shown && tile.kind === "game")
     run.press("down")
@@ -230,12 +231,13 @@ describe("the pixel budget goes to what is in sight", () => {
     expect(inSight.length).toBe(5)
     expect(inSight.every(tile => tile.shelf === 1)).toBe(true)
     expect(inSight.every(tile => tile.artKind === "poster")).toBe(true)
-    // The row, off the stage, has what the budget has left: a card where its picture does not fit, never a hole.
+    // The smaller decodes also leave room for the row off the stage.
     const rowNow = games(run.view.homeRow)
-    expect(rowNow.some(tile => tile.artKind === "none")).toBe(true)
+    expect(rowNow.every(tile => tile.artKind === "poster")).toBe(true)
     for (const tile of rowNow) expect(tile.poster.lines.length).toBeGreaterThan(0)
-    const pictures = new Set([...inSight, ...rowNow].filter(tile => tile.artKind === "poster").map(tile => tile.art.$image))
-    expect(pictures.size * 800 * 1200 * 4).toBeLessThanOrEqual(24 * 1024 * 1024)
+    const variants = new Map([...inSight, ...rowNow].map(tile => [JSON.stringify(tile.art), tile.art]))
+    const bytes = [...variants.values()].reduce((bytes, image) => bytes + decodedBytes(800, 1200, image.size), 0)
+    expect(bytes).toBeLessThanOrEqual(24 * 1024 * 1024)
   })
 
   test("a tile the last view sent is the same object in the next, when nothing of it changed", () => {

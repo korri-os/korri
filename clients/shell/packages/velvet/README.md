@@ -307,22 +307,24 @@ backdrop pixel differs from its neighbour by more than four levels.
 ## Limits
 
 - **Pixels.** The shell keeps 24 MiB of decoded pixels for a surface. A
-  stored poster is 600x900: 2.1 MiB. So a view asks for its pictures in
-  order of importance (`take`, `src/art.ts`, into the count the view makes
-  and hands down: the stage's picture, the focused game's
-  logo, then tiles from the focused one outwards, rows in sight first; in
-  the library the shelves before the home's row, which has left the stage)
-  and stops at 23 MiB. The budget chooses pictures, never columns: a set is
-  as many tiles across as its width holds. Of a game's pictures of a class
-  (its posters, its stage pictures), a tile or the stage asks for the least
-  that covers the size it is drawn at, then for each smaller one, so the
-  budget gives a smaller picture before it gives the no-art card
-  (`fitting`, `src/art.ts`). A tile none of them fits shows its no-art card.
-  The shell still decodes a picture at its stored size, so this only saves
-  pixels where Korri has several sizes of a picture; with one 600x900 poster
-  a game, 11 posters fit, and a set of 7 columns and 2 rows and a half in
-  sight (1920x1080, 3840x2160) shows the rest as cards, the focused row
-  first (see "Asked of the shell").
+  stored poster is 600x900: 2.1 MiB. Velvet sends the drawn box beside
+  `$image` as `size: { width, height }` in logical pixels (contract 3.8).
+  The shell downsamples to cover it, keeps aspect, and never upscales. A
+  poster drawn 216x324 needs 279,936 bytes (0.267 MiB), not 2,160,000 bytes.
+  A view asks for pictures in order of importance (`take`, `src/art.ts`):
+  the stage, the focused game's logo, then tiles from the focused one outwards,
+  rows in sight first. It stops at 23 MiB, leaving room inside the shell's
+  24 MiB cache. Each URL-and-size variant counts separately, as in the shell.
+  The budget chooses pictures, never columns. Of a game's pictures of a
+  class, Velvet takes the least that covers the drawn box, then smaller
+  sources before the no-art card (`fitting`). With no known box, the previous
+  stored-size accounting remains. Korri's cover without measured dimensions
+  still counts as 512x512 (ADR 0065).
+  A seven-column set has 21 tiles wholly or partly in sight: at 1920x1080,
+  their 216x324 decodes take 5,878,656 bytes (5.61 MiB); at 3840x2160,
+  their 434x651 decodes take 23,732,856 bytes (22.63 MiB). Both fit, where
+  stored-size decoding needed 45,360,000 bytes (43.26 MiB) and held only
+  11 posters. Off-screen pooled tiles get what remains of the budget.
 - **Calls.** Every `view` and every `update` over 10,000 games is under
   50 ms on the slowest device's clock, the first sight of a screen included:
   there is no allowance for a first call. The test
@@ -416,10 +418,9 @@ a pattern can see; `velvet_package.rs` holds the rest.
 
 Not Velvet's to change; reported to the coordinator.
 
-- Pictures at the size they are drawn. A grid of posters needs a fifth of
-  the pixels the shell decodes for it (a 600x900 poster drawn 216x324 at
-  1920x1080). A size beside `$image` (contract 3.8), decoded to fit, would
-  let every tile in sight of a full-width set have its picture.
+- **Done:** pictures at the size they are drawn (`size` beside `$image`,
+  contract 3.8). The budget counts the resulting decoded pixels. Tile,
+  shelf, row, pick, stage and marquee images send their drawn boxes.
 - A mark in the treaty for "the catalog changed" (a revision on
   `SurfaceCatalog`, or on each game). Without it Velvet cannot tell a
   publication that changed a game out of its window from one that changed

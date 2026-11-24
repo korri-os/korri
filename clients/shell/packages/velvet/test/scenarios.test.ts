@@ -21,8 +21,8 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { decodedBytes } from "../src/art"
-import { PACKAGE, pictures, play, scenarios, SIZES, targets, type Play } from "./korri"
+import { decodedBytes, type Image } from "../src/art"
+import { PACKAGE, play, scenarios, SIZES, targets, type Play } from "./korri"
 
 const MIB = 1024 * 1024
 /** What the shell keeps for one surface (clients/shell/src/images.rs, CACHE_BYTES). */
@@ -67,10 +67,18 @@ function check(run: Play, name: string, at: string, known: Map<string, [number, 
     }
   }
   let bytes = 0
-  for (const url of pictures(view)) {
-    const size = known.get(url)
-    expect(size, `${where}: ${url} is a picture in the model`).toBeDefined()
-    bytes += decodedBytes(size![0], size![1])
+  const variants = new Map<string, Image>()
+  const collect = (value: any): void => {
+    if (value === null || typeof value !== "object") return
+    if (typeof value.$image === "string") {
+      if (!value.$image.startsWith("data:")) variants.set(JSON.stringify([value.$image, value.size]), value)
+    } else for (const inner of Object.values(value)) collect(inner)
+  }
+  collect(view)
+  for (const image of variants.values()) {
+    const size = known.get(image.$image)
+    expect(size, `${where}: ${image.$image} is a picture in the model`).toBeDefined()
+    bytes += decodedBytes(size![0], size![1], image.size)
   }
   expect(bytes, `${where}: ${(bytes / MIB).toFixed(1)} MiB of pictures`).toBeLessThanOrEqual(SHELL_KEEPS)
   expect(JSON.stringify(view).length, `${where}: view bytes`).toBeLessThanOrEqual(VIEW_BYTES)

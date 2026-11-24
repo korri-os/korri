@@ -18,6 +18,7 @@ import type { SurfaceMedia } from "../../../../../contracts/generated/surface"
 import { chooseArt, classOf, decodedBytes, fitting, gameCard, gameTile, hasHero, marqueeOf, PIXEL_BUDGET, pictures, setTile, stageOf } from "../src/art"
 import { forget } from "../src/memo"
 import type { Game } from "../src/types"
+import { plan } from "../src/plan"
 import { Play, scenario } from "./korri"
 
 const picture = (name: string, width: number, height: number, color?: string): SurfaceMedia =>
@@ -94,7 +95,7 @@ describe("the stage", () => {
     for (const [width, height] of sizes) {
       const stage = stageOf(pictures(), one, 0, false, false, width, height)
       expect(stage.artShown).toBe(true)
-      expect(stage.art).toEqual({ $image: "preview/art/bg.png" })
+      expect(stage.art).toEqual({ $image: "preview/art/bg.png", size: { width, height } })
       expect(stage.fill).toBe(true)
     }
     expect(hasHero(one)).toBe(true)
@@ -105,7 +106,7 @@ describe("the stage", () => {
     const one = game([picture("hero", 1920, 620), picture("poster", 600, 900)])
     for (const [width, height] of sizes) {
       const stage = stageOf(pictures(), one, 0, false, false, width, height)
-      expect(stage.art).toEqual({ $image: "preview/art/hero.png" })
+      expect(stage.art).toMatchObject({ $image: "preview/art/hero.png" })
       expect(stage.fill).toBe(true)
     }
   })
@@ -152,7 +153,7 @@ describe("the tile and the mark", () => {
     forget()
     const one = game([logo("logo-small", 400, 160), logo("logo", 800, 320)])
     const mark = marqueeOf(pictures(), one, { width: 800, logoH: 200, title: 80, fact: 20, mark: true, badge: false }, undefined)
-    expect(mark.logo).toEqual({ $image: "preview/art/logo.png" })
+    expect(mark.logo).toMatchObject({ $image: "preview/art/logo.png" })
   })
 })
 
@@ -161,15 +162,15 @@ describe("through the view", () => {
     for (const [width, height] of [[1920, 1080], [390, 844], [320, 240]] as const) {
       const one = new Play(scenario("home").models[0], width, height)
       expect(one.view.home.mark.key).toBe("ember-road")
-      expect(one.view.stage.art).toEqual({ $image: "preview/art/background-ember.png" })
+      expect(one.view.stage.art).toMatchObject({ $image: "preview/art/background-ember.png" })
       expect(one.view.stage.fill).toBe(true)
       const two = new Play({ ...scenario("home").models[0], windows: [{ panes: ["stage"] }, { panes: ["floor"] }] }, width, height)
       two.deliver({ _tag: "Resized", width, height, window: 1 } as any)
       const stage = globalThis.surface.view(two.state, two.model, 0) as any
       const floor = globalThis.surface.view(two.state, two.model, 1) as any
-      expect(stage.stage.art).toEqual({ $image: "preview/art/background-ember.png" })
+      expect(stage.stage.art).toMatchObject({ $image: "preview/art/background-ember.png" })
       // The Floor shows the row, focused on the next game: Tide Pool, a wide hero alone.
-      expect(floor.stage.art).toEqual({ $image: "preview/art/hero-tide.png" })
+      expect(floor.stage.art).toMatchObject({ $image: "preview/art/hero-tide.png" })
       expect(floor.stage.fill).toBe(true)
     }
   })
@@ -177,7 +178,7 @@ describe("through the view", () => {
   test("the row on a portrait window: Tide Pool's wide hero, cut to fill", () => {
     const run = new Play(scenario("home").models[0], 480, 800)
     run.press("down")
-    expect(run.view.stage.art).toEqual({ $image: "preview/art/hero-tide.png" })
+    expect(run.view.stage.art).toMatchObject({ $image: "preview/art/hero-tide.png" })
     expect(run.view.stage.fill).toBe(true)
   })
 })
@@ -208,26 +209,30 @@ describe("a picture is chosen for the size it is drawn at, and the budget picks 
     const one = game([picture("poster-small", 300, 450), picture("poster-big", 1000, 1500)])
     const near = (left: number) => ({ ...pictures(), spent: PIXEL_BUDGET - left })
     expect(setTile(near(decodedBytes(1000, 1500)), one, 0, false, 0, 1400)).toMatchObject({ art: { $image: "preview/art/poster-big.png" } })
-    expect(setTile(near(decodedBytes(1000, 1500) - 1), one, 0, false, 0, 1400)).toMatchObject({ art: { $image: "preview/art/poster-small.png" } })
+    expect(setTile(near(decodedBytes(1000, 1500, { width: 934, height: 1400 }) - 1), one, 0, false, 0, 1400)).toMatchObject({ art: { $image: "preview/art/poster-small.png" } })
     expect(setTile(near(decodedBytes(300, 450) - 1), one, 0, false, 0, 1400)).toMatchObject({ artKind: "none" })
   })
 
-  test("a poster the view already holds and that covers the tile costs nothing more", () => {
+  test("the same poster at another drawn size has its own decoded cost", () => {
     forget()
     const one = game([picture("poster-small", 300, 450), picture("poster-big", 1000, 1500)])
     const asked = pictures()
     gameTile(asked, one, "row", "row:0", false, 0, undefined, false, 1400)
     const spent = asked.spent
-    expect(gameTile(asked, one, "shelf:x", "shelf:x:0", false, 0, undefined, false, 300)).toMatchObject({ art: { $image: "preview/art/poster-big.png" } })
-    expect(asked.spent).toBe(spent)
+    expect(gameTile(asked, one, "shelf:x", "shelf:x:0", false, 0, undefined, false, 300)).toMatchObject({ art: { $image: "preview/art/poster-small.png", size: { width: 200, height: 300 } } })
+    expect(asked.spent).toBe(spent + decodedBytes(300, 450, { width: 200, height: 300 }))
+    const after = asked.spent
+    gameTile(asked, one, "shelf:y", "shelf:y:0", false, 0, undefined, false, 300)
+    expect(asked.spent).toBe(after)
   })
 
   test("the stage takes the least background that covers the window", () => {
     forget()
     const one = game([picture("bg-small", 1280, 720), picture("bg-big", 3840, 2160)])
-    expect(stageOf(pictures(), one, 0, false, false, 1280, 720).art).toEqual({ $image: "preview/art/bg-small.png" })
-    expect(stageOf(pictures(), one, 0, false, false, 1920, 1080).art).toEqual({ $image: "preview/art/bg-big.png" })
-    expect(stageOf(pictures(), one, 0, false, false, 3840, 2160).art).toEqual({ $image: "preview/art/bg-big.png" })
+    expect(stageOf(pictures(), one, 0, false, false, 1280, 720).art).toMatchObject({ $image: "preview/art/bg-small.png" })
+    expect(stageOf(pictures(), one, 0, false, false, 1920, 1080).art).toMatchObject({ $image: "preview/art/bg-big.png" })
+    // A full 4K decode alone exceeds 23 MiB: use the smaller source, never upscale it.
+    expect(stageOf(pictures(), one, 0, false, false, 3840, 2160).art).toMatchObject({ $image: "preview/art/bg-small.png", size: { width: 3840, height: 2160 } })
   })
 
   // IBUKI's television, a 1920 x 1080 window and a wide-short strip: the set is as many
@@ -257,7 +262,18 @@ describe("a picture is chosen for the size it is drawn at, and the budget picks 
       run.press("right", "right")
       const tiles = (run.view.setTiles as any[]).filter(tile => tile.shown)
       const shown = new Set(tiles.filter(tile => tile.artKind === "poster").map(tile => tile.art.$image))
-      expect(shown.size * decodedBytes(600, 900), `${width}x${height}`).toBeLessThanOrEqual(PIXEL_BUDGET)
+      const layout = plan(width, height)
+      const firstRow = run.view.set.firstRow
+      const visible = tiles.filter(tile => Math.floor(tile.at / columns) >= firstRow && Math.floor(tile.at / columns) <= firstRow + layout.gridRows)
+      expect(visible.every(tile => tile.artKind === "poster"), `${width}x${height}: every visible tile has art`).toBe(true)
+      if (height >= 1080) {
+        expect(columns).toBe(7)
+        expect(visible.length).toBe(21)
+      }
+      const cost = tiles.filter(tile => tile.artKind === "poster").reduce((bytes, tile) => bytes + decodedBytes(600, 900, tile.art.size), 0)
+      expect(cost, `${width}x${height}`).toBeLessThanOrEqual(PIXEL_BUDGET)
+      if (height >= 1080) expect(cost).toBe(width === 1920 ? 7_838_208 : 23_732_856)
+      for (const tile of visible) expect(tile.art.size).toEqual({ width: Math.ceil(layout.tileH * 2 / 3), height: layout.tileH })
       const lit = tiles.find(tile => tile.lit)
       expect(lit.artKind).toBe("poster")
       // Along the focused row first: its places nearest the start hold pictures before the next row's.

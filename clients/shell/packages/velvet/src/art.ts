@@ -40,8 +40,10 @@ import { ago, caps, playtime } from "./words"
  * large as it is drawn, then for each smaller one (`fitting`). A tile none of
  * them fits shows its no-art card, which is a finished picture too.
  *
- * A stored picture reaches a surface with its longer side at most 1920 px,
- * four bytes a pixel. Korri gives a square cover no size; it is counted as
+ * A picture with a drawn box is decoded to cover it, never upscaled, at
+ * one decoded pixel per logical pixel (contract 3.8), four bytes a pixel.
+ * With no box, the stored-image bound is 1920 px on the longer side.
+ * Korri gives a square cover no size; it is counted as
  * the 512 x 512 the cover rule asks plugins for (ADR 0065).
  */
 export const PIXEL_BUDGET = 23 * 1024 * 1024
@@ -63,19 +65,33 @@ export interface Pictures {
 /** A new view: nothing asked for yet. */
 export const pictures = (): Pictures => ({ spent: 0, taken: new Set() })
 
-/** The decoded size of a stored picture as the shell hands it over. */
-export function decodedBytes(width: number, height: number): number {
+/** Contract 3.8: the drawn box in positive whole logical pixels. */
+export interface ImageSize { readonly width: number; readonly height: number }
+
+/** A draw box in logical pixels, rounded out so the decode covers it. */
+const imageSize = (width: number, height: number): ImageSize | undefined => width > 0 && height > 0 ? { width: Math.ceil(width), height: Math.ceil(height) } : undefined
+const imageKey = (url: string, size?: ImageSize): string => `${url}\u0000${size === undefined ? "stored" : `${size.width}x${size.height}`}`
+
+/** The retained RGBA bytes, using the shell's cover rounding and legacy no-size cap. */
+export function decodedBytes(width: number, height: number, size?: ImageSize): number {
+  if (size !== undefined) {
+    if (size.width >= width || size.height >= height) return width * height * 4
+    return size.width * height >= size.height * width
+      ? size.width * Math.ceil(height * size.width / width) * 4
+      : Math.ceil(width * size.height / height) * size.height * 4
+  }
   const scale = Math.min(1, LONGEST_SIDE / Math.max(1, width, height))
   return Math.max(1, Math.round(width * scale)) * Math.max(1, Math.round(height * scale)) * 4
 }
 
 /** Ask for a picture in this view. False: it does not fit, do without it. */
-export function take(asked: Pictures, url: string, width: number, height: number): boolean {
-  if (asked.taken.has(url)) return true
-  const cost = decodedBytes(width, height)
+export function take(asked: Pictures, url: string, width: number, height: number, size?: ImageSize): boolean {
+  const key = imageKey(url, size)
+  if (asked.taken.has(key)) return true
+  const cost = decodedBytes(width, height, size)
   if (asked.spent + cost > PIXEL_BUDGET) return false
   asked.spent += cost
-  asked.taken.add(url)
+  asked.taken.add(key)
   return true
 }
 
@@ -195,6 +211,7 @@ export const artOf = (game: Game): ArtOf => madeOf(game).chosen
 
 export interface Image {
   readonly $image: string
+  readonly size?: ImageSize
 }
 /**
  * No picture: one clear pixel. The shell has no empty image value, and a
@@ -270,6 +287,7 @@ interface Option {
   readonly width: number
   readonly height: number
   readonly view: TileView
+  readonly sized: Map<string, TileView>
 }
 
 /** A game's tile, made once: as its no-art card, and with each picture it may show (the fewest pixels first; none without art). */
@@ -299,7 +317,7 @@ function madeOf(game: Game): Made {
   const chosen = chooseArt(game.media)
   const { posters, square, logo, stage } = chosen
   const cover = square?.url ?? game.coverArtUrl ?? ""
-  const one = (url: string, width: number, height: number, view: TileView): Option => ({ url, width, height, view })
+  const one = (url: string, width: number, height: number, view: TileView): Option => ({ url, width, height, view, sized: new Map() })
   let options: Option[]
   let artBadgeTop: boolean
   if (posters !== undefined) {
@@ -328,8 +346,7 @@ function madeOf(game: Game): Made {
 /**
  * A game's tile as this view may show it, drawn `drawn` px high (0: not known): the
  * picture that fits it and the budget (`fitting`), else its no-art card. A picture of the
- * game this view already holds and that covers the tile costs nothing more, so it is
- * shown first.
+ * game at the same requested size costs nothing more; each other size is its own decode.
  */
 function budgeted(asked: Pictures, game: Game, drawn = 0): { readonly view: TileView; readonly badgeTop: boolean } {
   const tile = madeOf(game)
@@ -337,9 +354,25 @@ function budgeted(asked: Pictures, game: Game, drawn = 0): { readonly view: Tile
   if (options.length === 0) return { view: tile.art, badgeTop: tile.artBadgeTop }
   const width = Math.ceil(drawn * TILE_RATIO), height = Math.ceil(drawn)
   const order = fitting(options, width, height)
-  const held = drawn > 0 ? options.find(option => asked.taken.has(option.url) && option.width >= width && option.height >= height) : undefined
-  if (held !== undefined) return { view: held.view, badgeTop: tile.artBadgeTop }
-  for (const option of order) if (take(asked, option.url, option.width, option.height)) return { view: option.view, badgeTop: tile.artBadgeTop }
+  for (const option of order) {
+    // The cover is square; the logo is contained in its own smaller box (VelvetTile).
+    let size = imageSize(width, height)
+    if (option.view.artKind === "cover") size = imageSize(width, width)
+    else if (option.view.artKind === "logo" && drawn > 0) {
+      const scale = Math.min(width * 0.8 / option.width, height * 0.42 / option.height)
+      size = imageSize(option.width * scale, option.height * scale)
+    }
+    if (!take(asked, option.url, option.width, option.height, size)) continue
+    if (size === undefined) return { view: option.view, badgeTop: tile.artBadgeTop }
+    const key = imageKey(option.url, size)
+    let view = option.sized.get(key)
+    if (view === undefined) {
+      view = { ...option.view, art: { $image: option.url, size } }
+      if (option.sized.size > 16) option.sized.clear()
+      option.sized.set(key, view)
+    }
+    return { view, badgeTop: tile.artBadgeTop }
+  }
   return { view: tile.card, badgeTop: tile.cardBadgeTop }
 }
 
@@ -509,10 +542,11 @@ export function stageOf(asked: Pictures, game: Game | undefined, veil: number, d
     return { key: `plate:${game.id}`, light, artShown: true, art: { $image: plateOf(card, width, height) }, fill: true, veil, drift }
   }
   // The picture that covers the stage, else the largest under it the budget holds (`fitting`).
-  const drawn = picture === undefined ? undefined : fitting(tile.chosen.stages ?? [picture], width, height).find(one => take(asked, one.url, one.width, one.height))
+  const size = imageSize(width, height)
+  const drawn = picture === undefined ? undefined : fitting(tile.chosen.stages ?? [picture], width, height).find(one => take(asked, one.url, one.width, one.height, size))
   return drawn === undefined
     ? { key: `light:${game.id}`, light, artShown: false, art: NO_IMAGE, fill: true, veil, drift: false }
-    : { key: drawn.url, light, artShown: true, art: { $image: drawn.url }, fill: true, veil, drift }
+    : { key: drawn.url, light, artShown: true, art: { $image: drawn.url, ...(size === undefined ? {} : { size }) }, fill: true, veil, drift }
 }
 
 /** Whether a picture of the game lights the stage: a background or a wide hero. */
@@ -666,8 +700,7 @@ export function logoBox(width: number, height: number, boxW: number, boxH: numbe
 
 /** A game's marquee in a box: its logo (the title under it until it arrives, or alone), its badge and its facts. */
 export function marqueeOf(asked: Pictures, game: Game, box: MarqueeBox, publishedAt: number | undefined, facts: readonly FactView[] = factsOf(game, publishedAt)): MarqueeView {
-  const wanted = box.mark ? artOf(game).logo : undefined
-  const logo = wanted !== undefined && take(asked, wanted.url, wanted.width, wanted.height) ? wanted : undefined
+  const logo = box.mark ? artOf(game).logo : undefined
   const badge = box.badge ? game.system ?? "" : ""
   const lead = badge === "" ? 0 : box.fact * (1.6 + textWidth(badge, true))
   const least = Math.min(box.title, 18)
@@ -682,9 +715,11 @@ export function marqueeOf(asked: Pictures, game: Game, box: MarqueeBox, publishe
   const fit = box.mark ? fitCaps(game.title, box.width, Math.min(Math.max(box.title, box.logoH), room), box.title, least, 3) : undefined
   const lines = fit === undefined ? [] : fit.lines
   const mark = logo === undefined ? { width: 0, height: 0 } : logoBox(logo.width, logo.height, box.width * 0.92, Math.min(box.logoH, room))
+  const size = imageSize(mark.width, mark.height)
+  const shownLogo = logo !== undefined && take(asked, logo.url, logo.width, logo.height, size)
   return {
     key: game.id,
-    logoShown: logo !== undefined, logo: logo === undefined ? NO_IMAGE : { $image: logo.url },
+    logoShown: shownLogo, logo: !shownLogo ? NO_IMAGE : { $image: logo.url, ...(size === undefined ? {} : { size }) },
     logoW: mark.width, logoH: mark.height,
     ...titleLines(lines), size: fit?.size ?? 0, badge,
     facts: shown,
