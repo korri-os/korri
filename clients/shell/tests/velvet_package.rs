@@ -49,9 +49,10 @@ static SKIPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new
 /// in parallel, and a timed test measures CPU time on its own thread: with the
 /// other tests walking every scenario beside it, the same call takes up to
 /// twice as long (cache, memory bandwidth, frequency), and how much depends on
-/// how many scenarios they walk. So the timed test holds the CPU alone (`alone`)
-/// for its whole measurement, and every other test shares it (`sharing`): they
-/// still run in parallel with each other, and never beside the measurement.
+/// how many scenarios they walk. So each timed test (the view budget, the load
+/// budget) holds the CPU alone (`alone`) for its whole measurement, and every
+/// other test shares it (`sharing`): they still run in parallel with each
+/// other, and never beside a measurement.
 /// On Linux std's RwLock lets no new reader in while a writer waits, so the
 /// timed test waits only for the tests already running; the file has nine
 /// tests, so it never waits without end on any platform. A test that panics poisons the
@@ -64,7 +65,7 @@ fn sharing() -> std::sync::RwLockReadGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// For the test that measures time: no other test of this file runs meanwhile.
+/// For a test that measures time: no other test of this file runs meanwhile.
 fn alone() -> std::sync::RwLockWriteGuard<'static, ()> {
     CPU.write()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -970,7 +971,7 @@ fn a_system_set_shows_only_that_systems_games() {
 /// so a busy machine's worst case does not decide it).
 #[test]
 fn logic_loads_well_inside_the_call_budget() {
-    let _cpu = sharing();
+    let _cpu = alone();
     let source = std::fs::read_to_string(package().join("logic.js")).unwrap();
     let mut best = std::time::Duration::MAX;
     for _ in 0..10 {
