@@ -56,9 +56,12 @@ let
   ];
   ds = select [ "melonds" ];
   # Steam runs Windows games through ARM64 Proton-CachyOS with FEX for x86
-  # helpers. Only the RP Mini V2 has been accepted with it (2026-10-19).
-  # The exact required FEX and Proton plugins are selected with it, because
-  # image seeding creates a receipt only for selected packages.
+  # helpers. The RP Mini V2 was accepted with it (2026-10-19). Owner decision
+  # 2026-11-23 (ADR 0083): Steam ships on the OnePlus 6 and the Tab S6 too,
+  # with the engine runner as the default.
+  # FEX and Proton are selected with it: Steam's runners name their
+  # artifacts and require no exact build of either, so nothing else brings
+  # them, and image seeding creates a receipt only for selected packages.
   steam = select [
     "steam"
     "fex"
@@ -84,14 +87,15 @@ in
   # sunshine-korri-rg35xxsp-v4l2m2m-2026-10-22.md).
   rg35xxsp = shared ++ streamingHost ++ ssh;
   rg35xxpro = shared ++ streamingHost ++ ssh;
-  # The Galaxy Tab S6 (SM8150, Adreno 640) takes the SM8250 handhelds' set
-  # without Steam (accepted on the Mini V2 only). Owner decision 2026-11-19:
+  # The Galaxy Tab S6 (SM8150, Adreno 640) takes the SM8250 handhelds' set,
+  # with Steam since 2026-11-23 (ADR 0083). Owner decision 2026-11-19:
   # Sunshine on every device. It encodes on the Venus core through the Xiaomi
   # Pad 5 port's Iris driver (nix/devices/tabs6/kernel/README.md, "Video
   # codec").
-  tabs6 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
+  tabs6 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh ++ steam;
   # The OnePlus 6 (SDM845, Adreno 630) spike takes the R36T Max's set: the
-  # shared runners and SSH. No other runner or the Sunshine encoder has been
-  # tried on it yet (nix/devices/op6/README.md).
-  op6 = shared ++ ssh;
+  # shared runners and SSH, and Steam since 2026-11-23 (ADR 0083; the engine
+  # runner's sweeps ran on it). No other runner or the Sunshine encoder has
+  # been tried on it yet (nix/devices/op6/README.md).
+  op6 = shared ++ ssh ++ steam;
 }

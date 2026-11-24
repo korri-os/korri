@@ -6,27 +6,26 @@ raw-cache fallback, receipt migration, or outside repository is in this lane.
 
 ## Published input
 
-- Plugins source: `a7448c0a8ea2a02455e3b2105f51db7260dbf01f`.
-- Immutable tag: `build-a7448c0a8ea2-viewer-rust-audio`.
-- Publication dry run: `44449431724`; live publication: `44461941962`
-  (attempt 2; attempt 1 published the release, then timed out waiting for
-  Pages, whose deployment had failed).
-- Catalog: <https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json>.
-- Actual catalog SHA-256: `3e4ce2c7c808d7e5455e4b3ca4849a77947a2f04394f0457273fcf82a122cd34`.
-- SRI: `sha256-Pkzix8gI1+VFXks8pISad5R6LwQ5TwRXJz/PgqEizTQ=`.
-- 34 plugin IDs, 64 records: 34 for x86_64 and 33 for aarch64, because
-  `@korri:viewer` exists for x86_64 only. Homebrew Hub, PICO-8 and RetroBrews
-  use `any`.
+- Plugins source: `e3343461a76eff0aa0e8ef7b8a8761d3c359918a`.
+- Immutable tag: `build-e3343461a76e-engine-default-2`.
+- Publication dry run: `45358023735` (2026-11-24);
+  live publication passed on its fourth attempt (GitHub answered the first
+  three with HTTP 504 while it listed releases).
+- Catalog: <https://github.com/korri-os/plugins/releases/download/build-e3343461a76e-engine-default-2/catalog.json>.
+- Actual catalog SHA-256: `489e6529e04ad0bcf2793eb8240e595cb44d469fc7dc969cd9a71e87ebf612fd`.
+- SRI: `sha256-SJ5lKeBK0LzyeT64JA5ZXLRNRp/H3Jac2aceh+v2Ev0=`.
+- 35 plugin IDs, 66 records. Homebrew Hub, PICO-8 and RetroBrews use `any`.
 - Bound key remains
   `korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=`.
 
-The selection is the same as the previous pin,
-`build-ba9f46af31ea-viewer-notices`. Against it, only `@korri:viewer`
-(x86_64) changed: the Korri viewer at Korri `6b895b909`, which plays sound
-through the Rust audio output by default (#391). The other 33 plugins keep
-their store paths and archive bytes.
-No product image selects the viewer; a device installs it from the official
-catalog.
+The selection of plugin IDs is the same as the previous pin,
+`build-eae4ae220f5d-tailscale-signin`. Against it, `@korri:steam` changed on
+both architectures (ADR 0083): the engine runner for `x86_64-linux` as well as
+`aarch64-linux`, no exact requirement on `@korri:fex` and `@korri:proton`, the
+Proton and FEX launch settings, a failed start reported as failed, and the
+libraries Proton's media files load. Gamescope keeps its store paths.
+The device selection changed with this pin: the Tab S6 and the OnePlus 6 now
+select Steam, FEX and Proton (`plugin-selection.nix`).
 
 These identify the actual live bytes. Publication verifies the dry-run artifact
 digests and requires its catalog byte for byte before uploading those artifacts.

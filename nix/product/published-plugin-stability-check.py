@@ -11,7 +11,7 @@ from pathlib import Path
 
 # The pinned catalog's plugins per system. @korri:viewer is x86_64 only.
 SYSTEMS = ["aarch64-linux", "x86_64-linux"]
-CATALOG_PLUGINS = {"aarch64-linux": 33, "x86_64-linux": 34}
+CATALOG_PLUGINS = {"aarch64-linux": 34, "x86_64-linux": 35}
 
 
 def snapshot(root: Path, target: Path) -> None:
