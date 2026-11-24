@@ -217,7 +217,7 @@ def plugin() -> tuple[dict | None, str | None]:
 # services/korrid/src/linux_viewer/production.rs. This is a copy. The test
 # tests/test_korrid_copy.py reads korrid's file and fails when the two differ.
 PICTURE_PATHS: tuple[tuple[tuple[bytes, ...], str], ...] = (
-    ((b"qcom,sm8550", b"qcom,sm8250"), "v4l2m2m"),
+    ((b"qcom,sm8550", b"qcom,sm8250", b"qcom,sm8150", b"qcom,sdm845"), "v4l2m2m"),
     ((b"rockchip,rk3566", b"allwinner,sun50i-h700"), "v4l2request"),
 )
 PICTURE_PATH_DEFAULT = "x11"

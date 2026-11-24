@@ -35,7 +35,7 @@ def korrid_picture_paths(source: str) -> dict:
     `branches` are the chip sets with their picture path, in order. `default`
     is the last arm. `early` are the returns before the table: a device tree
     that is absent or unreadable. `whole` says that each chip is compared as a
-    whole value with `==`, as viewer.py compares it.
+    whole value with `==` or `matches!`, as viewer.py compares it.
     """
     body = source.split("fn platform_from_path", 1)[1].split("\n}\n", 1)[0]
     # Fail closed on any unrecognised logic. The fingerprint ignores comments,
@@ -44,7 +44,7 @@ def korrid_picture_paths(source: str) -> dict:
     shape = re.sub(r"//[^\n]*", "", body)
     shape = re.sub(r'"[^"]*"', '"VALUE"', shape)
     shape = re.sub(r"\s+", "", shape)
-    if hashlib.sha256(shape.encode()).hexdigest() != "617f165609a576416304436ef5286eb343fae12de24b399c098ad2beb4af3fe1":
+    if hashlib.sha256(shape.encode()).hexdigest() != "f2a35c45abead9bd772d2cd91d9e746756fa2a6b7953ebb145bb004b5222ec05":
         raise ValueError("cannot parse korrid's platform_from_path: rule shape changed")
     head, table = body.split("let mut values", 1)
     pc = re.search(
@@ -65,12 +65,20 @@ def korrid_picture_paths(source: str) -> dict:
             chips = set()
         else:
             default = token.group(2)
+    # Rust's matches! alternatives are exact byte-slice values, not prefixes.
+    # The fingerprint above also guards the whole surrounding predicate.
+    matched_values = sum(
+        len(re.findall(r'b"[^"]+"', alternatives))
+        for alternatives in re.findall(
+            r'matches!\(\s*value,\s*((?:b"[^"]+"\s*\|\s*)*b"[^"]+")\s*\)', table
+        )
+    )
     return {
         "branches": branches,
         "pc": pc.groups(),
         "default": default,
         "early": re.findall(r'return "([^"]+)"', head),
-        "whole": len(re.findall(r'b"[^"]+"', table)) == len(re.findall(r'value == b"[^"]+"', table))
+        "whole": len(re.findall(r'b"[^"]+"', table)) == len(re.findall(r'value == b"[^"]+"', table)) + matched_values
         and not re.search(r"starts_with|ends_with|contains\(|find\(", table),
     }
 
@@ -132,7 +140,7 @@ class KorridCopy(unittest.TestCase):
     def test_unknown_rule_shapes_fail_instead_of_looking_like_an_unchanged_copy(self):
         source = KORRID_VIEWER.read_text()
         for old, new in (
-            ('value == b"qcom,sm8550"', 'value.starts_with(b"qcom,sm8550")'),
+            ('b"qcom,sm8550" |', 'b"qcom,sm8550" &'),
             ('&& entry.path().exists()', ''),
             ('!suffix.is_empty() &&', ''),
             ('suffix.bytes().all(|b| b.is_ascii_digit())', 'true'),
