@@ -18,8 +18,12 @@ DTB, root on `userdata`, no initrd.
 ## Where it came from
 
 Moved from the tabs6 repository (`/home/simonwjackson/code/sandbox/tabs6`,
-commit `97c2734`, 2026-11-17). Its `AGENTS.md` holds the device facts, the
-flashing history and the hard partition rules; they still apply. Names such as
+commit `97c2734`, 2026-11-17). That repository is now archived at
+`archived-2026-11-24`; this directory is the maintained device tree.
+[RECOVERY.md](RECOVERY.md) holds the flashing procedure, hard partition rules
+and parent-only flashing policy. Read it before any boot or storage work.
+[ARCHIVE.md](ARCHIVE.md) records the inventory and what was kept or superseded.
+Names such as
 `PORT.md`, `USB_HOST.md` or `DAILY_DRIVER.md` in comments are documents of the
 reference port, [Bentlybro/gts6l-mainline-linux](https://github.com/Bentlybro/gts6l-mainline-linux).
 
@@ -34,9 +38,10 @@ reference port, [Bentlybro/gts6l-mainline-linux](https://github.com/Bentlybro/gt
 | `bluetooth/` | — | new: `tabs6-bt-pair` |
 | `hardware.nix`, `module-check.nix` | — | product facts and gates |
 
-Not moved, still only in the tabs6 repository: `nix/bootimg` (the Samsung boot
-image with Aloha), `nix/installer` and its ESP variant, and `scripts/`
-(Odin/fastboot flashing, diagnostics). Flashing is parent-only work there.
+The rejected boot-image recipe and superseded installer remain archived, not
+active Korri build paths. Recovery uses the accepted v2 boot archive and Mu
+fastboot; see [RECOVERY.md](RECOVERY.md). Useful diagnostics now live in
+`scripts/`; [ARCHIVE.md](ARCHIVE.md#diagnostics) explains their scope.
 
 The kernel and the firmware build from the `tabs6-nixpkgs` flake input, the
 nixpkgs the tablet was proven with (Linux 7.3.4); the systems use Korri's
@@ -137,6 +142,35 @@ members in the local store (never in git, never in a cache):
 ```sh
 nix run .#tabs6-stage-firmware -- /home/simonwjackson/code/sandbox/tabs6/firmware
 ```
+
+On zao, staging registers one **indirect GC root per stock member** under
+`${XDG_STATE_HOME:-$HOME/.local/state}/korri/gcroots/tabs6-firmware/`:
+`NON-HLOS.bin.lz4`, `modem.bin.lz4`, and `vendor.img.ext4.lz4`. Each symlink
+points to the fixed-output store path used by `requireFile`; Nix registers
+its stable location in `/nix/var/nix/gcroots/auto`. Rerunning staging safely
+refreshes these roots. They survive worktree removal and ordinary GC. Do not
+move or delete them while tabs6 builds are needed. This costs store space for
+all three compressed inputs; it does not root derived firmware outputs.
+
+The proprietary `firmware/` directory stays in the archived tabs6 checkout at
+the absolute path above. Never stage it in git or copy it to a cache. The
+archive tag contains source and diagnostics only, not these inputs.
+
+Verify on the build host without deleting anything:
+
+```sh
+roots="${XDG_STATE_HOME:-$HOME/.local/state}/korri/gcroots/tabs6-firmware"
+readlink "$roots"/* > /tmp/tabs6-firmware-inputs
+nix-store --gc --print-dead > /tmp/tabs6-dead-paths
+# Must print nothing (grep exits 1 when none match).
+grep -Fxf /tmp/tabs6-firmware-inputs /tmp/tabs6-dead-paths
+nix eval .#tabs6-deploy-over-ssh.drvPath
+# Focused host integration test: tiny public fixtures and real indirect roots.
+python3 nix/devices/tabs6/firmware/stage-stock-firmware.test.py
+```
+
+Use `--print-dead` only for this audit, **not** a real GC. A different build
+host must stage and root its own local inputs.
 
 ## Deploy
 

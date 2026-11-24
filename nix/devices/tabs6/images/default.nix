@@ -4,9 +4,8 @@
 #   esp     FAT32 for `cache` (400 MiB, 512 byte logical sectors, as the port)
 #   deploy  deploy-over-ssh: update a running tablet without flashing
 #
-# The tabs6 repository's esp-installer image (the ESP plus its installer
-# initramfs, for the first flash) stays there with the installer and the
-# flash scripts: flashing is not a Korri path.
+# The old esp-installer workaround is archived. Mu fastboot writes both
+# partitions; ../RECOVERY.md owns parent-only flashing and recovery.
 #
 # pluginStorePaths and tabs6PluginSeed carry the product's seeded plugins
 # (../system/plugin-seed.nix); on the console they are the system alone and
