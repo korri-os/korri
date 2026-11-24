@@ -23,6 +23,7 @@ import type {
   SurfaceModel as Model,
   SurfaceStoreGet,
 } from "../../../../../contracts/generated/surface"
+import { allDetailButtons, overflowsHere } from "./browse"
 import { gameById, sameQuery } from "./lists"
 import { onForget } from "./memo"
 import { actionRow, connectionLine, connectionWords, question, settingRows, wifiRows, WIFI_PASSWORD_MAX, WIFI_SSID_MAX, numberFits } from "./settings"
@@ -104,6 +105,13 @@ function actionsSheet(state: State, model: Model): PanelSpec {
   // Korri's newest copy of the game says whether it can still be installed.
   const fresh = game === undefined ? undefined : gameById(state.lists, model, game.id) ?? game
   const later = fresh !== undefined && installsLater(fresh)
+  // A stage too short for the install's buttons holds them here instead (src/browse.ts, `overflowsHere`).
+  if (fresh !== undefined && state.detail !== undefined) {
+    const all = allDetailButtons(fresh, model)
+    if (overflowsHere(all, plan(state.size.width, state.size.height))) {
+      for (const button of all) if (button.id === "d:here" || button.id === "d:installs") rows.push({ id: `g:${button.id}`, kind: "row", label: button.label, ...(button.dim === true ? { dim: true, rests: true } : { press: button.id === "d:installs" ? seq(CLOSE, button.act) : seq(button.act, CLOSE) }) })
+    }
+  }
   if (later) rows.push(laterRow(fresh))
   if (game === undefined) rows.push(note("g:none", "No game is open."))
   else if (focused === undefined || focused.gameId !== game.id) rows.push(note("g:wait", "One moment."))

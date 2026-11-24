@@ -384,7 +384,7 @@ function pressed(state: State, button: SurfaceButton, model: Model, out: Request
   if (what === "detail") {
     if (button === "options") {
       const game = detailGame(state, model)
-      return game !== undefined && detailButtons(game, model).some(candidate => candidate.id === "d:more") ? perform(state, { t: "sheet", sheet: "actions" }, model, out) : state
+      return game !== undefined && detailButtons(game, model, p).some(candidate => candidate.id === "d:more") ? perform(state, { t: "sheet", sheet: "actions" }, model, out) : state
     }
     return done(pressDetail(state, button, model, p))
   }
@@ -458,7 +458,7 @@ function activated(state: State, target: string, at: number | undefined, release
   if (panel !== undefined) return what === "overlay" && state.overlay.leaving ? state : done(panelTap(state, panel, target, at, released))
   if (what === "detail") {
     const game = detailGame(state, model)
-    const index = game === undefined ? -1 : detailButtons(game, model).findIndex(button => button.id === target)
+    const index = game === undefined ? -1 : detailButtons(game, model, p).findIndex(button => button.id === target)
     if (index < 0 || state.detail === undefined) return state
     return done(pressDetail({ ...state, detail: { ...state.detail, at: index } }, "confirm", model, p))
   }

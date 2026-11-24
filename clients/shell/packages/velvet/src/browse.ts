@@ -672,8 +672,39 @@ export interface DetailButton {
   readonly act: Act
 }
 
+/** The install's own buttons on the detail. */
+const isHere = (id: string): boolean => id === "d:here" || id === "d:installs"
+
+/**
+ * Whether `count` pills stood one under the other fit the detail's stage
+ * (ui/organisms/VelvetPick.slint: a pill's pitch is 2.8 of its size, and the
+ * group stands no lower than 0.78 of the window's height).
+ */
+export const detailStackFits = (count: number, plan: Plan): boolean =>
+  count * plan.button * 2.8 - plan.button * 0.5 <= plan.height * 0.78 - plan.padY
+
+/**
+ * The detail's buttons in the window `plan` draws them in. Where they stand one
+ * under the other and the stage cannot hold them all, the install's (Install and
+ * play, Installs) move into More, a press away (`overflowsHere`), and nothing
+ * leaves the window.
+ */
+export function detailButtons(game: Game, model: Model, plan?: Plan): readonly DetailButton[] {
+  const all = allDetailButtons(game, model)
+  if (plan === undefined || !overflowsHere(all, plan)) return all
+  const kept = all.filter(button => !isHere(button.id))
+  return kept.some(button => button.id === "d:more") ? kept : [...kept, MORE_BUTTON]
+}
+
+/** Whether the install's buttons go into More in this window. */
+export function overflowsHere(buttons: readonly DetailButton[], plan: Plan): boolean {
+  return buttons.some(button => isHere(button.id)) && pillsStack(buttons, plan) && !detailStackFits(buttons.length, plan)
+}
+
+const MORE_BUTTON: DetailButton = { id: "d:more", label: "More", icon: "menu", quiet: true, act: { t: "sheet", sheet: "actions" } }
+
 /** The detail's buttons: Play first, then each other place it plays, a save to choose, and what else Korri offers. */
-export function detailButtons(game: Game, model: Model): readonly DetailButton[] {
+export function allDetailButtons(game: Game, model: Model): readonly DetailButton[] {
   const verb = game.resumable === true ? "Resume" : "Play"
   const buttons: DetailButton[] = []
   const places = game.launchLocations ?? []
@@ -695,7 +726,7 @@ export function detailButtons(game: Game, model: Model): readonly DetailButton[]
     buttons.push({ id: "d:save", label: choose.label, icon: "save", quiet: true, act: choose.enabled ? send({ _tag: "RunAction", actionId: choose.id }) : NONE })
   }
   const more = model.focusedGame
-  if (installsLater(game) || (more !== undefined && more.gameId === game.id && more.actions.length > 0)) buttons.push({ id: "d:more", label: "More", icon: "menu", quiet: true, act: { t: "sheet", sheet: "actions" } })
+  if (installsLater(game) || (more !== undefined && more.gameId === game.id && more.actions.length > 0)) buttons.push(MORE_BUTTON)
   return buttons
 }
 
@@ -746,7 +777,7 @@ export function pressDetail(state: State, button: Direction | "confirm" | "back"
   const game = detailGame(state, model)
   if (state.detail === undefined || game === undefined) return stay({ ...state, detail: undefined })
   if (button === "back") return stay({ ...state, detail: undefined })
-  const buttons = detailButtons(game, model)
+  const buttons = detailButtons(game, model, plan)
   const at = Math.max(0, Math.min(state.detail.at, buttons.length - 1))
   const stacked = detailStacks(buttons, plan)
   if (button === "confirm") return { state, act: buttons[at]?.act ?? NONE }
@@ -771,7 +802,7 @@ export const detailStacks = (buttons: readonly DetailButton[], plan: Plan): bool
 export function detailView(asked: Pictures, state: State, model: Model, plan: Plan, live: boolean) {
   const game = detailGame(state, model)
   if (state.detail === undefined || game === undefined) return undefined
-  const buttons = detailButtons(game, model)
+  const buttons = detailButtons(game, model, plan)
   const at = Math.max(0, Math.min(state.detail.at, buttons.length - 1))
   const hero = hasHero(game)
   const extra: FactView[] = [

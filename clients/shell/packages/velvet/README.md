@@ -224,7 +224,10 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   apply, so a row keeps its place) and Cancel install; the one that runs,
   Cancel install; a failed one, Try again and Throw away. A move keeps the
   sheet open, so presses move it further; a cancel asks first, "Keep it"
-  the way out. An install that yields to play (`yielding`, #556) says so
+  the way out. Where the detail's buttons stand one under the other and
+  the stage cannot hold them all (320x240 with two places), Install and play
+  and Installs move into More, a press away (`overflowsHere`, `src/browse.ts`).
+  An install that yields to play (`yielding`, #556) says so
   wherever its progress shows: "Paused" or "Slowed" as the list's value, why
   under its bar at rest (a game, netplay or a stream here, or the devices that
   hold it busy), and for a pause when it goes on; a paused one shows no time

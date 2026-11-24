@@ -72,6 +72,33 @@ describe("the detail of a game only another device holds", () => {
   })
 })
 
+describe("a stage too short for every button", () => {
+  test("the install's buttons move into More, and nothing leaves the window", () => {
+    const run = new Play(model("install-meanwhile-places"), 320, 240)
+    run.press(...toPeer)
+    expect(labels(run)).toEqual(["Play on zao", "Play on aka", "More"])
+    run.press("options")
+    expect((run.view.sheetRows as any[]).map(row => row.label).slice(0, 2)).toEqual(["Install and play", "Install for later"])
+    expect(own(run.press("confirm"))).toEqual([{ _tag: "InstallGame", gameId: "glass-garden", play: true }])
+    expect(run.view.sheet.shown).toBe(false)
+  })
+  test("Installs from More opens the list", () => {
+    const base = model("install-running-later")
+    const run = new Play({ ...base, catalog: { ...base.catalog, games: base.catalog.games.map((game: any) => game.id === "glass-garden" ? { ...game, launchLocations: [{ id: "zao", label: "zao" }, { id: "aka", label: "aka" }] } : game) } }, 320, 240)
+    run.press(...toPeer)
+    expect(labels(run)).toEqual(["Play on zao", "Play on aka", "More"])
+    run.press("options")
+    expect((run.view.sheetRows as any[]).map(row => row.label).slice(0, 2)).toEqual(["Install and play", "Installs"])
+    run.press("down", "confirm")
+    expect(run.view.list.key).toBe("page:installs")
+  })
+  test("where they fit, they stay inline", () => {
+    const run = new Play(model("install-meanwhile-places"), 1920, 1080)
+    run.press(...toPeer)
+    expect(labels(run)).toEqual(["Play on zao", "Play on aka", "Install and play", "More"])
+  })
+})
+
 describe("why not", () => {
   test("no runner and not allowed: the choice stays, dimmed, and the reason stands under it", () => {
     for (const [name, reason] of [["install-no-runner", "noRunner"], ["install-not-allowed", "notAllowed"]] as const) {
