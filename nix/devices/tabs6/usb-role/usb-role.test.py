@@ -46,6 +46,10 @@ echo "$4 $(( $5 ))" >> "$TABS6_TEST_REGS/writes"
 """
 SYSTEMCTL = """#!/usr/bin/env bash
 echo "$*" >> "$TABS6_TEST_REGS/systemctl"
+if [ "$*" = "restart inputplumber.service korri-inputd.service" ]; then
+    printf 'provider-restart role=%s cntl=%s\n' "$(cat "$TABS6_SYSFS"/class/usb_role/*/role)" "$(cat "$TABS6_TEST_REGS/0x0c")" >> "$TABS6_TEST_REGS/order"
+    [ ! -e "$TABS6_TEST_REGS/provider-failure" ] || exit 1
+fi
 """
 
 I2CTRANSFER = """#!/usr/bin/env bash
@@ -244,6 +248,8 @@ class UsbRole(unittest.TestCase):
                 # Unplug charger: fail closed even before gauge catches up.
                 self.reg("muic", 0)
                 wait_role("device")
+                time.sleep(0.2)
+                self.assertIn("restart inputplumber.service korri-inputd.service", self.systemctl())
                 self.gauge("Discharging")
                 (self.regs / "func").write_text("0x0e 0x24 0xff 0x8f\n")
                 time.sleep(1.2)
@@ -269,9 +275,41 @@ class UsbRole(unittest.TestCase):
                 self.assertEqual(self.reg(CNTL) & 7, 5)
                 self.assertFalse(any(int(w.split()[1]) & 7 == 7
                                      for w in self.writes() if w.startswith("0x0c ")))
+                # A provider teardown failure stops automatic policy, not
+                # another host attempt. The device lifeline stays selected.
+                self.udc("not attached")
+                self.charging_kishi()
+                wait_role("host")
+                (self.regs / "provider-failure").touch()
+                self.reg("muic", 0)
+                self.assertNotEqual(proc.wait(timeout=4), 0)
+                self.assertEqual(self.role(), "device")
+                self.assertEqual(self.reg(CNTL) & 7, 5)
             finally:
                 proc.terminate()
                 proc.wait(timeout=5)
+
+    def test_sink_detach_restarts_providers_only_after_device_and_boost_off(self):
+        for failed in (False, True):
+            with self.subTest(failed=failed):
+                self.set_role("host")
+                self.reg(CNTL, 0xF5)
+                if failed:
+                    (self.regs / "provider-failure").touch()
+                r = self.run_role("sink-device", TABS6_AUTOMATIC=1)
+                self.assertEqual(r.returncode == 0, not failed, r.stderr)
+                self.assertEqual(self.role(), "device")
+                self.assertEqual(self.reg(CNTL) & 7, 5)
+                self.assertIn("provider-restart role=device cntl=245",
+                              (self.regs / "order").read_text())
+
+    def test_sink_detach_refuses_provider_restart_with_host_devices_remaining(self):
+        (self.sys / "bus/usb/devices/1-1").mkdir()
+        self.set_role("host")
+        r = self.run_role("sink-device", TABS6_AUTOMATIC=1)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.role(), "device")
+        self.assertNotIn("restart inputplumber.service korri-inputd.service", self.systemctl())
 
     def test_host_powers_the_port_then_switches(self):
         r = self.run_role("host")

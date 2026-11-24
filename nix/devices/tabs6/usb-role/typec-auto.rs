@@ -309,6 +309,7 @@ fn run() -> Result<(), String> {
         let tick = Instant::now();
         let current = sample(sysfs);
         let was_host = policy.state.sourcing();
+        let was_sink_host = sink_host.consecutive == 3;
         let requested = policy.update(start.elapsed(), current.as_ref().map_err(String::as_str));
         // Live trials never recovered source=1 with boost on. STATUS1 and
         // MUIC cannot distinguish our output from charger input. No runtime
@@ -353,16 +354,23 @@ fn run() -> Result<(), String> {
                 if let Err(error) = apply("sink-host") {
                     eprintln!("tabs6-typec-auto: sink-host failed, returning to device: {error}");
                     sink_host.consecutive = 0;
-                    apply("device")?;
+                    apply("sink-device")?;
                 }
             }
             Action::Device
                 if was_host
+                    || was_sink_host
                     || current
                         .as_ref()
                         .map_or(true, |s| s.sourcing || s.role != "device") =>
             {
-                apply("device")?;
+                // Finish provider teardown while the host controller is absent.
+                // A failed teardown stops policy; it must not re-enable host.
+                apply(if was_sink_host {
+                    "sink-device"
+                } else {
+                    "device"
+                })?;
             }
             _ => (),
         }
