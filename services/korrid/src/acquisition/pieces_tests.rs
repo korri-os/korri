@@ -432,6 +432,13 @@ async fn a_guest_is_refused_and_family_and_owner_devices_may_install() {
         length: 1,
     });
     for request in [&manifest, &piece] {
+        // N7: local contexts that are not a person never ask for installs.
+        assert!(
+            authorization::authorize(&AuthorizationContext::LocalUnixControl, request).is_err()
+        );
+        assert!(
+            authorization::authorize(&AuthorizationContext::TrustReconciliation, request).is_err()
+        );
         assert!(authorization::authorize(&owner, request).is_ok());
         assert!(authorization::authorize(&family, request).is_ok());
         assert!(authorization::authorize(&guest, request).is_err());

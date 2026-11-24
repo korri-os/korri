@@ -347,15 +347,20 @@ pub fn authorize(
 ) -> Result<(), AuthorizationDenied> {
     let allowed = match context {
         AuthorizationContext::LocalSurfaceHost | AuthorizationContext::LocalCli => true,
+        // Installs are served to peer devices only (ADR 0092): neither
+        // inputd's control socket nor trust reconciliation asks for one.
         AuthorizationContext::LocalUnixControl => !matches!(
             policy_for(request),
-            PeerPolicy::LocalSurfaceHostOnly | PeerPolicy::LocalSurfaceHostOrOwnerDevice
+            PeerPolicy::LocalSurfaceHostOnly
+                | PeerPolicy::LocalSurfaceHostOrOwnerDevice
+                | PeerPolicy::OwnerOrHouseholdDevice
         ),
         AuthorizationContext::TrustReconciliation => !matches!(
             policy_for(request),
             PeerPolicy::LocalOnly
                 | PeerPolicy::LocalSurfaceHostOnly
                 | PeerPolicy::LocalSurfaceHostOrOwnerDevice
+                | PeerPolicy::OwnerOrHouseholdDevice
         ),
         AuthorizationContext::Peer(Principal::OwnerDevice { .. }) => !matches!(
             policy_for(request),
