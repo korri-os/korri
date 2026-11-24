@@ -187,3 +187,32 @@ export function inLine(place: number): string {
   const suffix = tens >= 11 && tens <= 13 ? "th" : place % 10 === 1 ? "st" : place % 10 === 2 ? "nd" : place % 10 === 3 ? "rd" : "th"
   return `${place}${suffix} in line`
 }
+
+/**
+ * Why the install that runs goes slower or waits (`SurfaceInstallYield`): play
+ * comes first. A pause says when it goes on, so it does not read as stuck.
+ */
+export function yielded(pace: "slowed" | "paused", reason: "game" | "netplay" | "stream" | "sourcesBusy"): string {
+  if (pace === "slowed") {
+    switch (reason) {
+      case "game":
+        return "Slowed while a game runs on this device."
+      case "netplay":
+        return "Slowed during netplay on this device."
+      case "stream":
+        return "Slowed while this device plays a stream."
+      case "sourcesBusy":
+        return "Slowed: the devices that hold it are playing or low on battery."
+    }
+  }
+  switch (reason) {
+    case "game":
+      return "Paused while a game runs on this device. It goes on when the game ends."
+    case "netplay":
+      return "Paused during netplay on this device. It goes on when the session ends."
+    case "stream":
+      return "Paused while this device plays a stream. It goes on when the stream ends."
+    case "sourcesBusy":
+      return "Paused: the devices that hold it are playing or low on battery. It goes on when one is free."
+  }
+}

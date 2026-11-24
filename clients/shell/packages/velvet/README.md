@@ -28,7 +28,7 @@ table and its capability map are in `docs/design/surfaces/velvet/DIRECTION.md`.
 | `src/fit.ts`, `src/measure.ts`, `src/words.ts` | Fitting caps titles and fact lines from the fonts' advance tables; words about time and size. |
 | `fonts/` | Big Shoulders ExtraBold (display, caps) at opsz 72, and at opsz 28 as Big Shoulders Text for display type under 48 px (looser spacing; the fit measures with it); Archivo semi-condensed 400 and 700; their OFL texts; `fonts/source/` the scripts that cut them. |
 | `test/` | The gates and tests (`bun test packages/velvet/test` in `clients/shell`). |
-| `preview/` | `scenarios.ts` → `scenarios/*.json` (167 models with the presses to each screen), `fixtures/korri.json` (Korri's slices), `art/` (self-drawn test pictures and `build.py`), `previews.ts`, `shots.sh` (the real shell under Xvfb), `probe.sh` (the shell's probe over every scenario). |
+| `preview/` | `scenarios.ts` → `scenarios/*.json` (172 models with the presses to each screen), `fixtures/korri.json` (Korri's slices), `art/` (self-drawn test pictures and `build.py`), `previews.ts`, `shots.sh` (the real shell under Xvfb), `probe.sh` (the shell's probe over every scenario). |
 
 ## The plan
 
@@ -97,7 +97,7 @@ shell, `VELVET_FRAMES` (below) through the test harness.
 | Invites | `invites`, `invite-notice` | `VelvetList.Invites`, `VelvetNotice` |
 | Account sign-ins (ADR 0083, ADR 0089) | `account-rows`, `account-rows-busy`, `account-signed-out`, `account-expired`, `account-checking`, `account-starting`, `account-code`, `account-code-tailscale`, `account-code-renewed`, `account-code-smallest`, `account-code-largest`, `account-code-malformed`, `account-code-logo`, `account-code-no-detail`, `account-signed-in`, `account-signed-in-long`, `account-problem`, `account-refused`, `account-for-game`, `account-working`, `first-boot-account`, `first-boot-account-code`, `first-boot-account-done`, `first-boot-accounts`, `first-boot-steam` | `VelvetList.Account*`, `.FirstBootAccount*`, `VelvetProgramme.AccountCode`, `VelvetCode`, `VelvetRow.Account` |
 | Saves, the runner, launch settings | `saves`, `saves-empty`, `saves-restore`, `runner`, `launch-settings`, `launch-changes`, `launch-keep`, `launch-streamed`, `launch-unreachable`, `launch-conflict`, `launch-loading`, `launch-empty` | `VelvetList.Saves`, `.Runner`, `.LaunchSettings` |
-| Installs (ADR 0092): a game only another device holds, why not, the question while it installs, the list | `install-offered`, `install-offered-focus`, `install-later`, `install-plugin`, `install-plugin-review`, `install-checking`, `install-running`, `install-running-later`, `install-waiting`, `install-no-runner`, `install-no-space`, `install-no-source`, `install-not-allowed`, `install-meanwhile`, `install-meanwhile-places`, `installs-menu`, `installs`, `installs-many`, `installs-empty`, `installs-failed`, `installs-sheet`, `installs-sheet-next`, `installs-sheet-running`, `installs-sheet-failed`, `installs-cancel`, `installs-settings` | `VelvetDetail` (`.InstallOffered`, `.Installing`, `.NoSpace`), `VelvetPick` (`.Installing`, `.NoRunner`), `VelvetSheet` (`.InstallLater`, `.Install`, `.InstallFailed`), `VelvetList` (`.Installs`, `.InstallsEmpty`) |
+| Installs (ADR 0092): a game only another device holds, why not, the question while it installs, the list | `install-offered`, `install-offered-focus`, `install-later`, `install-plugin`, `install-plugin-review`, `install-checking`, `install-running`, `install-running-later`, `install-waiting`, `install-paused`, `install-slowed`, `install-no-runner`, `install-no-space`, `install-no-source`, `install-not-allowed`, `install-meanwhile`, `install-meanwhile-places`, `installs-menu`, `installs`, `installs-many`, `installs-empty`, `installs-failed`, `installs-sheet`, `installs-sheet-next`, `installs-sheet-running`, `installs-sheet-failed`, `installs-cancel`, `installs-settings`, `installs-paused`, `installs-slowed`, `installs-paused-sheet` | `VelvetDetail` (`.InstallOffered`, `.Installing`, `.NoSpace`), `VelvetPick` (`.Installing`, `.NoRunner`), `VelvetSheet` (`.InstallLater`, `.Install`, `.InstallFailed`), `VelvetList` (`.Installs`, `.InstallsEmpty`) |
 | The gameplay overlay | `overlay`, `overlay-groups`, `overlay-stream`, `overlay-asking`, `status-low-pause` | `pages/VelvetPaused`, `VelvetPause` |
 | The cluster: clock, network, battery (ADR 0094) | `status-bars-0` to `status-bars-4`, `status-wifi-unmeasured`, `status-wired`, `status-offline`, `status-no-network`, `status-low`, `status-charging`, `status-bolt`, `status-no-battery`, `status-unverified`, `status-nothing`, `status-row`, `status-lobby`, `status-low-pause` | `VelvetCluster` (`.NoPercent`, `.GlyphsOnly`: a short room), `VelvetBattery`, `VelvetSignal`, `VelvetIcon` (`.Bolt`, `.Wired`, `.Slash`) |
 
@@ -224,7 +224,11 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   apply, so a row keeps its place) and Cancel install; the one that runs,
   Cancel install; a failed one, Try again and Throw away. A move keeps the
   sheet open, so presses move it further; a cancel asks first, "Keep it"
-  the way out. `test/installs.test.ts`.
+  the way out. An install that yields to play (`yielding`, #556) says so
+  wherever its progress shows: "Paused" or "Slowed" as the list's value, why
+  under its bar at rest (a game, netplay or a stream here, or the devices that
+  hold it busy), and for a pause when it goes on; a paused one shows no time
+  left, since Korri's average only grows while it waits. `test/installs.test.ts`.
 - `FocusGame` whenever the game in focus changes; the detail's More and
   `options` list `model.focusedGame.actions`.
 - Focus (contract 8.4): every target carries `focused`, `focusRegion` and a

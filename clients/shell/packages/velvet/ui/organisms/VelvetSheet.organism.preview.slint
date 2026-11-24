@@ -22,9 +22,9 @@ export component InstallLater inherits VelvetPreview {
 }
 
 export component Install inherits VelvetPreview {
-    VelvetSheet { x: 0; y: 0; width: parent.width; height: parent.height; sheet: { shown: true, title: "mGBA core" }; rows: [{ kind: "note", label: "2nd in line. 3.1 MB.", mark: "none" }, { kind: "row", label: "Install next", mark: "none", focus-id: "i:next", focused: true }, { kind: "row", label: "Move up", mark: "none", focus-id: "i:up" }, { kind: "row", label: "Move down", mark: "none", focus-id: "i:down" }, { kind: "row", label: "Cancel install", mark: "none", danger: true, focus-id: "i:cancel" }]; }
+    VelvetSheet { x: 0; y: 0; width: parent.width; height: parent.height; sheet: { shown: true, title: "mGBA core" }; rows: [{ kind: "head", label: "mGBA core", mark: "none" }, { kind: "note", label: "2nd in line. 3.1 MB.", mark: "none" }, { kind: "row", label: "Install next", mark: "none", focus-id: "i:next", focused: true }, { kind: "row", label: "Move up", mark: "none", focus-id: "i:up" }, { kind: "row", label: "Move down", mark: "none", focus-id: "i:down" }, { kind: "row", label: "Cancel install", mark: "none", danger: true, focus-id: "i:cancel" }]; }
 }
 
 export component InstallFailed inherits VelvetPreview {
-    VelvetSheet { x: 0; y: 0; width: parent.width; height: parent.height; sheet: { shown: true, title: "Antidisestablishmentarianism" }; rows: [{ kind: "problem", label: "The devices that hold this release stopped answering before it was complete. What was installed is kept for a new try.", mark: "none" }, { kind: "row", label: "Try again", note: "Goes on from what was installed.", mark: "none", focus-id: "i:again", focused: true }, { kind: "row", label: "Throw away", mark: "none", danger: true, focus-id: "i:cancel" }]; }
+    VelvetSheet { x: 0; y: 0; width: parent.width; height: parent.height; sheet: { shown: true, title: "Antidisestablishmentarianism" }; rows: [{ kind: "head", label: "Antidisestablishmentarianism", mark: "none" }, { kind: "problem", label: "The devices that hold this release stopped answering before it was complete. What was installed is kept for a new try.", mark: "none" }, { kind: "row", label: "Try again", note: "Goes on from what was installed.", mark: "none", focus-id: "i:again", focused: true }, { kind: "row", label: "Throw away", mark: "none", danger: true, focus-id: "i:cancel" }]; }
 }

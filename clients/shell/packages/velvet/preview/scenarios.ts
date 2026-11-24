@@ -397,6 +397,12 @@ const scenarios: Scenario[] = [
   { name: "install-checking", models: [peerInstall({ _tag: "Offered" }), peerInstall({ _tag: "Checking" })], steps: [...toPeer, "right", "confirm", "model 1"] },
   { name: "install-running", models: [peerInstall({ _tag: "Installing", installId: "dev:glass" }, [running({ playWhenReady: true })], {}, { download: { progress: { done: 1.2 * GB, total: 4.7 * GB }, bytes: 3.5 * GB } })], steps: toPeer },
   { name: "install-running-later", models: [peerInstall({ _tag: "Installing", installId: "dev:glass" }, [running()], {}, { download: { progress: { done: 1.2 * GB, total: 4.7 * GB }, bytes: 3.5 * GB } })], steps: toPeer },
+  // An install yields to play (#556): paused while a game runs here, slowed while the holders are busy.
+  { name: "install-paused", models: [peerInstall({ _tag: "Installing", installId: "dev:glass" }, [running({ playWhenReady: true, state: { _tag: "Installing", progress: { done: 1.2 * GB, total: 4.7 * GB }, secondsLeft: 900, yielding: { pace: "paused", reason: "game" } } })], {}, { download: { progress: { done: 1.2 * GB, total: 4.7 * GB }, bytes: 3.5 * GB } })], steps: toPeer },
+  { name: "install-slowed", models: [peerInstall({ _tag: "Installing", installId: "dev:glass" }, [running({ state: { _tag: "Installing", progress: { done: 2.6 * GB, total: 4.7 * GB }, secondsLeft: 640, yielding: { pace: "slowed", reason: "sourcesBusy" } } })], {}, { download: { progress: { done: 2.6 * GB, total: 4.7 * GB }, bytes: 2.1 * GB } })], steps: toPeer },
+  { name: "installs-paused", models: [peerInstall(undefined, [{ ...line[0], state: { ...line[0]!.state, yielding: { pace: "paused", reason: "netplay" } } }, ...line.slice(1)])], steps: toInstalls },
+  { name: "installs-slowed", models: [peerInstall(undefined, [{ ...line[0], state: { ...line[0]!.state, yielding: { pace: "slowed", reason: "stream" } } }, ...line.slice(1)])], steps: toInstalls },
+  { name: "installs-paused-sheet", models: [peerInstall(undefined, [{ ...line[0], state: { ...line[0]!.state, yielding: { pace: "paused", reason: "sourcesBusy" } } }, ...line.slice(1)])], steps: [...toInstalls, "confirm"] },
   { name: "install-waiting", models: [peerInstall({ _tag: "Installing", installId: "dev:glass" }, line, {}, { download: { queued: true, bytes: 4.7 * GB } })], steps: toPeer },
   { name: "install-no-runner", models: [peerInstall({ _tag: "Unavailable", reason: "noRunner" })], steps: toPeer },
   { name: "install-no-space", models: [peerInstall({ _tag: "Unavailable", reason: "notEnoughSpace", bytes: 4.7 * GB })], steps: toPeer },

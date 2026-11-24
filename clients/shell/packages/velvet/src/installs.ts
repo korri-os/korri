@@ -26,12 +26,12 @@
  * that installs. Every word is Velvet's (src/words.ts) except a failure's
  * reason, which Korri writes.
  */
-import type { SurfaceInstall, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
+import type { SurfaceInstall, SurfaceInstallState, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
 import type { CurtainSpec } from "./curtain"
 import { whereOf } from "./art"
 import { gameById } from "./lists"
 import { NONE, send, seq, type Act, type Game, type PanelSpec, type RowSpec, type State } from "./types"
-import { blocked, bytes, CHECKING, INSTALL_AND_PLAY, INSTALL_FOR_LATER, installed, INSTALLS, inLine, takes } from "./words"
+import { blocked, bytes, CHECKING, INSTALL_AND_PLAY, INSTALL_FOR_LATER, installed, INSTALLS, inLine, takes, yielded } from "./words"
 
 const CLOSE: Act = { t: "close" }
 
@@ -50,12 +50,24 @@ export function placeOf(installs: readonly SurfaceInstall[], index: number): num
   return place
 }
 
+type Running = Extract<SurfaceInstallState, { _tag: "Installing" }>
+
+/**
+ * How far the install that runs has got. While it waits for play Korri's time
+ * left only grows (it is the average since the start), so a pause says none.
+ */
+export const runningWords = (state: Running): string =>
+  installed(state.progress.done, state.progress.total, state.yielding?.pace === "paused" ? undefined : state.secondsLeft)
+
+/** Why it goes slower or waits, when it does: "" at full pace. */
+export const yieldWords = (state: Running): string => (state.yielding === undefined ? "" : yielded(state.yielding.pace, state.yielding.reason))
+
 /** The words for where an install stands, for a row's value. */
 function standing(installs: readonly SurfaceInstall[], index: number): string {
   const install = installs[index]!
   switch (install.state._tag) {
     case "Installing":
-      return "Installing"
+      return install.state.yielding === undefined ? "Installing" : install.state.yielding.pace === "paused" ? "Paused" : "Slowed"
     case "Waiting":
       return inLine(placeOf(installs, index))
     case "Failed":
@@ -128,7 +140,7 @@ export function hereNote(game: Game, model: Model): string | undefined {
       const installs = model.installs ?? []
       switch (install.state._tag) {
         case "Installing":
-          return `Installing on this device: ${installed(install.state.progress.done, install.state.progress.total, install.state.secondsLeft)}.${then}`
+          return `Installing on this device: ${runningWords(install.state)}.${yieldWords(install.state) === "" ? "" : ` ${yieldWords(install.state)}`}${then}`
         case "Waiting":
           return `Waiting to install: ${inLine(placeOf(installs, installs.indexOf(install))).toLowerCase()}.${then}`
         case "Failed":
@@ -164,12 +176,14 @@ export function installsPage(model: Model): PanelSpec {
       press: { t: "sheet", sheet: "install", installId: install.id },
     })
     if (state._tag === "Installing") {
-      const words = installed(state.progress.done, state.progress.total, state.secondsLeft)
+      const words = runningWords(state)
       const total = state.progress.total
       rows.push(total === undefined || total <= 0
         ? { id: `n:${install.id}:at`, kind: "note", label: words }
         : { id: `n:${install.id}:at`, kind: "meter", label: words, share: Math.max(0, Math.min(1, state.progress.done / total)) })
     }
+    // Play comes first: a slowed or paused install says why at rest, under its bar.
+    if (state._tag === "Installing" && state.yielding !== undefined) rows.push({ id: `n:${install.id}:yield`, kind: "note", label: yieldWords(state) })
     if (state._tag === "Failed") rows.push({ id: `n:${install.id}:why`, kind: "problem", label: state.reason })
   })
   if (installs.length === 0) rows.push({ id: "n:none", kind: "note", label: "Nothing is installing. A game another device holds can be installed from its page." })
@@ -191,11 +205,12 @@ export function installSheet(id: string | undefined, model: Model): PanelSpec {
     // The way out says what it keeps: "Cancel" beside "Cancel install" would read as either.
     press: { t: "ask", ask: { title: label, lines: [install.title, line], buttons: [{ label: "Keep it", act: NONE }, { label, danger: true, act: seq(send({ _tag: "CancelInstall", installId: install.id }), CLOSE) }] } },
   })
-  const rows: RowSpec[] = []
+  // The sheet draws no title of its own: its first row names the install, so it is never a list of verbs about nothing.
+  const rows: RowSpec[] = [{ id: "i:title", kind: "head", label: install.title }]
   const state = install.state
   switch (state._tag) {
     case "Installing":
-      rows.push({ id: "i:at", kind: "note", label: `Installing: ${installed(state.progress.done, state.progress.total, state.secondsLeft)}.` })
+      rows.push({ id: "i:at", kind: "note", label: `Installing: ${runningWords(state)}.${yieldWords(state) === "" ? "" : ` ${yieldWords(state)}`}` })
       rows.push(cancel("Cancel install", "What is installed so far is deleted."))
       break
     case "Waiting": {

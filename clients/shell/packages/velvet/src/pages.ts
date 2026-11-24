@@ -72,7 +72,8 @@ export function installsValue(model: Model): string {
   const installs = model.installs ?? []
   const running = installs.find(install => install.state._tag === "Installing")
   if (running !== undefined && running.state._tag === "Installing" && running.state.progress.total !== undefined && running.state.progress.total > 0) {
-    return `${Math.floor((100 * running.state.progress.done) / running.state.progress.total)}%`
+    const share = `${Math.floor((100 * running.state.progress.done) / running.state.progress.total)}%`
+    return running.state.yielding?.pace === "paused" ? `Paused, ${share}` : share
   }
   return installs.length === 0 ? "" : String(installs.length)
 }

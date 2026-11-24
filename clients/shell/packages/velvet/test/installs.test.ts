@@ -16,7 +16,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { Play, play, scenario, SIZES, targets } from "./korri"
-import { blocked, inLine, left, takes } from "../src/words"
+import { blocked, inLine, left, takes, yielded } from "../src/words"
 
 const model = (name: string, at = 0) => scenario(name).models[at]
 const focus = (run: Play) => targets(run.view).find(entry => entry.focused === true)
@@ -121,6 +121,43 @@ describe("while it installs", () => {
   })
 })
 
+describe("an install that yields to play (#556)", () => {
+  test("paused: the detail says why and when it goes on, and no time left that only grows", () => {
+    const run = atPeer("install-paused")
+    expect(run.view.detail.progress).toBe(true)
+    expect(run.view.detail.note).toBe("Installing on this device: 1.2 GB of 4.7 GB. Paused while a game runs on this device. It goes on when the game ends. It starts when it is installed.")
+  })
+  test("slowed: the time left stays, and why", () => {
+    const run = atPeer("install-slowed")
+    expect(run.view.detail.note).toBe("Installing on this device: 2.6 GB of 4.7 GB, about 11 min left. Slowed: the devices that hold it are playing or low on battery.")
+  })
+  test("the list: Paused or Slowed as its value, the reason under its bar at rest", () => {
+    const paused = play(scenario("installs-paused"))
+    const rows = (paused.view.listRows as any[]).slice(0, 3).map(row => [row.kind, row.label, row.value])
+    expect(rows).toEqual([
+      ["row", "Vesper", "Paused"],
+      ["meter", "3.1 GB of 8.4 GB", ""],
+      ["note", yielded("paused", "netplay"), ""],
+    ])
+    const slowed = play(scenario("installs-slowed"))
+    expect(slowed.view.listRows[0].value).toBe("Slowed")
+    expect(slowed.view.listRows[1].label).toBe("3.1 GB of 8.4 GB, about 33 min left")
+    expect(slowed.view.listRows[2].label).toBe("Slowed while this device plays a stream.")
+  })
+  test("its sheet and the menu say it is paused", () => {
+    const sheet = play(scenario("installs-paused-sheet"))
+    expect(sheet.view.sheetRows[1].label).toBe(`Installing: 3.1 GB of 8.4 GB. ${yielded("paused", "sourcesBusy")}`)
+    const menu = new Play(model("installs-paused"))
+    menu.press("menu")
+    expect((menu.view.sheetRows as any[]).find(row => row.label === "Installs").value).toBe("Paused, 36%")
+  })
+  test("every pace and reason has its own words", () => {
+    const all = (["slowed", "paused"] as const).flatMap(pace => (["game", "netplay", "stream", "sourcesBusy"] as const).map(reason => yielded(pace, reason)))
+    expect(new Set(all).size).toBe(8)
+    for (const words of all.slice(4)) expect(words).toContain("It goes on when")
+  })
+})
+
 describe("stream meanwhile", () => {
   test("the curtain asks; the way out is first, focused, and Back gives the same answer", () => {
     const run = play(scenario("install-meanwhile"))
@@ -184,6 +221,7 @@ describe("the list of installs", () => {
   test("one that waits: Install next, Move up, Move down; the sheet stays for the next press", () => {
     const run = play(scenario("installs-sheet"))
     expect(run.view.sheet.title).toBe("mGBA core")
+    expect(run.view.sheetRows[0]).toMatchObject({ kind: "head", label: "mGBA core" })
     expect(own(run.press("confirm"))).toEqual([{ _tag: "MoveInstall", installId: "artifact:@korri:mgba/core", index: 0 }])
     expect(run.view.sheet.shown).toBe(true)
     expect(own(run.press("down", "confirm"))).toEqual([{ _tag: "MoveInstall", installId: "artifact:@korri:mgba/core", index: 1 }])
@@ -212,7 +250,7 @@ describe("the list of installs", () => {
     const running = play(scenario("installs-sheet-running"))
     expect((running.view.sheetRows as any[]).filter(row => row.focusId !== "").map(row => row.label)).toEqual(["Cancel install"])
     const failed = play(scenario("installs-sheet-failed"))
-    expect((failed.view.sheetRows as any[]).map(row => row.label)).toEqual([expect.stringContaining("stopped answering"), "Try again", "Throw away"])
+    expect((failed.view.sheetRows as any[]).map(row => row.label)).toEqual(["Antidisestablishmentarianism", expect.stringContaining("stopped answering"), "Try again", "Throw away"])
     expect(own(failed.press("confirm"))).toEqual([{ _tag: "InstallGame", gameId: "antidisestablishmentarianism", play: false }])
     const away = play(scenario("installs-sheet-failed"))
     away.press("down", "confirm", "right")
