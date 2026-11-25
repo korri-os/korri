@@ -8,11 +8,11 @@
 //! focus and the lifecycle socket are the daemon's own `installed_viewer`.
 //!
 //! usage: viewer_probe ADDRESS SERVER_CERTIFICATE PAIRED_CLIENT_CERTIFICATE LIBRARY_ROOT
-//! stdin: `ACTION LAUNCH` per line; ACTION is start, status, snapshot,
-//! background, resume or stop. stdout: one JSON object per line.
+//! stdin: `ACTION LAUNCH` per line; ACTION is start, status, first-frame,
+//! snapshot, background, resume or stop. stdout: one JSON object per line.
 use korrid::linux_viewer::{
     installed_viewer, render_settings, CertificateProvision, LinuxStreamViewer, LinuxViewerError,
-    LocalSeats, ViewerSettings,
+    LocalSeats, ViewerFirstFrame, ViewerSettings,
 };
 use std::{io::BufRead, path::PathBuf, sync::Arc};
 
@@ -83,6 +83,30 @@ async fn run(
             serde_json::Value::Null
         }
         "status" => serde_json::json!(format!("{:?}", viewer.status(launch).await?)),
+        "first-frame" => {
+            let mut frame = viewer.first_frame(launch).await?;
+            tokio::time::timeout(std::time::Duration::from_secs(30), async {
+                loop {
+                    let current = *frame.borrow_and_update();
+                    match current {
+                        ViewerFirstFrame::Shown => return Ok(()),
+                        ViewerFirstFrame::Stopped => {
+                            return Err(LinuxViewerError::new(
+                                "viewer stopped before its first frame",
+                            ))
+                        }
+                        ViewerFirstFrame::Waiting => {}
+                    }
+                    frame
+                        .changed()
+                        .await
+                        .map_err(|_| LinuxViewerError::new("viewer first-frame channel closed"))?;
+                }
+            })
+            .await
+            .map_err(|_| LinuxViewerError::new("viewer first frame did not arrive"))??;
+            serde_json::Value::Null
+        }
         "snapshot" => serde_json::to_value(viewer.snapshot(launch).await?)
             .map_err(|error| LinuxViewerError::new(error.to_string()))?,
         "background" => {

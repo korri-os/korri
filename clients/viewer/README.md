@@ -445,7 +445,10 @@ plugin host, korrid module, units and sandbox. It does not exercise the
 federated path: the peer request that makes korrid start a viewer in a real
 stream. The probe (`services/korrid/src/bin/viewer_probe.rs`) calls the
 daemon's own `installed_viewer` instead, as user `korrid` in korrid's service
-sandbox, with a broker that serves a private Sunshine in the guest. The aka
+sandbox, with a broker that serves a private Sunshine in the guest. `start`
+keeps the viewer hidden. The probe waits for the typed `FirstFrame` event,
+checks that the window is still hidden, then explicitly requests focus in
+place of the holder's permission (ADR 0098). The aka
 binary proof and the owner's one game after the autonomous proof (ADR 0063)
 cover that path first.
 

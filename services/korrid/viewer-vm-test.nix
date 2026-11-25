@@ -53,6 +53,11 @@ let
     output HEADLESS-1 mode 1280x720
     xwayland enable
     default_border none
+    # Match the device's hidden-before-first-frame policy. The stand-in shell
+    # has no korrid shell observer, so this fixture places its own shell.
+    for_window [all] move scratchpad
+    no_focus [all]
+    for_window [app_id="korri-shell"] move container to workspace current, floating disable, focus
   '';
   senderSway = pkgs.writeText "sender-sway.conf" ''
     output HEADLESS-1 mode 640x480
@@ -333,6 +338,12 @@ pkgs.testers.runNixOSTest {
                 return found
         return None
 
+    def viewer_windows(node):
+        found = [node] if node.get("pid") and node.get("app_id") != "korri-shell" else []
+        for child in node.get("nodes", []) + node.get("floating_nodes", []):
+            found.extend(viewer_windows(child))
+        return found
+
     machine.start()
     machine.wait_for_unit("korri-plugin-host.service")
     machine.wait_for_unit("korrid.service")
@@ -400,7 +411,19 @@ pkgs.testers.runNixOSTest {
         assert "KORRI_MOONLIGHT_SERVER_CERTIFICATE=/run/credentials/" + unit + "/moonlight-server.pem" in environment
         # The unit names its viewer, for a restarted korrid.
         assert "KORRI_LIVE_RUNNER_ID=@korri:viewer/viewer" in environment, environment
-        # korrid focused the viewer's window after Start was confirmed.
+        # Start confirms the connection, not permission to take the screen.
+        assert ok("status", korri_launch) == "Backgrounded"
+        assert focused(tree()).get("app_id") == "korri-shell"
+
+    with subtest("first frame arrives through the socket while the viewer stays hidden"):
+        ok("first-frame", korri_launch)
+        windows = viewer_windows(tree())
+        assert windows and all(window.get("visible") is False for window in windows), windows
+        assert ok("status", korri_launch) == "Backgrounded"
+        assert focused(tree()).get("app_id") == "korri-shell"
+        # The fixture supplies the peer's permission only after the real
+        # presenter fact. Production supplies it from the exact holder push.
+        ok("resume", korri_launch)
         window = focused(tree())
         assert window and window.get("app_id") != "korri-shell" and window.get("fullscreen_mode") == 1, window
 
