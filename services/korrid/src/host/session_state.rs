@@ -4957,6 +4957,58 @@ mod tests {
     }
 
     #[test]
+    fn a_window_mapped_while_the_subscription_was_lost_is_reconciled_after_reconnect() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let shell = Arc::new(RecordingShellUnit::default());
+        // Startup subscribes, the connection then drops; the retry succeeds
+        // and delivers no event for the window mapped in the gap.
+        compositor.subscriptions.lock().unwrap().extend([
+            vec![
+                Ok(None),
+                Err("Sway closed the window subscription".to_owned()),
+            ],
+            vec![],
+        ]);
+        let control = shell_control(
+            root.path(),
+            backend.clone(),
+            compositor.clone(),
+            shell.clone(),
+        );
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 2);
+        control.spawn_first_frame_watch();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while control.initial_handoff_for(&control.lock_state()) != Some(InitialHandoff::Observed) {
+            assert!(
+                Instant::now() < deadline,
+                "reconnect did not reconcile the mapped window"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        control.shutting_down.store(true, Ordering::SeqCst);
+        assert_eq!(backend.state.lock().unwrap().audio_released, [id]);
+        assert!(shell.frozen());
+        assert!(compositor
+            .commands
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|command| command
+                .contains("[con_id=3] floating disable; [con_id=3] fullscreen enable")));
+        // The shell's own window never counts as the launch's first frame.
+        assert!(!compositor
+            .commands
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|command| command.contains("[con_id=2] fullscreen")));
+    }
+
+    #[test]
     fn first_frame_recovery_does_not_release_audio_or_lose_the_next_new_event() {
         for (recover_with_status, focus) in [(false, 2), (true, 2), (false, 3), (true, 3)] {
             let root = tempfile::tempdir().unwrap();
@@ -7329,7 +7381,7 @@ printf '[{{"success":true}}]'
             "--property=BindReadOnlyPaths=/tmp/.X11-unix/X0".into(),
             "--property=ProtectKernelModules=yes".into(),
             "--property=ProtectControlGroups=yes".into(),
-            "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-control/control.sock /run/korrid-control /run/korrid-cli/cli.sock /run/korrid-cli -/home/korri/.config/sunshine /run/korri-compositor -/run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight".into(),
+            "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-control/control.sock /run/korrid-control /run/korrid-cli/cli.sock /run/korrid-cli -/home/korri/.config/sunshine /run/korri-compositor -/run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/dev/snd -/home/korri/.config/moonlight".into(),
             "--property=RestrictSUIDSGID=yes".into(),
         ] {
             assert!(
@@ -7779,11 +7831,34 @@ printf '[{{"success":true}}]'
         focus_fails: AtomicBool,
         shell_focus_fails: AtomicBool,
         return_events: Option<Arc<Mutex<Vec<&'static str>>>>,
+        /// Each subscription replays its events, then waits quietly. With
+        /// none queued, the compositor offers no window subscription.
+        subscriptions: Mutex<std::collections::VecDeque<Vec<Result<Option<String>, String>>>>,
+    }
+
+    struct ScriptedEvents(std::collections::VecDeque<Result<Option<String>, String>>);
+
+    impl super::super::compositor_focus::CompositorEvents for ScriptedEvents {
+        fn next(&mut self, wait: Duration) -> Result<Option<String>, String> {
+            self.0.pop_front().unwrap_or_else(|| {
+                std::thread::sleep(wait);
+                Ok(None)
+            })
+        }
     }
 
     impl CompositorControl for RecordingCompositor {
         fn tree(&self) -> Result<String, String> {
             Ok(self.tree.lock().unwrap().clone())
+        }
+
+        fn subscribe_windows(
+            &self,
+        ) -> Result<Box<dyn super::super::compositor_focus::CompositorEvents>, String> {
+            match self.subscriptions.lock().unwrap().pop_front() {
+                Some(events) => Ok(Box::new(ScriptedEvents(events.into()))),
+                None => Err("window subscription unavailable".into()),
+            }
         }
 
         fn outputs(&self) -> Result<String, String> {
@@ -9954,7 +10029,7 @@ printf '[{{"success":true}}]'
             )
             .unwrap();
         assert!(launch.contains(
-            &"--property=InaccessiblePaths=/srv/korri-test/private-recovery /run/korrid /run/korri-test/control/device.sock /run/korri-test/control /run/korrid-cli/cli.sock /run/korrid-cli -/home/gameplay/.config/sunshine /run/korri-test/compositor-control -/run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight".into()
+            &"--property=InaccessiblePaths=/srv/korri-test/private-recovery /run/korrid /run/korri-test/control/device.sock /run/korri-test/control /run/korrid-cli/cli.sock /run/korrid-cli -/home/gameplay/.config/sunshine /run/korri-test/compositor-control -/run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/dev/snd -/home/korri/.config/moonlight".into()
         ));
     }
 

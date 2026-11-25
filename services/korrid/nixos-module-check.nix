@@ -302,10 +302,13 @@ assert service.serviceConfig.User != "korri";
 assert lib.hasPrefix "/nix/store/" service.environment.KORRID_GAME_AUDIO_HELPER;
 assert lib.hasSuffix "/bin/korri-game-audio" service.environment.KORRID_GAME_AUDIO_HELPER;
 assert lib.hasInfix "korri-game-audio-" enabled.config.security.polkit.extraConfig;
+assert lib.hasPrefix "/nix/store/" service.environment.KORRID_GAME_ALSA_CONFIG;
+assert lib.hasSuffix "-99-korri-game-pulse.conf" service.environment.KORRID_GAME_ALSA_CONFIG;
 assert
   builtins.removeAttrs service.environment [
     "PATH"
     "KORRID_GAME_AUDIO_HELPER"
+    "KORRID_GAME_ALSA_CONFIG"
   ] == {
     HOSTNAME = enabled.config.networking.hostName;
     KORRID_ADDRESS = "127.0.0.1:43117";

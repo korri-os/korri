@@ -646,6 +646,8 @@ pub struct SystemdLaunchUnitBackend {
     compositor_control_directory: PathBuf,
     certificate_control_directory: PathBuf,
     compositor_wayland_socket: Option<PathBuf>,
+    /// Native ALSA conf.d for Pulse-enabled games (KORRID_GAME_ALSA_CONFIG).
+    game_alsa_config: Option<PathBuf>,
     diagnostics_root: PathBuf,
     helper_timeout: Duration,
     /// setfacl, for a lifecycle viewer's runtime directory (KORRID_SETFACL).
@@ -1286,6 +1288,7 @@ impl SystemdLaunchUnitBackend {
             compositor_control_directory,
             certificate_control_directory,
             compositor_wayland_socket: None,
+            game_alsa_config: None,
             diagnostics_root: PathBuf::from("/run/korrid/launches"),
             helper_timeout,
             acl_editor: None,
@@ -1350,6 +1353,7 @@ impl SystemdLaunchUnitBackend {
             compositor_control_directory,
             certificate_control_directory,
             compositor_wayland_socket: None,
+            game_alsa_config: None,
             diagnostics_root: PathBuf::from("/run/korrid/launches"),
             helper_timeout: DEFAULT_HELPER_TIMEOUT,
             acl_editor: None,
@@ -1358,6 +1362,12 @@ impl SystemdLaunchUnitBackend {
             std::env::var_os("KORRID_COMPOSITOR_WAYLAND_SOCKET").map(PathBuf::from),
         )
         .with_acl_editor(std::env::var_os("KORRID_SETFACL").map(PathBuf::from))
+        .with_game_alsa_config(std::env::var_os("KORRID_GAME_ALSA_CONFIG").map(PathBuf::from))
+    }
+
+    pub(super) fn with_game_alsa_config(mut self, config: Option<PathBuf>) -> Self {
+        self.game_alsa_config = config;
+        self
     }
 
     pub(super) fn with_acl_editor(mut self, setfacl: Option<PathBuf>) -> Self {
@@ -1661,11 +1671,27 @@ impl SystemdLaunchUnitBackend {
         } else {
             String::from("/tmp/.X11-unix/X0")
         };
+        // Physical sound devices bypass the launch's audio gate. Every game
+        // and hook unit is denied them, whatever groups the runtime user has.
+        let mut hidden_audio = String::from(" -/dev/snd");
         if sandbox.pulse_audio {
-            // Expose only Pulse outside the hidden runtime, never its control sockets.
+            // Only this launch's Pulse socket is visible. The helper's own
+            // runtime directory stays hidden at its original path.
             read_only_binds.push_str(&format!(
-                " /run/korri-game-audio-{launch_id}:/run/korri-game-audio"
+                " /run/korri-game-audio-{launch_id}/native:/run/korri-game-audio/native"
             ));
+            hidden_audio.push_str(&format!(" -/run/korri-game-audio-{launch_id}"));
+            // ALSA-only clients reach the same socket through the standard
+            // Pulse ALSA plugin, never through a device node.
+            if let Some(config) = &self.game_alsa_config {
+                if !valid_protected_path(config) {
+                    return Err(LaunchUnitError::new(
+                        LaunchUnitErrorKind::InvalidConfiguration,
+                        "invalid game ALSA configuration",
+                    ));
+                }
+                read_only_binds.push_str(&format!(" {}:/etc/alsa/conf.d", config.display()));
+            }
         }
         let modifier_runtime = if modifiers {
             let socket = self
@@ -1716,7 +1742,7 @@ impl SystemdLaunchUnitBackend {
             // installed. systemd refuses to start the unit for a missing
             // path unless it has the "-" prefix.
             format!(
-                "--property=InaccessiblePaths={} /run/korrid {} {} {} {}{} {} -{} /run/user/{} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources{}",
+                "--property=InaccessiblePaths={} /run/korrid {} {} {} {}{} {} -{} /run/user/{} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources{}{}",
                 self.private_state_root.display(),
                 self.control_socket.display(),
                 self.control_directory.display(),
@@ -1726,6 +1752,7 @@ impl SystemdLaunchUnitBackend {
                 self.compositor_control_directory.display(),
                 self.certificate_control_directory.display(),
                 self.runtime_uid,
+                hidden_audio,
                 if self.stream_viewer { "" } else { " -/home/korri/.config/moonlight" }
             ),
             "--property=RestrictSUIDSGID=yes".into(),
@@ -3548,40 +3575,107 @@ mod tests {
     }
 
     #[test]
-    fn pulse_opt_in_adds_only_the_runtime_audio_bind_and_environment() {
+    fn pulse_opt_in_exposes_only_the_launch_socket_and_hides_helper_state_and_devices() {
         for uid in [2001, 3001] {
-            let backend = backend(uid);
-            let command = ["/games/retroarch".into()];
-            let baseline = backend
-                .launch_arguments(LAUNCH_ID, &command, &BTreeMap::new())
-                .unwrap();
-            let launch = backend
-                .launch_arguments(
-                    LAUNCH_ID,
-                    &command,
-                    &BTreeMap::from([(
-                        "PULSE_SERVER".into(),
-                        "unix:/run/korri-game-audio/native".into(),
-                    )]),
-                )
-                .unwrap();
-            let mut expected = baseline;
-            let bind = expected
-                .iter_mut()
-                .find(|arg| arg.starts_with("--property=BindReadOnlyPaths="))
-                .unwrap();
-            *bind = format!(
-                "--property=BindReadOnlyPaths=/tmp/.X11-unix/X0 /run/korri-game-audio-{LAUNCH_ID}:/run/korri-game-audio"
+            for alsa in [None, Some(PathBuf::from("/nix/store/abc-korri-game-alsa"))] {
+                let backend = backend(uid).with_game_alsa_config(alsa.clone());
+                let command = ["/games/retroarch".into()];
+                let baseline = backend
+                    .launch_arguments(LAUNCH_ID, &command, &BTreeMap::new())
+                    .unwrap();
+                let launch = backend
+                    .launch_arguments(
+                        LAUNCH_ID,
+                        &command,
+                        &BTreeMap::from([(
+                            "PULSE_SERVER".into(),
+                            "unix:/run/korri-game-audio/native".into(),
+                        )]),
+                    )
+                    .unwrap();
+                let mut expected = baseline.clone();
+                let bind = expected
+                    .iter_mut()
+                    .find(|arg| arg.starts_with("--property=BindReadOnlyPaths="))
+                    .unwrap();
+                *bind = format!(
+                    "--property=BindReadOnlyPaths=/tmp/.X11-unix/X0 /run/korri-game-audio-{LAUNCH_ID}/native:/run/korri-game-audio/native{}",
+                    alsa.as_ref()
+                        .map(|path| format!(" {}:/etc/alsa/conf.d", path.display()))
+                        .unwrap_or_default()
+                );
+                let hidden = expected
+                    .iter_mut()
+                    .find(|arg| arg.starts_with("--property=InaccessiblePaths="))
+                    .unwrap();
+                *hidden = hidden.replace(
+                    " -/dev/snd ",
+                    &format!(" -/dev/snd -/run/korri-game-audio-{LAUNCH_ID} "),
+                );
+                let separator = expected.iter().position(|arg| arg == "--").unwrap();
+                expected.insert(
+                    separator,
+                    "--setenv=PULSE_SERVER=unix:/run/korri-game-audio/native".into(),
+                );
+                assert_eq!(launch, expected);
+                // The helper directory is hidden, never bound whole.
+                assert!(!launch
+                    .iter()
+                    .any(|arg| arg.contains(&format!("/run/korri-game-audio-{LAUNCH_ID}:"))));
+                // Devices are denied with and without the Pulse opt-in.
+                for arguments in [&baseline, &launch] {
+                    let paths = arguments
+                        .iter()
+                        .find_map(|arg| arg.strip_prefix("--property=InaccessiblePaths="))
+                        .unwrap();
+                    assert!(paths.split_whitespace().any(|path| path == "-/dev/snd"));
+                }
+            }
+        }
+        let invalid = backend(2001).with_game_alsa_config(Some("relative/alsa".into()));
+        assert!(invalid
+            .launch_arguments(
+                LAUNCH_ID,
+                &["/games/retroarch".into()],
+                &BTreeMap::from([(
+                    "PULSE_SERVER".into(),
+                    "unix:/run/korri-game-audio/native".into(),
+                )]),
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn hook_units_share_the_audio_device_and_helper_state_policy() {
+        let backend = backend(2001);
+        let environment = BTreeMap::from([(
+            "PULSE_SERVER".into(),
+            "unix:/run/korri-game-audio/native".into(),
+        )]);
+        let sandbox = LaunchSandbox::new(&["/games/retroarch".into()], &environment);
+        let hook = backend
+            .hook_arguments_in_sandbox(
+                LAUNCH_ID,
+                0,
+                &["/games/retroarch".into()],
+                "true",
+                Duration::from_secs(5),
+                &BTreeMap::new(),
+                &sandbox,
+            )
+            .unwrap();
+        let paths = hook
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--property=InaccessiblePaths="))
+            .unwrap();
+        for hidden in [
+            "-/dev/snd".to_owned(),
+            format!("-/run/korri-game-audio-{LAUNCH_ID}"),
+        ] {
+            assert!(
+                paths.split_whitespace().any(|path| path == hidden),
+                "{paths}"
             );
-            let separator = expected.iter().position(|arg| arg == "--").unwrap();
-            expected.insert(
-                separator,
-                "--setenv=PULSE_SERVER=unix:/run/korri-game-audio/native".into(),
-            );
-            assert_eq!(launch, expected);
-            assert!(launch.contains(&format!(
-                "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-control/control.sock /run/korrid-control /run/korrid-cli/cli.sock /run/korrid-cli -/home/korri/.config/sunshine /run/korri-compositor -/run/korri-certificate-control /run/user/{uid} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight"
-            )));
         }
     }
 

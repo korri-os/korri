@@ -34,6 +34,12 @@ impl HostSessionControl {
                             control.observe_first_frame(None, Instant::now());
                             std::thread::sleep(Duration::from_millis(250));
                             subscription = compositor.subscribe_windows();
+                            // Events from the gap are gone. The new
+                            // subscription exists first, so the tree read
+                            // after it misses no window.
+                            if subscription.is_ok() {
+                                control.reconcile_first_frame_windows(Instant::now());
+                            }
                         }
                     }
                     if control
@@ -130,6 +136,62 @@ impl HostSessionControl {
                     "korrid: FirstFrameAudioFailed {{ launch_id: {launch_id}, reason: {reason} }}"
                 );
             }
+        }
+    }
+
+    /// After a lost subscription, the exact launch's mapped windows in the
+    /// compositor tree stand in for the `new` events that were not delivered.
+    /// The same PID-ownership rule decides; the earliest window is the first.
+    pub(crate) fn reconcile_first_frame_windows(&self, now: Instant) {
+        let Some(compositor) = self.compositor.as_ref() else {
+            return;
+        };
+        let candidate = {
+            let state = self.lock_state_named("first_frame_reconcile");
+            if self.initial_handoff_for(&state) != Some(InitialHandoff::Waiting) {
+                return;
+            }
+            let ActiveState::Running { launch_id, .. } = &*state else {
+                return;
+            };
+            let launch_id = launch_id.clone();
+            let found = (|| {
+                let pids = self
+                    .backend
+                    .window_pids(&launch_id)
+                    .map_err(|e| e.message)?;
+                let excluded = self.shell_pids()?;
+                Ok::<_, String>(super::super::compositor_focus::select_focus_target(
+                    &compositor.tree()?,
+                    &pids,
+                    &excluded,
+                ))
+            })();
+            use super::super::compositor_focus::FocusTarget;
+            match found {
+                Ok(FocusTarget::Window(candidate)) => Some((launch_id, candidate)),
+                Ok(FocusTarget::Ambiguous(candidates)) => candidates
+                    .into_iter()
+                    .next()
+                    .map(|candidate| (launch_id, candidate)),
+                Ok(FocusTarget::NoWindow) => None,
+                Ok(FocusTarget::Unreadable(reason)) | Err(reason) => {
+                    eprintln!("korrid: FirstFrameReconcileFailed {{ launch_id: {launch_id}, reason: {reason} }}");
+                    None
+                }
+            }
+        };
+        if let Some((launch_id, candidate)) = candidate {
+            eprintln!(
+                "korrid: FirstFrameReconciled {{ launch_id: {launch_id}, node: {} }}",
+                candidate.node_id
+            );
+            let event = serde_json::json!({
+                "change": "new",
+                "container": {"id": candidate.node_id, "pid": candidate.pid},
+            })
+            .to_string();
+            self.observe_first_frame(Some(&event), now);
         }
     }
 

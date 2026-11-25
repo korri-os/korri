@@ -20,6 +20,7 @@ let
       pkgs.pulseaudio
       pkgs.pipewire
       pkgs.coreutils
+      pkgs.gawk
       pkgs.gnused
     ];
     text = ''
@@ -27,6 +28,15 @@ let
     ''
     + builtins.readFile ./game-audio.sh;
   };
+  # Native ALSA conf.d bound over /etc/alsa/conf.d in Pulse-enabled game units.
+  # ALSA-only clients reach the launch's own Pulse socket through the standard
+  # pulse plugin; the units cannot open a sound device node.
+  gameAlsa = pkgs.writeTextDir "99-korri-game-pulse.conf" ''
+    pcm_type.pulse { lib "${pkgs.alsa-plugins}/lib/alsa-lib/libasound_module_pcm_pulse.so" }
+    ctl_type.pulse { lib "${pkgs.alsa-plugins}/lib/alsa-lib/libasound_module_ctl_pulse.so" }
+    pcm.!default { type pulse server "unix:/run/korri-game-audio/native" }
+    ctl.!default { type pulse server "unix:/run/korri-game-audio/native" }
+  '';
   serviceUser = "korrid";
   serviceGroup = "korrid";
   # systemd 261 uses stop/start for FreezeUnit/ThawUnit. Only this message
@@ -748,6 +758,7 @@ in
         KORRID_LIMITS_SOCKET = cfg.limitsSocket;
         KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
         KORRID_GAME_AUDIO_HELPER = "${gameAudio}/bin/korri-game-audio";
+        KORRID_GAME_ALSA_CONFIG = "${gameAlsa}";
         KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
         # A lifecycle viewer's unit grants korrid search access to its runtime
         # directory with this (linux_viewer/selection.rs, ADR 0060).
