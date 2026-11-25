@@ -77,6 +77,14 @@ VBUSLIMIT or wireless input; any MUIC charger/PC signature; and any state
 outside the source set: 17, 18, 20, 21, 29, 52 or unknown. State 0 is a
 detach after its 2.5 s episode (below).
 
+A FUNC_STATE read with flags 0xff (every flag at once: not a plausible state)
+is suspect: while boosting it is re-read on the next poll (about 30 ms), and
+only a confirmed non-source state revokes; two suspect reads in a row count as
+a read error and revoke; every other check stays immediate. Measured once:
+state 15 / flags 0xff between two 14s at 2227.98 s revoked boost and
+power-cycled the Kishi (owner decision 2026-11-25). A suspect read never
+counts toward an enable.
+
 `boost_telemetry` (module parameter, off by default, writable in
 `/sys/module/s2mm005/parameters/`) logs every poll while boosting: STATUS1–4,
 MUIC INT1–3 (reading clears these latches; nothing else in Linux uses them)

@@ -83,6 +83,15 @@ static inline bool s2mm005_muic_quiet(const struct s2mm005_sample *s)
 	       s->devt[1] == 0 && (s->devt[2] & ~S2MM005_DEVT3_DCD_OUT_SDP) == 0;
 }
 
+/* A FUNC_STATE read with every flag bit set (attached, source, DFP, both Rp
+ * bits, both short bits, reset at once) is not a plausible state: measured
+ * once as state 15 / flags 0xff between two 14s while boosting (2227.98 s).
+ */
+static inline bool s2mm005_suspect(const struct s2mm005_sample *s)
+{
+	return s->flags == 0xff;
+}
+
 static inline bool s2mm005_faults(const struct s2mm005_sample *s)
 {
 	return (s->status3 & S2MM005_ST3_OTGFAIL) ||
@@ -124,6 +133,7 @@ struct s2mm005_policy {
 	unsigned long since_ms;
 	unsigned long retry_at_ms;
 	unsigned long backoff_ms;
+	bool suspect;			/* last FUNC_STATE read was suspect */
 	bool zero;			/* in a state-0 episode while boosting */
 	unsigned long zero_since_ms;
 };
@@ -165,10 +175,20 @@ static inline const char *s2mm005_revoke(struct s2mm005_policy *p,
 		return "fault";
 	if (!s2mm005_muic_quiet(s))
 		return "MUIC charger/PC signature";
+	/* Re-read a suspect FUNC_STATE on the next poll; a second suspect read
+	 * in a row is a read error. Every check above stays immediate.
+	 */
+	if (s2mm005_suspect(s)) {
+		if (p->suspect)
+			return "read error";
+		p->suspect = true;
+		return NULL;
+	}
+	p->suspect = false;
 	/* The chip re-detects even while we boost: state 0 for ~0.7 s after a
 	 * verified enable (phase-b-host-transition.txt) and again on its ~16 s
 	 * cycle (kishi-battery-boost-cycle.txt; measured 1.35-1.39 s with boost
- * on, owner decision 2.5 s). A state-0 episode is tolerated
+	 * on, owner decision 2.5 s). A state-0 episode is tolerated
 	 * for at most S2MM005_REDETECT_MS from its first poll, never extended;
 	 * a source state ends it. Longer is a detach.
 	 */
@@ -240,7 +260,8 @@ s2mm005_decide(struct s2mm005_policy *p, const struct s2mm005_sample *s,
 		d.host = true;
 		return d;
 	}
-	if (s && (long)(now - p->retry_at_ms) >= 0 && s2mm005_may_source(s)) {
+	if (s && (long)(now - p->retry_at_ms) >= 0 && !s2mm005_suspect(s) &&
+	    s2mm005_may_source(s)) {
 		if (++p->source_polls >= S2MM005_SOURCE_POLLS) {
 			p->source_polls = 0;
 			d.action = S2MM005_ENABLE;
@@ -258,6 +279,7 @@ static inline void s2mm005_enabled(struct s2mm005_policy *p, unsigned long now)
 	p->boost = S2MM005_BOOST_GRACE;
 	p->since_ms = now;
 	p->zero = false;
+	p->suspect = false;
 }
 
 /* Enable failed part way: the caller turns boost off; this start failed. */

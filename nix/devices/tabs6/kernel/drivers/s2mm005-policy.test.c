@@ -393,6 +393,72 @@ static void replay_boost_cycle(const char *path)
 	assert(s2mm005_decide(&p, &cur, now += 20).action == S2MM005_DISABLE);
 }
 
+static void start(struct s2mm005_policy *p, unsigned long *now);
+static void settle(struct s2mm005_policy *p, unsigned long *now);
+
+/* 2227.98 s while boosting: one FUNC_STATE read of state 15 with flags 0xff,
+ * then 14 again. A suspect read is re-read on the next poll; only a
+ * confirmed non-source state revokes, and two suspect reads in a row are a
+ * read error.
+ */
+static void suspect_reads(void)
+{
+	struct s2mm005_sample s, glitch;
+	struct s2mm005_policy p = { 0 };
+	struct s2mm005_decision d;
+	unsigned long now = 0;
+
+	start(&p, &now);
+	settle(&p, &now);
+	s = boosted_kishi();
+	glitch = s;
+	glitch.state = 15;
+	glitch.flags = 0xff;
+	/* 15/0xff then 14: held */
+	d = s2mm005_decide(&p, &glitch, now += 20);
+	assert(d.action == S2MM005_NONE && d.host);
+	d = s2mm005_decide(&p, &s, now += 20);
+	assert(d.action == S2MM005_NONE && d.host);
+	/* and again later: each glitch gets its own re-read */
+	for (int i = 0; i < 100; i++)
+		assert(s2mm005_decide(&p, &s, now += 20).action == S2MM005_NONE);
+	assert(s2mm005_decide(&p, &glitch, now += 20).action == S2MM005_NONE);
+	assert(s2mm005_decide(&p, &s, now += 20).action == S2MM005_NONE);
+	/* 15/0xff twice: a read error, revoke */
+	assert(s2mm005_decide(&p, &glitch, now += 20).action == S2MM005_NONE);
+	d = s2mm005_decide(&p, &glitch, now += 20);
+	assert(d.action == S2MM005_DISABLE && !strcmp(d.why, "read error"));
+	s2mm005_disabled(&p);
+	/* a suspect read, then a confirmed sink state: revoke on the re-read */
+	memset(&p, 0, sizeof(p));
+	now = 0;
+	start(&p, &now);
+	settle(&p, &now);
+	assert(s2mm005_decide(&p, &glitch, now += 20).action == S2MM005_NONE);
+	glitch.flags = 0x99;
+	d = s2mm005_decide(&p, &glitch, now += 20);
+	assert(d.action == S2MM005_DISABLE && !strcmp(d.why, "left source states"));
+	s2mm005_disabled(&p);
+	/* other revokes stay immediate on a suspect read */
+	memset(&p, 0, sizeof(p));
+	now = 0;
+	start(&p, &now);
+	settle(&p, &now);
+	glitch.flags = 0xff;
+	glitch.cntl = 5;
+	assert(s2mm005_decide(&p, &glitch, now += 20).action == S2MM005_DISABLE);
+	/* boost off: a suspect read never counts toward an enable */
+	memset(&p, 0, sizeof(p));
+	now = 0;
+	s = unpowered_kishi();
+	glitch = s;
+	glitch.flags = 0xff;
+	for (int i = 0; i < 10; i++) {
+		assert(s2mm005_decide(&p, &s, now += 100).action == S2MM005_NONE);
+		assert(s2mm005_decide(&p, &glitch, now += 100).action == S2MM005_NONE);
+	}
+}
+
 static void start(struct s2mm005_policy *p, unsigned long *now)
 {
 	struct s2mm005_sample s = unpowered_kishi();
@@ -673,6 +739,7 @@ int main(int argc, char **argv)
 	charger_insertion_while_boosting();
 	detach_and_window();
 	every_revoke_path();
+	suspect_reads();
 	puts("s2mm005 policy: sink host, battery source, every revoke path, traces passed");
 	return 0;
 }
