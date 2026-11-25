@@ -1202,3 +1202,43 @@ fn touched_from_a_missing_or_hidden_overlay_is_not_delivered() {
     rig.settle();
     assert_eq!(rig.string("touch-events"), "[]");
 }
+
+#[test]
+fn local_input_reports_activity_without_flooding_korrid_or_forwarding_hardware() {
+    let mut rig = rig(&["probe"], 12, Behaviour::default());
+    for _ in 0..20 {
+        rig.shell.handle(Event::Host {
+            generation: 1,
+            window: 0,
+            event: HostEvent::PointerActivity,
+        });
+    }
+    rig.until("one activity report", |r| {
+        !r.requests("ReportActivity").is_empty()
+    });
+    assert_eq!(
+        rig.requests("ReportActivity"),
+        vec![json!({"_tag":"ReportActivity"})]
+    );
+    std::thread::sleep(Duration::from_millis(1050));
+    rig.shell.handle(Event::Host {
+        generation: 1,
+        window: 0,
+        event: HostEvent::KeyActivity,
+    });
+    rig.until("second activity report", |r| {
+        r.requests("ReportActivity").len() == 2
+    });
+    // Neither a stale window nor a model publication is physical activity.
+    std::thread::sleep(Duration::from_millis(1050));
+    rig.shell.handle(Event::Host {
+        generation: 999,
+        window: 0,
+        event: HostEvent::PointerActivity,
+    });
+    rig.fixture.publish(|model| {
+        model["clockLabel"] = json!("12:34");
+    });
+    rig.settle();
+    assert_eq!(rig.requests("ReportActivity").len(), 2);
+}

@@ -1838,6 +1838,8 @@ pub enum SurfaceMessage {
 #[derive(Clone, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "_tag", rename_all_fields = "camelCase")]
 pub enum SurfaceRequest {
+    /// The local shell observed input. No hardware details or client clock.
+    ReportActivity,
     /// Start or resume the game. A location id is required when the
     /// corresponding SurfaceGame publishes launchLocations; otherwise it is
     /// absent.
@@ -1973,6 +1975,7 @@ impl SurfaceRequest {
     /// The variant name, safe to log: never a password, secret or value.
     pub fn tag(&self) -> &'static str {
         match self {
+            Self::ReportActivity => "ReportActivity",
             Self::LaunchGame { .. } => "LaunchGame",
             Self::RunAction { .. } => "RunAction",
             Self::ChangeSetting { .. } => "ChangeSetting",

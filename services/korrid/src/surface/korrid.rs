@@ -56,6 +56,7 @@ pub(crate) type Battery = Arc<
 
 #[derive(Clone)]
 pub struct Korrid {
+    pub(crate) idle_power: Option<Arc<crate::idle_power::IdlePower>>,
     send: Send_,
     peer_labels: tokio::sync::watch::Sender<std::collections::HashMap<String, String>>,
     pub(crate) save_changes: Option<tokio::sync::watch::Receiver<crate::file_changes::InputState>>,
@@ -166,6 +167,7 @@ impl Korrid {
             network_changes: None,
             onboarding_changes: None,
             battery: None,
+            idle_power: None,
             plugin_accounts: None,
             installs: None,
         }
@@ -186,6 +188,11 @@ impl Korrid {
 
     pub(crate) fn with_onboarding_changes(mut self, changes: Changes) -> Self {
         self.onboarding_changes = Some(changes);
+        self
+    }
+
+    pub(crate) fn with_idle_power(mut self, idle: Arc<crate::idle_power::IdlePower>) -> Self {
+        self.idle_power = Some(idle);
         self
     }
 

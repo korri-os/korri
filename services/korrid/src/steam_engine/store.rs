@@ -123,6 +123,23 @@ pub struct SteamStore {
 }
 
 impl SteamStore {
+    pub(crate) fn busy(&self) -> bool {
+        self.jobs
+            .lock()
+            .expect("steam jobs poisoned")
+            .values()
+            .any(|job| {
+                matches!(
+                    job.status.lock().expect("steam job poisoned").state,
+                    AcquireJobState::Queued
+                        | AcquireJobState::Resolving
+                        | AcquireJobState::Downloading { .. }
+                        | AcquireJobState::Unpacking
+                        | AcquireJobState::Placing
+                )
+            })
+    }
+
     async fn list(&self, plan: HostPlan, runner: JobRunner) -> Result<Arc<AppList>, RpcFailure> {
         let person = plan.account_root.clone();
         if let Some((at, list)) = self.list.lock().expect("steam list poisoned").get(&person) {

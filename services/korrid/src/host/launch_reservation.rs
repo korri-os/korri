@@ -43,6 +43,14 @@ impl LaunchReservation {
 pub(super) struct LaunchReservations(Arc<Mutex<HashMap<String, Arc<LaunchReservation>>>>);
 
 impl LaunchReservations {
+    pub(super) fn any_pending(&self) -> bool {
+        self.0
+            .lock()
+            .expect("reservation mutex poisoned")
+            .values()
+            .any(|reservation| !reservation.is_cancelled())
+    }
+
     pub fn reserve(&self, game_id: &str, caller: &str, person: Option<&str>) -> SessionPrepared {
         let identity = SessionPrepared {
             game_id: game_id.into(),

@@ -121,6 +121,10 @@ assert !(c.networking.firewall.interfaces ? wlan0);
 assert console.networking.firewall.interfaces.wlan0.allowedUDPPorts == [ 5353 ];
 assert c.systemd.services ? korri-shell;
 assert c.systemd.services.korri-shell.serviceConfig.User != "root";
+assert c.services.korriProduct.dedicatedToPlay;
+assert builtins.elem "korri-idle-power" c.users.users.korrid.extraGroups;
+assert c.systemd.services.korrid.environment.KORRID_DEDICATED_TO_PLAY == "1";
+assert lib.hasInfix "org.freedesktop.login1.power-off" c.security.polkit.extraConfig;
 assert c.services.korriProduct.sleep.states == [ ];
 # ADR 0094: the battery driver's capacity events are verified.
 assert c.services.korriProduct.battery.verified == [ "percent" ];

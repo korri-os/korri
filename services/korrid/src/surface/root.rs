@@ -1998,6 +1998,7 @@ impl Root {
         }
         let launchables = &self.launchables;
         match request {
+            SurfaceRequest::ReportActivity => {}
             SurfaceRequest::LaunchGame {
                 game_id,
                 launch_location_id,

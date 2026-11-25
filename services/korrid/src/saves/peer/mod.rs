@@ -92,6 +92,7 @@ enum RequestProvenance {
 
 #[derive(Clone)]
 pub struct SavePeerService {
+    pub(crate) sync_work: crate::idle_power::Work,
     repository: Arc<dyn SaveRepository>,
     credentials: PeerCredentials,
     directory: FederationDirectory,
@@ -112,6 +113,7 @@ impl SavePeerService {
         in_use: InUse,
     ) -> Result<Self, PeerSaveError> {
         Ok(Self {
+            sync_work: Default::default(),
             repository,
             credentials,
             directory,
@@ -201,6 +203,7 @@ impl SavePeerService {
         context: &AuthorizationContext,
         request: SaveRecordsRequest,
     ) -> Result<SaveRecords, PeerSaveError> {
+        let _work = self.sync_work.begin();
         let (person, peer) = self.principal(context)?;
         for id in &request.ids {
             validate_hash(id)?;

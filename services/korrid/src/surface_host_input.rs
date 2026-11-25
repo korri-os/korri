@@ -173,6 +173,7 @@ struct Shared {
     state: Mutex<SourceState>,
     /// Gamepad presence and evidence for the surface model's `controllers`.
     controllers: Arc<crate::surface::controllers::Controllers>,
+    last_activity: Mutex<std::time::Instant>,
 }
 
 /// Sole producer (share through Arc when host lifecycle and ingress both use it).
@@ -181,6 +182,20 @@ pub struct SurfaceHostInputSource {
     shared: Arc<Shared>,
 }
 impl SurfaceHostInputSource {
+    pub(crate) fn last_activity(&self) -> std::time::Instant {
+        *self
+            .shared
+            .last_activity
+            .lock()
+            .expect("input activity mutex poisoned")
+    }
+    fn activity(&self) {
+        *self
+            .shared
+            .last_activity
+            .lock()
+            .expect("input activity mutex poisoned") = std::time::Instant::now();
+    }
     /// A DeviceAdded without values declares a neutral arrival. Use publish_device
     /// with the complete current baseline for real controller arrivals.
     pub fn publish(&self, event: NativeInputEvent) -> Result<(), PublishError> {
@@ -223,6 +238,11 @@ impl SurfaceHostInputSource {
         };
         broadcast(&mut state, class, &[text]);
         drop(state);
+        if matches!(&event, NativeInputEvent::Input(input) if input.input_type != 0.0)
+            || matches!(&event, NativeInputEvent::Action(_))
+        {
+            self.activity();
+        }
         match &event {
             NativeInputEvent::DeviceRemoved(removed) => {
                 self.shared.controllers.removed(&removed.device_id)
@@ -300,6 +320,9 @@ impl SurfaceHostInputSource {
             }),
             self.shared.limits.event_bytes,
         )?);
+        if !updates.is_empty() {
+            self.activity();
+        }
         device.values.extend(updates);
         korri_input_trace::record("publish", format_args!("fields={}", frames.len() - 1));
         broadcast(&mut state, class, &frames);
@@ -551,6 +574,7 @@ pub fn router_with_surfaces(
             && !limits.max_queue_age.is_zero()
     );
     let shared = Arc::new(Shared {
+        last_activity: Mutex::new(std::time::Instant::now()),
         controllers: Arc::clone(&surfaces.controllers),
         limits,
         state: Mutex::new(SourceState {

@@ -286,6 +286,10 @@ assert !(recovery.systemd.services ? korri-compositor);
 assert !(recovery.systemd.services ? korri-shell);
 assert !(c.users.users ? gameplay);
 assert !(c.users.groups ? games);
+assert c.services.korriProduct.dedicatedToPlay;
+assert builtins.elem "korri-idle-power" c.users.users.korrid.extraGroups;
+assert c.systemd.services.korrid.environment.KORRID_DEDICATED_TO_PLAY == "1";
+assert lib.hasInfix "org.freedesktop.login1.power-off" c.security.polkit.extraConfig;
 assert c.services.korriProduct.sleep.states == [ ];
 # ADR 0094: the battery driver's capacity events are verified.
 assert c.services.korriProduct.battery.verified == [ "percent" ];

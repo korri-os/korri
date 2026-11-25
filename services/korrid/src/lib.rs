@@ -56,6 +56,7 @@ pub mod game_routes;
 pub mod identity;
 pub mod identity_cli;
 pub mod identity_switch;
+mod idle_power;
 pub mod join;
 pub mod linux_viewer;
 pub mod live_display;
@@ -2072,6 +2073,7 @@ enum RpcSurface {
 
 #[derive(Clone)]
 struct AppState {
+    idle_power: Arc<idle_power::IdlePower>,
     netplay_holder: Arc<netplay::holder::Holder>,
     netplay_receiver: netplay::receiver::Receiver,
     person_names: stream_play::person_name::device::PersonNames,
@@ -6210,6 +6212,7 @@ fn surface_hub_for(
         });
     let network = surface_host.network.clone();
     let korrid = surface::korrid::Korrid::new(send)
+        .with_idle_power(surface_host.idle_power.clone())
         .with_network_changes(Arc::new(move || network.changes()))
         .with_onboarding_changes(Arc::new(onboarding::changes));
     // ADR 0094: korrid reads the battery itself on Linux. The Android app's
@@ -6534,6 +6537,7 @@ fn brain_app_state(
     let surface_host_access =
         SurfaceHostAccess::new(rpc_capability, allowed_origin, SurfaceHostPermission::Full);
     let state = AppState {
+        idle_power: Arc::default(),
         person_names: stream_play::person_name::device::PersonNames::default(),
         netplay_holder: Arc::new(netplay::holder::Holder::default()),
         netplay_receiver: netplay::receiver::Receiver::default(),
@@ -6845,6 +6849,7 @@ fn app_states_with(
     let overlay_intent = Arc::new(overlay_intent::OverlayIntent::default());
     let network = network::NetworkService::default();
     let lan = AppState {
+        idle_power: Arc::default(),
         person_names: stream_play::person_name::device::PersonNames::default(),
         netplay_holder: Arc::new(netplay::holder::Holder::default()),
         netplay_receiver: netplay::receiver::Receiver::default(),
@@ -6867,6 +6872,7 @@ fn app_states_with(
         surfaces: None,
     };
     let local = AppState {
+        idle_power: lan.idle_power.clone(),
         person_names: lan.person_names.clone(),
         netplay_holder: lan.netplay_holder.clone(),
         netplay_receiver: lan.netplay_receiver.clone(),
@@ -7018,6 +7024,8 @@ fn secure_host_routers_with_federation(
     stream_play::person_name::device::spawn_publish(lan.clone());
     lan.identity_switch = identity_switch.clone();
     local.identity_switch = identity_switch;
+    #[cfg(target_os = "linux")]
+    idle_power::start(lan.clone());
     let slot = surfaces.clone();
     let shell = surface_host_router_for(&lan, surface_host_access, surfaces).map(|router| {
         match native_router {

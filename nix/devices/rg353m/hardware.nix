@@ -20,6 +20,8 @@ in
   # USB gadget identity. The RG353P device tree sets usb@fcc00000 to
   # dr_mode = "peripheral", the controller Android used for adb. Name it:
   # on 2026-09-30 a second controller (fd000000.usb) also probed.
+  services.korriProduct.dedicatedToPlay = true;
+
   services.korriProduct.usbGadget = {
     name = "rg353m";
     product = "RG353M NixOS";

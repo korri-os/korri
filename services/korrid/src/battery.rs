@@ -117,8 +117,22 @@ pub struct Power {
 /// The power facts under `root`; `None` without a readable battery.
 pub fn read_power(root: &Path, verified: Verified) -> Option<Power> {
     let supply = primary(root).ok()??;
+    // A weak charger can report an online input while the battery still
+    // discharges. Never treat that device as battery-only (#614).
+    let mut external_power = false;
+    for entry in std::fs::read_dir(root).ok()? {
+        let path = entry.ok()?.path();
+        if optional_text(&path.join("type")).ok()?.as_deref() == Some("Battery") {
+            continue;
+        }
+        match optional_text(&path.join("online")).ok()?.as_deref() {
+            Some("1") => external_power = true,
+            Some("0") | None => {}
+            Some(_) => return None,
+        }
+    }
     Some(Power {
-        discharging: supply.status.as_deref() == Some("Discharging"),
+        discharging: supply.status.as_deref() == Some("Discharging") && !external_power,
         percent: supply.capacity.filter(|_| verified.percent).map(f64::from),
     })
 }
@@ -288,6 +302,28 @@ mod tests {
     }
 
     const PERCENT: Verified = Verified { percent: true };
+
+    #[test]
+    fn an_online_charger_prevents_battery_only_shutdown_even_if_the_battery_discharges() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        supply(
+            root,
+            "battery",
+            &[
+                ("type", "Battery"),
+                ("status", "Discharging"),
+                ("capacity", "50"),
+            ],
+        );
+        assert!(read_power(root, PERCENT).unwrap().discharging);
+        supply(root, "usb", &[("type", "USB"), ("online", "1")]);
+        assert!(!read_power(root, PERCENT).unwrap().discharging);
+        supply(root, "usb", &[("online", "0")]);
+        assert!(read_power(root, PERCENT).unwrap().discharging);
+        supply(root, "usb", &[("online", "unknown")]);
+        assert!(read_power(root, PERCENT).is_none());
+    }
 
     #[test]
     fn a_uevent_counts_only_from_the_kernel_for_a_power_supply() {

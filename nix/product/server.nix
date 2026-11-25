@@ -37,6 +37,11 @@ in
       internal = true;
       description = "Diagnostic marker for the shared Korri product composition; the gate verifies the complete resulting contract.";
     };
+    dedicatedToPlay = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "This device is dedicated to play; korrid powers off after battery-only inactivity with a cancellable warning.";
+    };
     sleep.states = lib.mkOption {
       type = lib.types.listOf (
         lib.types.enum [
@@ -140,8 +145,25 @@ in
       KORRID_STREAM_CERTIFICATE_CONTROL_PEER_GID = "0";
       KORRID_INPUT_SEAT_CONTROL_SOCKET = "/run/korri-input-seat/control.sock";
       # services/korrid/src/battery.rs reads it.
+      KORRID_DEDICATED_TO_PLAY = if config.services.korriProduct.dedicatedToPlay then "1" else "0";
       KORRID_BATTERY_VERIFIED = builtins.toJSON config.services.korriProduct.battery.verified;
     };
+
+    # Polkit's rule stays product-owned and identical on every device. Only
+    # a dedicated device grants the service this OS authority group.
+    users.groups.korri-idle-power = { };
+    users.users.korrid.extraGroups = lib.optional config.services.korriProduct.dedicatedToPlay "korri-idle-power";
+    security.polkit.extraConfig = ''
+      // Only korrid may perform the dedicated-device inactivity action.
+      // Never bypass an inhibitor, and never grant suspend before verification.
+      polkit.addRule(function(action, subject) {
+        if (subject.user == "korrid" && subject.isInGroup("korri-idle-power") &&
+            (action.id == "org.freedesktop.login1.power-off" ||
+             action.id == "org.freedesktop.login1.power-off-multiple-sessions")) {
+          return polkit.Result.YES;
+        }
+      });
+    '';
 
     services.korri.pluginHost = {
       enable = true;

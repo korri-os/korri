@@ -251,6 +251,7 @@ type SessionRpcProbe = Arc<dyn Fn(&str) + Send + Sync>;
 
 #[derive(Clone)]
 pub struct HostRuntime {
+    native_activity: Option<Arc<crate::surface_host_input::SurfaceHostInputSource>>,
     save_service: Arc<std::sync::OnceLock<Arc<crate::saves::peer::SavePeerService>>>,
     save_projection: Arc<
         std::sync::OnceLock<Result<Arc<save_status_projection::SaveStatusProjection>, RpcFailure>>,
@@ -370,6 +371,7 @@ impl HostRuntime {
         native: Option<Arc<crate::surface_host_input::SurfaceHostInputSource>>,
         units: Arc<dyn LaunchUnitBackend>,
     ) -> Self {
+        let native_activity = native.clone();
         let config = HostConfig::read(path);
         let socket = std::env::var_os("KORRID_INPUT_SEAT_CONTROL_SOCKET")
             .map(PathBuf::from)
@@ -404,6 +406,7 @@ impl HostRuntime {
         let (device_public_key, _) = identity_keys(&private_state_root);
         Self {
             private_state_root,
+            native_activity,
             save_service: Arc::new(std::sync::OnceLock::new()),
             save_projection: Arc::new(std::sync::OnceLock::new()),
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
@@ -452,6 +455,7 @@ impl HostRuntime {
         let (device_public_key, _) = identity_keys(&private_state_root);
         Self {
             private_state_root,
+            native_activity: None,
             save_service: Arc::new(std::sync::OnceLock::new()),
             save_projection: Arc::new(std::sync::OnceLock::new()),
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
@@ -1676,6 +1680,16 @@ impl HostRuntime {
             .as_ref()
             .map(HostLauncher::control)
             .ok_or_else(|| config_failure(self.config.as_ref().expect_err("invalid host config")))
+    }
+
+    pub(crate) fn has_pending_launch(&self) -> bool {
+        self.launch_reservations.any_pending()
+    }
+
+    pub(crate) fn last_input_activity(&self) -> Option<std::time::Instant> {
+        self.native_activity
+            .as_ref()
+            .map(|source| source.last_activity())
     }
 
     pub async fn session_status(&self) -> Result<HostSessionStatus, RpcFailure> {

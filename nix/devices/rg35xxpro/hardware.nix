@@ -16,6 +16,8 @@
   # USB gadget identity. The H616 has one MUSB controller (usb@5100000), so
   # exactly one UDC is expected. The next free /24 after the RG35XX SP
   # (10.42.5); "35P" in ASCII after the shared 02:52 prefix.
+  services.korriProduct.dedicatedToPlay = true;
+
   services.korriProduct.usbGadget = {
     name = "rg35xxpro";
     product = "RG35XX Pro NixOS";

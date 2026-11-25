@@ -20,6 +20,8 @@ in
 {
   # USB gadget identity. The device tree enables one controller, usb@a600000
   # (dwc3, dr_mode otg with a role switch), so exactly one UDC is expected.
+  services.korriProduct.dedicatedToPlay = true;
+
   services.korriProduct.usbGadget = {
     name = "rpminiv2";
     product = "RP Mini V2 NixOS";

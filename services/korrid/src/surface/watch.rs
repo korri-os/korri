@@ -66,6 +66,7 @@ pub async fn serve(mut socket: WebSocket, hub: Arc<SurfaceHub>, surface_id: Stri
     loop {
         changes.borrow_and_update();
         let revision = hub.revision();
+        let warning = hub.idle_warning_token();
         let Ok(model) = hub.model(&surface_id) else {
             return;
         };
@@ -98,6 +99,9 @@ pub async fn serve(mut socket: WebSocket, hub: Arc<SurfaceHub>, surface_id: Stri
             .await;
             if !matches!(acknowledged, Ok(true)) {
                 return;
+            }
+            if let Some(token) = warning {
+                hub.idle_warning_delivered(token);
             }
             // A change that arrived while waiting is read on the next turn.
             if changes.has_changed().unwrap_or(false) {

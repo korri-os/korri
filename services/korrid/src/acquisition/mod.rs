@@ -89,6 +89,14 @@ pub(crate) struct GameArtifacts {
 }
 
 impl AcquisitionCoordinator {
+    pub(crate) fn busy(&self) -> bool {
+        let queue_busy = {
+            let queue = self.lock();
+            queue.worker || queue.running.is_some() || !queue.waiting.is_empty()
+        };
+        queue_busy || self.games.busy() || self.pieces.busy()
+    }
+
     pub(crate) fn pieces(&self) -> &pieces::Pieces {
         &self.pieces
     }

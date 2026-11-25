@@ -196,6 +196,14 @@ pub(crate) fn acquired_game_content(
 }
 
 impl GameAcquisition {
+    pub(super) fn busy(&self) -> bool {
+        self.jobs
+            .lock()
+            .expect("acquire jobs mutex poisoned")
+            .values()
+            .any(|job| live(&job.lock().expect("acquire job mutex poisoned").status.state))
+    }
+
     pub(super) fn yield_to(&self, source: std::sync::Arc<dyn super::play::PlaySource>) {
         self.engine.gate.yield_to(source);
     }

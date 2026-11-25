@@ -190,6 +190,14 @@ fn remove_holder_store(path: &Path) {
 }
 
 impl Pieces {
+    pub(super) fn busy(&self) -> bool {
+        self.jobs
+            .lock()
+            .expect("device installs mutex poisoned")
+            .values()
+            .any(|job| job.status.borrow().state.live())
+    }
+
     pub(crate) fn gate(&self) -> &super::play::Gate {
         &self.gate
     }

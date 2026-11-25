@@ -266,6 +266,18 @@ impl SurfaceHub {
                     notify();
                 }
             });
+            if let Some(idle) = &self.korrid.idle_power {
+                let mut changes = idle.changes();
+                let weak = Arc::downgrade(self);
+                tokio::spawn(async move {
+                    while changes.changed().await.is_ok() {
+                        let Some(hub) = weak.upgrade() else {
+                            return;
+                        };
+                        hub.bump();
+                    }
+                });
+            }
             root.start(self.overlay_intent.clone());
             // Effects the portal ran when its state changed.
             let reacting = Arc::downgrade(&root);
@@ -352,6 +364,14 @@ impl SurfaceHub {
         };
         let focused = session.focused.clone();
         drop(sessions);
+        if let Some(status) = self
+            .korrid
+            .idle_power
+            .as_ref()
+            .and_then(|idle| idle.status())
+        {
+            model.status = status;
+        }
         model.focused_game = focused
             .filter(|id| model::entry_for_id(&facts.state, id).is_some())
             .map(|game_id| FocusedGame {
@@ -359,6 +379,19 @@ impl SurfaceHub {
                 game_id,
             });
         Ok(model)
+    }
+
+    pub(crate) fn idle_warning_token(&self) -> Option<u64> {
+        self.korrid
+            .idle_power
+            .as_ref()
+            .and_then(|idle| idle.warning_token())
+    }
+
+    pub(crate) fn idle_warning_delivered(&self, token: u64) {
+        if let Some(idle) = &self.korrid.idle_power {
+            idle.delivered(token, std::time::Instant::now());
+        }
     }
 
     /// Perform one request of one surface.
@@ -369,6 +402,18 @@ impl SurfaceHub {
     ) -> Result<(), RpcFailure> {
         check_surface_id(surface_id)?;
         match request {
+            SurfaceRequest::ReportActivity => {
+                if let Some(idle) = &self.korrid.idle_power {
+                    idle.activity();
+                }
+            }
+            SurfaceRequest::RunAction { ref action_id }
+                if action_id == crate::idle_power::CANCEL_ACTION =>
+            {
+                if let Some(idle) = &self.korrid.idle_power {
+                    idle.activity();
+                }
+            }
             SurfaceRequest::MoveCatalog { query, from, count } => {
                 let mut sessions = self.sessions.lock().expect("sessions poisoned");
                 let session = sessions.entry(surface_id.to_owned()).or_default();

@@ -141,6 +141,7 @@ impl SavePeerService {
         &self,
         game: &str,
     ) -> Result<Vec<(String, Result<(), PeerSaveError>)>, PeerSaveError> {
+        let _work = self.sync_work.begin();
         let person = self.owner()?;
         let work = self.owner_peers(&person)?.into_iter().map(|peer| {
             let person = person.clone();
@@ -163,6 +164,7 @@ impl SavePeerService {
     /// Call when a verified owner's peer becomes reachable or changes endpoint.
     /// The directory is checked again; callers cannot supply an arbitrary origin.
     pub async fn on_contact(&self, peer: &str) -> Result<(), PeerSaveError> {
+        let _work = self.sync_work.begin();
         let person = self.owner()?;
         self.synchronize(
             &person,
@@ -185,6 +187,7 @@ impl SavePeerService {
         game: &str,
         deadline: Instant,
     ) -> Result<Vec<PeerCheckResult>, PeerSaveError> {
+        let _work = self.sync_work.begin();
         let person = self.owner()?;
         let mut checks = tokio::task::JoinSet::new();
         for peer in self.owner_peers(&person)? {
@@ -261,6 +264,7 @@ impl SavePeerService {
         deadline: Instant,
     ) -> Result<(), PeerSaveError> {
         validate_hash(snapshot_id)?;
+        let _work = self.sync_work.begin();
         let person = self.owner()?;
         tokio::time::timeout_at(deadline, async {
             let (person_key, game_key, id) =
@@ -342,6 +346,7 @@ impl SavePeerService {
         pending_head_records: &mut BTreeSet<String>,
         purpose: SyncPurpose,
     ) -> Result<(), PeerSaveError> {
+        let _work = self.sync_work.begin();
         let provenance = match purpose {
             SyncPurpose::Contact => RequestProvenance::Contact,
             _ => RequestProvenance::Independent,

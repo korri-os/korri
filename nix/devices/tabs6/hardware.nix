@@ -64,6 +64,8 @@ in
 
   # The product kernel: the console kernel plus kernel/config/korri.config.
   boot.kernelPackages = lib.mkForce (pkgs.linuxPackagesFor tabs6KorriKernel);
+  services.korriProduct.dedicatedToPlay = true;
+
   services.korriProduct.kernel.overrideReason = ''
     The Tab S6 port runs on Linux 7.3.4. Its board patches were rebased to 7.3
     (rpmh-regulator without read-back, the SM8150 Secondary TDM sound card)

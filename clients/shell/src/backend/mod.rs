@@ -33,6 +33,8 @@ pub enum HostEvent {
     },
     /// A native pointer event, including moves and cancellation. It is not a button.
     PointerActivity,
+    /// A physical key, including keys without a semantic button mapping.
+    KeyActivity,
     /// The first finger went down. Queue before dispatching that down to Slint,
     /// so Touched precedes even a control that activates on the down edge.
     TouchStarted,

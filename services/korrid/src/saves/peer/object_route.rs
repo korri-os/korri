@@ -53,6 +53,14 @@ pub(super) async fn object_route(
         }
         _ => return StatusCode::BAD_REQUEST.into_response(),
     };
+    // Keep the guard inside the body stream until completion or disconnect.
+    let work = state
+        .app
+        .saves
+        .as_ref()
+        .expect("save object service")
+        .sync_work
+        .begin();
     let bytes = match file.metadata() {
         Ok(metadata) => metadata.len(),
         Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
@@ -78,8 +86,8 @@ pub(super) async fn object_route(
         }
     };
     let stream = futures::stream::try_unfold(
-        (file, offset, length),
-        |(mut file, offset, remaining)| async move {
+        (file, offset, length, work),
+        |(mut file, offset, remaining, work)| async move {
             if remaining == 0 {
                 return Ok(None);
             }
@@ -93,7 +101,7 @@ pub(super) async fn object_route(
                 chunk.truncate(read);
                 Ok(Some((
                     chunk,
-                    (file, offset + read as u64, remaining - read as u64),
+                    (file, offset + read as u64, remaining - read as u64, work),
                 )))
             })
             .await

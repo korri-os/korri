@@ -78,6 +78,7 @@ impl Backend for Winit {
                     is_synthetic: true, ..
                 } => return EventResult::PreventDefault,
                 WindowEvent::KeyboardInput { event, .. } => {
+                    sink(HostEvent::KeyActivity);
                     // Surfaces handle no keys: every key stops here.
                     if !event.repeat {
                         if let winit::keyboard::PhysicalKey::Code(code) = event.physical_key {

@@ -15,6 +15,8 @@
   # USB gadget identity. The H616 has one MUSB controller (usb@5100000), so
   # exactly one UDC is expected. The next free /24 after the Odin 2 Portal
   # (10.42.4); "35S" in ASCII after the shared 02:52 prefix.
+  services.korriProduct.dedicatedToPlay = true;
+
   services.korriProduct.usbGadget = {
     name = "rg35xxsp";
     product = "RG35XX SP NixOS";

@@ -160,6 +160,7 @@ struct Loaded {
     generation: u64,
     /// The last button or pointer activity, or when this surface loaded.
     last_activity: Instant,
+    activity_reported: Option<Instant>,
     /// The last size sent in `Resized`, in logical pixels.
     size: (f32, f32),
     package: Package,
@@ -703,6 +704,13 @@ impl Shell {
                 }
             }
             HostEvent::Key { key, pressed } => {
+                if self
+                    .current
+                    .as_ref()
+                    .is_some_and(|c| c.generation == generation)
+                {
+                    self.activity();
+                }
                 korri_input_trace::record("key_ui", format_args!("key={key:?} pressed={pressed}"));
                 let now = self.now();
                 let presses = self.router.key(key, pressed, now);
@@ -712,7 +720,7 @@ impl Shell {
                 self.presses(presses);
             }
             HostEvent::TouchStarted => self.surface_input(generation, window, messages::touched()),
-            HostEvent::PointerActivity => {
+            HostEvent::PointerActivity | HostEvent::KeyActivity => {
                 if self
                     .current
                     .as_ref()
@@ -814,7 +822,27 @@ impl Shell {
 
     fn activity(&mut self) {
         if let Some(current) = self.current.as_mut() {
-            current.last_activity = Instant::now();
+            let now = Instant::now();
+            current.last_activity = now;
+            if current
+                .activity_reported
+                .is_none_or(|at| now.duration_since(at) >= Duration::from_secs(1))
+            {
+                let request =
+                    serde_json::to_value(korri_surface_treaty::SurfaceRequest::ReportActivity)
+                        .expect("activity serializes");
+                if self
+                    .jobs
+                    .send(RequestJob {
+                        generation: current.generation,
+                        surface: current.package.id.clone(),
+                        request,
+                    })
+                    .is_ok()
+                {
+                    current.activity_reported = Some(now);
+                }
+            }
         }
     }
 
@@ -1096,6 +1124,7 @@ impl Shell {
         let mut loaded = Loaded {
             generation,
             last_activity: Instant::now(),
+            activity_reported: None,
             size,
             package,
             logic,

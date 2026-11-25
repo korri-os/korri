@@ -6310,3 +6310,44 @@ async fn a_pending_upload_on_another_device_holds_the_launch_and_asks() {
 
 #[path = "installs_tests.rs"]
 mod installs_tests;
+
+#[tokio::test]
+async fn idle_power_warning_reaches_each_surface_and_cancel_and_input_clear_it() {
+    use crate::idle_power::{Decision, IdlePower, CANCEL_ACTION};
+    use std::time::Instant;
+    for surface in ["pico", "zone", "velvet"] {
+        for request in [
+            SurfaceRequest::ReportActivity,
+            SurfaceRequest::RunAction {
+                action_id: CANCEL_ACTION.into(),
+            },
+        ] {
+            let start = Instant::now() - Duration::from_secs(840);
+            let idle = Arc::new(IdlePower::new(start));
+            let outcomes = Arc::new(std::sync::Mutex::new(idle_outcomes(1)));
+            let directory = tempfile::tempdir().unwrap();
+            let hub = SurfaceHub::new(
+                in_memory_korrid(outcomes).with_idle_power(idle.clone()),
+                directory.path().into(),
+                tokio::sync::watch::channel(0).1,
+                Arc::default(),
+            );
+            settled(&hub, surface).await;
+            assert_eq!(idle.check(Instant::now(), true), Decision::Warn);
+            let model = hub.model(surface).unwrap();
+            let SurfaceStatus::Confirm {
+                actions,
+                decline_action_id,
+                ..
+            } = model.status
+            else {
+                panic!("missing warning")
+            };
+            assert_eq!(actions[0].id, CANCEL_ACTION);
+            assert_eq!(decline_action_id.as_deref(), Some(CANCEL_ACTION));
+            hub.request(surface, request).unwrap();
+            assert!(idle.warning_token().is_none());
+            assert_eq!(hub.model(surface).unwrap().status, SurfaceStatus::Browsing);
+        }
+    }
+}

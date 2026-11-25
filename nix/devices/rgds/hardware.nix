@@ -40,6 +40,8 @@ in
 
   # USB gadget identity. The board's device tree selects peripheral mode on
   # usb_host0_xhci, so this port is a gadget and never a host.
+  services.korriProduct.dedicatedToPlay = true;
+
   services.korriProduct.usbGadget = {
     name = "rgds";
     product = "RG DS NixOS";

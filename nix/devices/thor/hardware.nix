@@ -70,6 +70,8 @@ in
   # prefix and do not derive from the subnet.
   # qcom_battmgr calls power_supply_changed() when the capacity changes
   # (ADR 0094), so korrid shows the battery percent.
+  services.korriProduct.dedicatedToPlay = true;
+
   services.korriProduct.battery.verified = [ "percent" ];
 
   services.korriProduct.usbGadget = {
