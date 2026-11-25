@@ -97,23 +97,22 @@ connects. A trusted controller reconnects by itself when switched on.
 
 ## USB-C: lifeline or gamepad
 
-The Korri product kernel owns the USB-C data role through the read-only
-`s2mm005-read-only` driver. Three fresh qualifying samples select host while
-the Kishi pass-through powers the tablet, without enabling boost. Charger
-unplug selects device on the next sample. The standard `/sys/class/typec`
-port exposes the observed attachment and roles. See `usb-role/typec-kernel.md`
-for exact interlocks and limits. The console retains manual role control.
+The Korri product kernel owns the USB-C port through the `s2mm005-read-only`
+driver (the s2mm005 itself is only read). While the Kishi pass-through charges
+the tablet, three fresh qualifying samples select host without boost. On
+battery, the driver powers the Kishi itself through the SM5705 boost with
+Samsung's register settings, and turns it off at once on detach, a charger,
+a fault or any read error. The standard `/sys/class/typec` port shows the
+attachment and roles. See `usb-role/typec-kernel.md` for the interlocks,
+the stock-kernel grounding and the remaining unknown.
 
 ```sh
 tabs6-usb-role                 # role, VBUS, attached devices
-tabs6-usb-role host            # stop watcher; unbind driver; existing manual battery-host checks
-tabs6-usb-role device          # verify boost off, restore gadget, rebind automatic kernel policy
 ```
 
-Manual host still requires Discharging, three source samples, no incoming
-VBUS and no configured gadget. It is an unmonitored operator override: select
-`device` before changing cables. A failed manual attempt stays unbound until
-`device` verifies boost-off and restores policy. Reboot also restores policy.
+User space has no command that enables boost. The former manual
+`host`/`device` commands were removed with the automatic battery source; the
+console image therefore has no battery host either.
 
 There is no automatic user-space role writer or chip-status daemon.
 `tabs6-typec-role-watch` watches only the selected role: it stops the gadget

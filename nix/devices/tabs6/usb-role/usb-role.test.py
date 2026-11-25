@@ -160,7 +160,6 @@ class UsbRole(unittest.TestCase):
         env = {
             "PATH": f"{self.bin}:{os.environ['PATH']}",
             "TABS6_SYSFS": str(self.sys),
-            "TABS6_TYPEC_MANUAL": os.environ["TABS6_TEST_MANUAL"],
             "TABS6_USB_ROLE_LOCK": str(self.tmp / "lock"),
             "TABS6_TEST_REGS": str(self.regs),
             "TABS6_I2C_DEV": str(self.i2c),
@@ -186,12 +185,6 @@ class UsbRole(unittest.TestCase):
         f = self.regs / "systemctl"
         return f.read_text().splitlines() if f.exists() else []
 
-    def assert_refused(self, reason):
-        r = self.run_role("host")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn(reason, r.stderr)
-        self.assertFalse(any(w == "0x0c 247" for w in self.writes()))
-        self.assertEqual(self.role(), "device")
 
     def charging_kishi(self):
         (self.regs / "func").write_text("0x15 0x21 0xff 0x9d\n")
@@ -199,41 +192,11 @@ class UsbRole(unittest.TestCase):
         self.reg("charger", 0x29)
         self.gauge("Charging")
 
-    def test_host_powers_the_port_then_switches(self):
-        r = self.run_role("host")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.reg(FLEDCNTL6), 0xAB)  # 5100 mV, high bits kept
-        self.assertEqual(self.reg(CHGCNTL6), 0xF8)  # 900 mA in bits 3:2, kept
-        self.assertEqual(self.reg(CNTL), 0xF7)  # USB_OTG, high bits kept
-        # Boost before the role, as the port did.
-        self.assertEqual([w.split()[0] for w in self.writes()], [FLEDCNTL6, CHGCNTL6, CNTL])
-        self.assertEqual(self.role(), "host")
 
-    def test_host_refused_while_charging(self):
-        self.gauge("Charging")
-        self.assert_refused("says Charging")
 
-    def test_host_refused_on_full_or_not_charging(self):
-        for status in ("Full", "Not charging"):
-            self.gauge(status)
-            self.assert_refused(f"says {status}")
 
-    def test_host_refused_without_a_gauge(self):
-        self.gauge(None)
-        self.assert_refused("fuel gauge is missing")
 
-    def test_host_refused_while_a_host_uses_the_gadget(self):
-        self.udc("configured")
-        self.assert_refused("gadget configured")
 
-    def test_device_turns_vbus_off_and_rebinds_the_gadget(self):
-        self.run_role("host")
-        r = self.run_role("device")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.role(), "device")
-        self.assertEqual(self.reg(CNTL), 0xF5)
-        self.assertEqual(self.reg(FLEDCNTL6), 0xA5)
-        self.assertEqual(self.systemctl(), ["restart --no-block usb-gadget.service"])
 
     def test_status(self):
         (self.sys / "bus/usb/devices/1-1").mkdir()
@@ -276,173 +239,19 @@ class UsbRole(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("could not reach the SM5705", r.stdout)
 
-    def test_off_precedes_role_device(self):
-        self.assertEqual(self.run_role("host").returncode, 0)
-        self.assertEqual(self.run_role("device").returncode, 0)
-        order = (self.regs / "order").read_text().splitlines()
-        self.assertIn("0x0c 245 role=host", order)
 
-    def test_power_or_detach_between_checks_never_enables_boost(self):
-        for change in ("power", "detach"):
-            with self.subTest(change=change):
-                self.reg("muic", 0)
-                (self.regs / "func").write_text("0x0e 0x24 0xff 0x8f\n")
-                (self.regs / "change-on-config").write_text(change)
-                r = self.run_role("host")
-                self.assertNotEqual(r.returncode, 0)
-                self.assertNotIn("0x0c 247", self.writes())
-                self.assertEqual(self.role(), "device")
 
-    def test_each_write_failure_cleans_up_without_retrying_enable(self):
-        for register in (FLEDCNTL6, CHGCNTL6, CNTL):
-            with self.subTest(register=register):
-                failure = self.regs / f"fail-write-{register}"
-                failure.touch()
-                r = self.run_role("host")
-                self.assertNotEqual(r.returncode, 0)
-                self.assertNotIn("0x0c 247", self.writes())
-                self.assertEqual(self.role(), "device")
-                failure.unlink()
 
-    def test_readback_must_confirm_off_even_if_role_can_be_restored(self):
-        self.reg(CNTL, 0xF7)
-        self.set_role("host")
-        (self.regs / f"drop-write-{CNTL}").touch()
-        r = self.run_role("device")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("VBUS off not verified", r.stderr)
-        self.assertEqual(self.role(), "device")
-        self.assertNotIn("VBUS off (readback verified)", r.stdout)
 
-    def test_each_policy_read_failure_or_short_read_denies_host(self):
-        for name in ("w2@0x33-0x00-0x08", "w2@0x33-0x00-0x20",
-                     "w1@0x25-0x15-r1", "w1@0x49-0x08-r1", "w1@0x49-0x0c-r1",
-                     "w1@0x49-0x20-r1", "w1@0x25-0x0a-r3"):
-            with self.subTest(name=name):
-                failure = self.regs / f"fail-transfer-{name}"
-                failure.touch()
-                r = self.run_role("host")
-                self.assertNotEqual(r.returncode, 0)
-                self.assertNotIn("0x0c 247", self.writes())
-                failure.unlink()
-        (self.regs / "short-transfer").touch()
-        self.assertNotEqual(self.run_role("host").returncode, 0)
-        self.assertNotIn("0x0c 247", self.writes())
 
-    def test_manual_host_preserves_the_measured_passive_uart_classification(self):
-        # After the live reboot, the unplugged Kishi reports DEVT1_UART.
-        # This is not one of the charger's/PC's power signatures.
-        (self.regs / "devices").write_text("0x08 0x00 0x00\n")
-        r = self.run_role("host")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.role(), "host")
-        self.assertEqual(self.reg(CNTL) & 7, 7)
 
-    def test_muic_charger_and_pc_signatures_never_enable_boost(self):
-        for value in (0x04, 0x10, 0x20, 0x40):
-            with self.subTest(value=value):
-                (self.regs / "devices").write_text(f"0x{value:02x} 0x00 0x00\n")
-                self.assertNotEqual(self.run_role("host").returncode, 0)
-                self.assertNotIn("0x0c 247", self.writes())
 
-    def test_incoming_power_denied_even_with_source_flags_and_discharging(self):
-        for register, value in (("muic", 1), ("charger", 0x21)):
-            with self.subTest(register=register):
-                self.reg(register, value)
-                self.assertNotEqual(self.run_role("host").returncode, 0)
-                self.assertNotIn("0x0c 247", self.writes())
-                self.reg(register, 0 if register == "muic" else 0x22)
 
-    def test_configuration_read_errors_never_enable_boost(self):
-        for register in (FLEDCNTL6, CHGCNTL6, CNTL):
-            with self.subTest(register=register):
-                failure = self.regs / f"fail-read-{register}"
-                failure.touch()
-                self.assertNotEqual(self.run_role("host").returncode, 0)
-                self.assertNotIn("0x0c 247", self.writes())
-                self.assertEqual(self.role(), "device")
-                failure.unlink()
 
-    def test_duplicate_or_missing_adapter_denies_reads_and_writes(self):
-        adapter = self.sys / "bus/i2c/devices/i2c-7"
-        link = adapter / "of_node"
-        node = link.resolve()
-        link.unlink()
-        for duplicate in (False, True):
-            with self.subTest(duplicate=duplicate):
-                if duplicate:
-                    link.symlink_to(node)
-                    other = adapter.parent / "i2c-8"
-                    other.mkdir()
-                    (other / "of_node").symlink_to(node)
-                self.assertNotEqual(self.run_role("host").returncode, 0)
-                self.assertEqual(self.writes(), [])
-                self.assertEqual(self.role(), "device")
 
-    def test_empty_or_unreadable_gauge_denies_host(self):
-        for status in ("", None):
-            self.gauge(status)
-            self.assertNotEqual(self.run_role("host").returncode, 0)
-            self.assertNotIn("0x0c 247", self.writes())
 
-    def test_a_hung_status_command_times_out_without_enable(self):
-        (self.regs / "slow-transfer").touch()
-        start = time.monotonic()
-        r = self.run_role("host")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertLess(time.monotonic() - start, 1.0)
-        self.assertNotIn("0x0c 247", self.writes())
 
-    def test_invalid_i2c_result_and_unavailable_bus_still_select_device(self):
-        for condition in ("invalid", "offline"):
-            self.set_role("host")
-            (self.regs / condition).touch()
-            r = self.run_role("device")
-            self.assertNotEqual(r.returncode, 0)
-            self.assertEqual(self.role(), "device")
-            (self.regs / condition).unlink()
 
-    def test_manual_override_unbinds_before_existing_checks_and_device_rebinds(self):
-        driver = self.sys / "bus/i2c/drivers/s2mm005-read-only"
-        driver.mkdir(parents=True)
-        client = self.sys / "bus/i2c/devices/6-0033"
-        (client / "of_node").mkdir(parents=True)
-        (client / "of_node/compatible").write_bytes(b"samsung,s2mm005-read-only\0")
-        (client / "driver").symlink_to(driver, target_is_directory=True)
-        os.mkfifo(driver / "unbind")
-        os.mkfifo(driver / "bind")
-        self.set_role("host")
-        def unbind():
-            with (driver / "unbind").open() as f:
-                self.assertEqual(f.read().strip(), "6-0033")
-            self.set_role("device")  # the real driver's remove path
-            (client / "driver").unlink()
-            (self.regs / "order").write_text("kernel-remove role=device\n")
-        worker = threading.Thread(target=unbind, daemon=True)
-        worker.start()
-        r = self.run_role("host")
-        worker.join(timeout=2)
-        self.assertFalse(worker.is_alive())
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.role(), "host")
-        self.assertEqual(self.reg(CNTL) & 7, 7)
-        self.assertIn("stop tabs6-typec-role-watch.service", self.systemctl())
-        self.assertTrue((self.regs / "order").read_text().startswith("kernel-remove role=device"))
-        self.assertFalse((client / "driver").exists())
-        def bind():
-            with (driver / "bind").open() as f:
-                self.assertEqual(f.read().strip(), "6-0033")
-            self.assertEqual(self.role(), "device")
-            self.assertEqual(self.reg(CNTL) & 7, 5)
-            (client / "driver").symlink_to(driver, target_is_directory=True)
-        worker = threading.Thread(target=bind, daemon=True)
-        worker.start()
-        r = self.run_role("device")
-        worker.join(timeout=2)
-        self.assertFalse(worker.is_alive())
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertTrue((client / "driver").exists())
-        self.assertIn("start tabs6-typec-role-watch.service", self.systemctl())
 
     def kernel_client(self, bound=True, driver_loaded=True):
         driver = self.sys / "bus/i2c/drivers/s2mm005-read-only"
@@ -455,23 +264,39 @@ class UsbRole(unittest.TestCase):
             (client / "driver").symlink_to(driver, target_is_directory=True)
         return client
 
-    def test_manual_override_refused_until_the_late_kernel_module_is_loaded(self):
-        self.kernel_client(bound=False, driver_loaded=False)
-        (self.regs / "policy-not-loaded").touch()
-        for command in ("host", "device"):
+
+
+    def test_user_space_never_enables_boost(self):
+        for command in ("host", "device", "sink-host"):
             r = self.run_role(command)
-            self.assertNotEqual(r.returncode, 0)
-            self.assertIn("not loaded yet", r.stderr)
+            self.assertEqual(r.returncode, 2, command)
         self.assertEqual(self.writes(), [])
         self.assertEqual(self.role(), "device")
-        self.assertNotIn("stop tabs6-typec-role-watch.service", self.systemctl())
 
-    def test_device_loads_the_kernel_module_when_it_was_removed(self):
-        self.kernel_client(bound=False, driver_loaded=False)
-        r = self.run_role("device")
+    def test_boot_vbus_reports_an_unverified_off(self):
+        self.reg(CNTL, 0xF7)
+        (self.regs / f"drop-write-{CNTL}").touch()
+        r = self.run_role("boot-vbus", TABS6_USB_ROLE_WAIT_S=1)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual((self.regs / "modprobe").read_text().split(), ["s2mm005"])
-        self.assertIn("start tabs6-typec-role-watch.service", self.systemctl())
+        self.assertIn("VBUS off not verified", r.stderr)
+        self.assertIn("VBUS left as it is", r.stdout)
+
+    def test_duplicate_or_missing_adapter_denies_writes(self):
+        adapter = self.sys / "bus/i2c/devices/i2c-7"
+        link = adapter / "of_node"
+        node = link.resolve()
+        link.unlink()
+        self.reg(CNTL, 0xF7)
+        for duplicate in (False, True):
+            with self.subTest(duplicate=duplicate):
+                if duplicate:
+                    link.symlink_to(node)
+                    other = adapter.parent / "i2c-8"
+                    other.mkdir()
+                    (other / "of_node").symlink_to(node)
+                r = self.run_role("boot-vbus", TABS6_USB_ROLE_WAIT_S=1)
+                self.assertIn("could not reach", r.stdout)
+                self.assertEqual(self.writes(), [])
 
     def test_boot_role_writes_device_before_the_module_and_never_after(self):
         self.kernel_client(bound=False, driver_loaded=False)

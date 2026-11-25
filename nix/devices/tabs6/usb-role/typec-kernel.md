@@ -1,48 +1,104 @@
-# Kernel-owned Tab S6 USB-C data role
+# Kernel-owned Tab S6 USB-C data role and battery source
 
-The Korri product uses `s2mm005-read-only` (Linux 7.3.4). The console kernel
-stays unchanged and has only the existing manual role helper. There is no
-user-space automatic role policy or fallback.
+The Korri product uses `s2mm005-read-only` (Linux 7.3.4). It owns the data
+role and, since 2026-11-25, the battery-powered source for non-PD sinks such
+as the Razer Kishi V2, the way Samsung's Android kernel does it. The console
+kernel stays unchanged. There is no user-space automatic role or boost policy,
+and user space never enables boost.
 
 ## Ownership and safety
 
 The driver selects dwc3 roles through `usb_role_switch_set_role`. It registers
-a standard Type-C port and an attached partner. The Type-C data role reports
-the selected Linux data role. The power role reports the observed s2mm005
-source flag; it does not command power. No Type-C swap operations are offered.
-The driver does not infer cable orientation, a PD contract or a specification
-revision from the observed fields.
+a standard Type-C port and partner; the power role reports SOURCE only while
+our boost is on. No Type-C swap operations are offered.
 
-A delayed work item reads every 100 ms after the preceding sample completes.
-Three consecutive fresh samples permit host only when **all** of these hold:
+The **s2mm005 stays strictly read-only**: register-address write plus
+repeated-START read, no mailbox commands, no interrupt clear, no firmware,
+flash or OTP. IRQ123 is not requested (it can stay asserted without an
+acknowledgement). The **only writes** go to the SM5705 charger at 0x49, and
+only to the bits Samsung's `sm5705_charger_oper.c` touches, each a
+read-modify-write verified by readback (`sm5705_update` refuses any other
+register or mask):
 
-| Interlock | Shipped implementation |
+| Register | Bits | On (stock USB_OTG table) | Off (stock CHG_ON table) |
+| --- | --- | --- | --- |
+| FLEDCNTL6 0x20 | 3:0 boost voltage | 0x0B, 5.1 V | 0x05, 4.5 V |
+| CHGCNTL6 0x14 | 3:2 OTG current | 3, 1.5 A | 0, 500 mA |
+| CNTL 0x0c | 2:0 mode | 7, USB_OTG | 0 (SUSPEND) for 100 ms, then 5, CHG_ON |
+
+Order on enable, as in the former manual helper: voltage, current, a fresh
+interlock re-check ("configuration is not permission"), then mode 7 with
+readback, then host. Order on revoke: boost off with readback, then the data
+role. Every 7 → 5 passes through SUSPEND for 100 ms. Stock does that only for
+gauge id < 5 (this tablet reports 0x0b); we keep it always so the boost and
+the charger input are never commanded at once. A failed boost-off is retried
+(3 tries per poll, every poll) and stops the policy in device role until the
+driver is rebound; a failed enable turns boost off and backs off.
+
+Polling: 100 ms with boost off, 20 ms while boost may be on. The SM5705
+charger and MUIC IRQ lines are not used: their latches are read-to-clear and
+nothing in Linux owns them, but their masks are unknown and writing masks is
+out of scope; polling at 20 ms bounds our part of the reaction.
+
+### Sink host (charger supplies the port)
+
+Unchanged. Three consecutive fresh samples permit host only when **all** of:
+PD state 21, attached, source=0, DFP=1, MUIC VBUS exactly 01, CNTL mode 5.
+Any other sample or a read error selects device at once. A normal PC/UFP never
+qualifies. Each poll also compares the decision with the switch's actual role:
+an outside write to the role file is logged (`role changed outside policy`)
+and undone after 1 s (added after an overlapping deploy wrote it 293 times).
+
+### Battery source (stock grounding, Samsung 37cf30da)
+
+`s2mm005_cc.c` `process_cc_attach` (:748): boost on (`vbus_turn_on_ctrl(1)`)
+in SRC states 1, 3, 4, 5, 6, 7 (:904–941); off in SNK states 17, 18, 21 and
+ErrorRecovery 29 while host (:958–981), on PR_SWAP 52 (:861–863) and on detach
+(:1035–1070, `process_cc_detach` :1120–1132). Stock never turns boost off in
+state 14 (`State_PE_SRC_Wait_New_Capabilities`, `s2mm005.h` enum) and never
+checks IS_SOURCE or ATTACH_DONE. The OTGFAIL handler (STATUS3 bit 2) turns
+OTG off.
+
+Enable, boost off, two consecutive fresh samples with **all** of:
+
+| Interlock | Check |
 | --- | --- |
-| PD state 21 | `sample.state == 21` |
-| Attached, source=0, DFP=1 | `(sample.flags & 7) == 5` |
-| MUIC VBUS exactly 01 | `sample.muic_vbus == 1`, not just bit0 |
-| Charger CNTL mode 5 | `(sample.cntl & 7) == 5` |
-| Three fresh successful reads | saturating counter in `s2mm005-policy.h` |
+| Source state | 1, 3–7, or 14. **14 is our measured extension of stock**: the unpowered Kishi sits there (0 ↔ 14 every ~15.8 s, `kishi-unpowered-cycle-replug.txt`); stock enters boost earlier and only keeps it in 14 |
+| No incoming VBUS | MUIC VBUS 00 and STATUS1 exactly VBUSUVLO (no VBUSPOK, OVP, LIMIT, wireless input) |
+| On battery | gauge Discharging (fresh read; the gauge decides only enables) |
+| No charger/PC signature | MUIC DEVT1 none, UART (measured) or OTG; DEVT2 and DEVT3 zero |
+| No fault | STATUS3 OTGFAIL clear |
+| Boost off | CNTL mode 5 |
+| Not backing off | see below |
 
-Any nonqualifying sample or read error selects device and resets the counter
-on the same work invocation. Only enables wait. A normal PC/UFP never qualifies.
-Role-set errors reset qualification and force a device request. Each poll also compares the decision with the switch's actual role. The
-role file stays writable (dwc3 allows user-space control), so an outside write
-is logged (`role changed outside policy`) and undone on the next poll. This
-was added after another session's old daemon wrote the role 293 times during
-an overlapping deploy on 2026-11-24. Probe, remove,
-shutdown and suspend request device. Resume starts qualification from zero.
-The API schedules dwc3's role work; a successful request is not proof that
-controller teardown has completed.
+Revoke at once, every poll while boosting: read error; CNTL no longer mode 7
+(including the charger forcing mode 5 on incoming VBUS); OTGFAIL, VBUSOVP,
+VBUSLIMIT or wireless input; any MUIC charger/PC signature; and any state
+outside the source set: 0 (detach), 17, 18, 20, 21, 29, 52 or unknown.
 
-The driver performs **only address-plus-repeated-START reads**. It never writes
-register data to any chip, sources VBUS, touches boost, requests PD or power
-contracts, swaps roles on the controller, accesses firmware/flash/OTP, masks
-interrupts, acknowledges interrupts or clears them. It does not even read
-interrupt status 0x0030 or the MUIC read-to-clear latches. IRQ123 is not requested:
-it can remain asserted without acknowledgement, so a polling safety path is
-required anyway. Polling costs periodic wakeups; 100 ms is a target interval,
-not a hard real-time deadline. A slow/failing I2C controller can delay a sample.
+**Fixed grace window, 1.5 s (owner decision 2026-11-25).** After a verified
+enable the chip re-detects: state 0 for about 0.7 s (attached flickering),
+then 14 with attached 0 (`phase-b-host-transition.txt`, 95–794 ms). During
+the window only 0 and 14 are tolerated, only while CNTL reads 7; everything
+else above still revokes at once. The window never extends. A start that is
+revoked in its window or still reads 0 when it ends is a failed start: no
+re-enable until the chip shows a source state for two fresh polls, after a
+backoff of 3, 6, 12 … 60 s (reset by 60 s of stable boost). Any other revoke
+waits a fixed 3 s before the next enable. Only enables wait.
+
+After a revoke caused by a charger, sink host requalifies from zero: DFP
+arrives about 1.9 s after SNK_Ready (measured), so the Kishi re-enumerates
+rather than keeping host across the hand-over.
+
+**Remaining unknown: Kishi pass-through isolation during the overlap.** When
+a charger is plugged into the Kishi pass-through while our boost is on, both
+may drive VBUS until the chip leaves the source states or the charger forces
+mode 5. While boosting, MUIC VBUS (01) and STATUS1 (VBUSPOK) do not
+discriminate our output from the charger, and the gauge cannot see the charger
+(OTG mode does not charge). The evidence that remains valid while boosting is
+the chip leaving the source states, CNTL leaving mode 7, a STATUS1 fault, and
+a MUIC charger signature, if the MUIC classifies the charger at all. Whether
+it does, and how long the overlap lasts, is measured in acceptance.
 
 ### Why the fuel gauge is not an interlock (owner decision, 2026-11-24)
 
@@ -65,9 +121,8 @@ board sources VBUS only through SM5705 mode 7, never through the dwc3 role
 switch. While CNTL reads mode 5, MUIC VBUS=01 together with SNK_Ready,
 attached and source=0 therefore means the charger supplies the port, and the
 data role cannot source it. The policy keeps those six checks, three fresh
-samples and immediate revocation on any of them or on a read error. Manual
-host and the VBUS sourcing rules are unchanged; manual host still requires a
-Discharging gauge. The driver no longer depends on the gauge driver at all.
+samples and immediate revocation on any of them or on a read error. The
+battery source (above) reads the gauge again, but only as an enable condition.
 
 ## Register and resource grounding
 
@@ -82,7 +137,9 @@ commit `37cf30da0578a6378a3e3ef5e17aede89233defe`.
 | Two-byte address, MSB first | `s2mm005.c` s2mm005_read_byte. Exactly two completed I2C messages are required; short transfers are errors. |
 | SM5705 adapter `&i2c4`, 0x890000 | Stock DTBO fragment 133. `samsung,sm5705-i2c` phandle resolves the adapter, never a Linux adapter number. |
 | MUIC 0x25, 0x15, one byte | `muic_regmap_sm5705.c`, REG_RSVDID1 / RSVDID1_VBUS_VALID. The existing policy requires the whole byte to equal 01. |
-| Charger 0x49, CNTL 0x0c, one byte | `include/linux/mfd/sm5705/sm5705.h`; bits2:0 mode 5 = CHG_ON. |
+| Charger 0x49, STATUS1–4 0x08–0x0b and CNTL 0x0c, one five-byte read | `include/linux/mfd/sm5705/sm5705.h`; STATUS1 VBUSPOK/UVLO/OVP/LIMIT/WPCIN bits 0–5, STATUS3 OTGFAIL bit 2, CNTL bits 2:0 mode. Status registers, not the read-to-clear INT1–4 at 0x00–0x03 (never read). |
+| MUIC 0x25, DEVT1–3 0x0a–0x0c | `muic_regmap_sm5705.c` DEVT1_* (OTG bit7, dedicated/USB/car charger bits 6/5/4, UART bit3, USB bit2), DEVT2, DEVT3 (AFC/U200 chargers). |
+| Gauge `&sm5705_fg` (`power-supplies`) | Fresh STATUS through `power_supply_get_by_reference`; enable-only. |
 | dwc3 | `usb-role-switch = <&usb_1_dwc3>` on the typec node; `usb_role_switch_get` resolves the phandle and defers until the switch exists. `usb_1_dwc3` is unchanged (no graph port, no default-mode property; dwc3 defaults to peripheral). An earlier OF-graph link made fw_devlink report a dwc3 ↔ typec@33 cycle and was the prime suspect for the trial fallbacks. |
 
 The charger and MUIC addresses are deliberately **not** reserved with dummy
@@ -93,7 +150,7 @@ specific driver must be revisited if either address gains a kernel owner.
 Cross-chip reads are sequential, as before; they are not a hardware-atomic
 snapshot. Every poll gets new facts, and no observer log grants permission.
 
-## User-space remainder and manual override
+## User-space remainder
 
 `tabs6-typec-auto` is removed. No USB role service polls chip registers or writes an
 automatic role. The old observer is not started; its diagnostic CLI is usable
@@ -112,21 +169,11 @@ The driver logs each change of the qualifying facts (`facts: state … flags …
 vbus … cntl … (qualified n/3)`, rate limited) and `qualified 3/3`, so the time
 from physical replug to SNK_Ready and to host is visible in the journal.
 
-The manual battery-powered Kishi path remains available:
-
-```sh
-tabs6-usb-role host    # stop role watcher, unbind kernel policy, existing checks/VBUS sequence
-tabs6-usb-role device  # verify boost off, device/gadget, rebind kernel policy and restart watcher
-```
-
-The existing OF compatible identifies the one client even after unbind. No
-persisted override flag is introduced. Unbind synchronously cancels work and
-requests device before releasing the port. Only then can the existing manual
-helper read s2mm005 and perform its unchanged Discharging/source qualification
-and VBUS-first sequence. A failed manual host attempt stays unbound; run
-`device` to verify boost-off and resume policy. Reboot also restores the driver.
-Do not change cables in manual powered-host mode: it remains an unmonitored
-operator override, not proof of safe pass-through sourcing.
+The former manual `tabs6-usb-role host`/`device` commands (unbind the driver,
+then boost from user space) were removed on 2026-11-25: the kernel now powers
+the Kishi on battery itself, and one boost owner is simpler and safer than two.
+`tabs6-usb-role` keeps `status`, the gadget actions, `boot-role` and
+`boot-vbus`; it has no command that enables boost.
 
 Kernel host qualification can finish before systemd starts the gadget.
 The role watcher starts without waiting for the gadget. On an initial or new
@@ -242,14 +289,19 @@ the screen and consider a ramoops region or a late-bound module for diagnosis.
 ## Verification
 
 `tabs6-typec-policy` compiles the exact header included by the kernel driver.
-It replays all six real traces (Phase A, charging, sourcing flap, bounded
-shutdown, and both 100 % gauge traces, which must hold host with no role
-change), exhausts all PD states/flag
-bytes and MUIC/CNTL bytes, checks each revocation and error/reset, and keeps a
-detached Kishi in device for 600 samples (60 s at the target period).
-`tabs6-usb-role` retains the manual interlock/write-order/failure tests and adds
-unbind/rebind and real read-only watcher/detach tests. Removed tests exercised
-the deleted automatic sourcing candidate, not permission in the shipped kernel.
+Sink host: it replays Phase A, charging, the old sourcing traces and both 100 %
+gauge traces (host must hold, boost never requested) and exhausts PD states,
+flag bytes and MUIC/CNTL bytes. Battery source: it replays the measured
+unpowered 0 ↔ 14 cycle with a charger replug (first enable on a 14 seen twice,
+never with VBUS 01) and the measured boost-on (state 0 for ~0.7 s, then 14 with
+attached 0; boost must hold through and after the window). It exhausts every
+enable interlock and covers every revoke path, in and after the window:
+charger insertion as 17/20/21/18/29/52 with sink host requalifying, detach,
+read error, CNTL leaving mode 7, OTGFAIL, VBUSOVP, VBUSLIMIT, wireless input,
+MUIC charger/PC signatures, unknown states, failed starts with 3 → 60 s
+backoff and its reset, and a failed boost-off that stops the policy.
+`tabs6-usb-role` covers the gadget actions, boot-role, boot-vbus and that
+user space has no boost-enabling command.
 
 Build and deploy from the workstation, never the tablet:
 

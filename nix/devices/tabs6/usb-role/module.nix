@@ -21,7 +21,6 @@ let
       pkgs.i2c-tools
       pkgs.gnugrep
       pkgs.util-linux
-      pkgs.kmod
       typecStatus
       config.systemd.package
     ];

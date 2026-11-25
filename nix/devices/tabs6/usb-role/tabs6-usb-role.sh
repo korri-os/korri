@@ -1,28 +1,27 @@
-# Operator-only VBUS/role helper and kernel-role detach workaround.
-# The product kernel owns the role. host/device are refused while its
-# read-only s2mm005 driver is bound. Manual commands unbind it first.
-# Chip writes exist ONLY in manual host/device and the unchanged boot-vbus.
-# Register grounding and operator safety: typec.md and typec-phase-b.md.
+# Tab S6 USB-C helper. The product kernel owns the data role and the battery
+# boost (s2mm005 policy, typec-kernel.md); this script never enables boost.
+#
+#   tabs6-usb-role [status]   role, VBUS, attached USB devices
+#   tabs6-usb-role gadget-*   gadget stop/start around kernel role changes
+#   tabs6-usb-role boot-role  device role at sysinit, before the late module
+#   tabs6-usb-role boot-vbus  boost off at boot (SM5705 keeps registers across
+#                             a warm reboot)
 set -eu
 
 SYSFS=${TABS6_SYSFS:-/sys}
 GADGET_UNIT=${TABS6_USB_GADGET_UNIT:-}
 I2C_DEV=${TABS6_I2C_DEV:-}
-CHECKER=${TABS6_TYPEC_MANUAL:-tabs6-typec-manual}
 LOCK=${TABS6_USB_ROLE_LOCK:-/run/lock/tabs6-usb-role.lock}
 WAIT_S=${TABS6_USB_ROLE_WAIT_S:-20}
 
 CHG_BUS=""
 CHG_ADDR=0x49
 REG_CNTL=0x0c
-REG_CHGCNTL6=0x14
 REG_FLEDCNTL6=0x20
 
 OP_MODE_CHG_ON=5
 OP_MODE_USB_OTG=7
-BST_OUT_5100MV=0x0b
 BST_OUT_4500MV=0x05
-OTG_CURRENT_900MA=2
 
 FUELGAUGE=$SYSFS/class/power_supply/sm5705-fuelgauge
 
@@ -32,11 +31,17 @@ die() {
 	exit 1
 }
 
+# The SM5705 adapter by its OF controller (i2c@890000), never by number.
 resolve_bus() {
-	if [ -z "$CHG_BUS" ]; then
-		CHG_BUS=$("$CHECKER" --sm-bus) || return 1
-		[[ "$CHG_BUS" =~ ^[0-9]+$ ]] || return 1
-	fi
+	local a found=""
+	[ -z "$CHG_BUS" ] || return 0
+	for a in "$SYSFS"/bus/i2c/devices/i2c-*; do
+		[ "$(basename "$(readlink -f "$a/of_node" 2>/dev/null)")" = i2c@890000 ] || continue
+		[ -z "$found" ] || return 1
+		found=${a##*/i2c-}
+	done
+	[[ "$found" =~ ^[0-9]+$ ]] || return 1
+	CHG_BUS=$found
 }
 
 get_reg() {
@@ -59,23 +64,6 @@ vbus_is_on() {
 	local mode
 	mode=$(get_reg $REG_CNTL) || return 1
 	[ "$((mode & 7))" = "$OP_MODE_USB_OTG" ]
-}
-
-# Why the port must not be powered now, or nothing.
-power_refusal() {
-	local status
-	if [ ! -r "$FUELGAUGE/status" ]; then
-		echo "the fuel gauge is missing, so a charger cannot be ruled out"
-		return
-	fi
-	status=$(cat "$FUELGAUGE/status") || { echo "fuel gauge read failed"; return; }
-	if [ "$status" != Discharging ]; then
-		echo "the fuel gauge says $status: something is powering the port"
-		return
-	fi
-	if host_attached; then
-		echo "a USB host has the gadget configured"
-	fi
 }
 
 host_attached() {
@@ -112,30 +100,6 @@ role_file() {
 
 role() { cat "$(role_file)"; }
 
-vbus_on() {
-	local why mode
-	why=$(power_refusal) || return 1
-	[ -z "$why" ] || {
-		echo "tabs6-usb-role: not powering the port: $why" >&2
-		return 1
-	}
-	# Manual callers must qualify three fresh source samples.
-	for _ in 1 2; do
-		"$CHECKER" --check-host || return 1
-		sleep 0.3
-	done
-	"$CHECKER" --check-host || return 1
-	rmw $REG_FLEDCNTL6 0x0f $BST_OUT_5100MV || return 1
-	rmw $REG_CHGCNTL6 0x0c $((OTG_CURRENT_900MA << 2)) || return 1
-	# Configuration is not permission: recheck immediately before CNTL.
-	"$CHECKER" --check-host || return 1
-	why=$(power_refusal) || return 1
-	[ -z "$why" ] || return 1
-	rmw $REG_CNTL 0x07 $OP_MODE_USB_OTG || return 1
-	mode=$(get_reg $REG_CNTL) || return 1
-	[ "$((mode & 7))" = "$OP_MODE_USB_OTG" ]
-}
-
 vbus_off() {
 	local mode
 	for _ in 1 2 3; do
@@ -148,39 +112,6 @@ vbus_off() {
 	done
 	echo "tabs6-usb-role: ERROR: VBUS off not verified" >&2
 	return 1
-}
-
-to_host() {
-	local r
-	if vbus_on && r=$(role_file) && echo host >"$r"; then
-		log "role host, VBUS on"
-	else
-		# No retry of a partially failed enable, even inside an if/function.
-		to_device || true
-		return 1
-	fi
-}
-
-data_device() {
-	local r failed=0
-	if r=$(role_file); then
-		if [ "$(cat "$r")" != device ]; then echo device >"$r" || failed=1; fi
-	else
-		failed=1
-	fi
-	if [ -n "$GADGET_UNIT" ]; then
-		systemctl restart --no-block "$GADGET_UNIT" || failed=1
-	fi
-	return "$failed"
-}
-
-to_device() {
-	local failed=0
-	# Always request off first, but still select device if I2C is unavailable.
-	vbus_off || failed=1
-	data_device || failed=1
-	if [ "$failed" = 0 ]; then log "role device, VBUS off (readback verified)"; fi
-	return "$failed"
 }
 
 # No role or chip writes. Triggered only by the read-only role watcher when
@@ -237,8 +168,7 @@ status() {
 	[ ! -r "$FUELGAUGE/status" ] || echo "fuel gauge: $(cat "$FUELGAUGE/status")"
 }
 
-# The client remains registered after unbind. Resolve its existing OF
-# compatible, not an adapter number or a new persisted override flag.
+# The kernel policy's I2C client, by its OF compatible.
 kernel_client() {
 	local client found=""
 	for client in "$SYSFS"/bus/i2c/devices/*; do
@@ -251,40 +181,8 @@ kernel_client() {
 	echo "$found"
 }
 
-kernel_yield() {
-	local client
-	client=$(kernel_client) || return 1
-	[ -n "$client" ] || return 0
-	# The driver is a module loaded late in boot. A manual override before
-	# that load would be taken over by the probe; refuse until it is done.
-	systemctl is-active --quiet tabs6-typec-kernel-policy.service ||
-		die "kernel USB-C policy is not loaded yet; retry after boot"
-	# Stop only the workaround, not policy. Driver remove synchronously cancels
-	# sampling and requests DEVICE before it releases the role switch.
-	systemctl stop tabs6-typec-role-watch.service || return 1
-	if [ -e "$client/driver" ]; then
-		echo "${client##*/}" >"$client/driver/unbind" || return 1
-		log "kernel policy unbound for manual operator override"
-	fi
-}
-
-kernel_resume() {
-	local client
-	client=$(kernel_client) || return 1
-	[ -n "$client" ] || return 0
-	if [ ! -e "$client/driver" ]; then
-		if [ -e "$SYSFS/bus/i2c/drivers/s2mm005-read-only/bind" ]; then
-			echo "${client##*/}" >"$SYSFS/bus/i2c/drivers/s2mm005-read-only/bind" || return 1
-		else
-			modprobe s2mm005 || return 1
-		fi
-		log "kernel policy rebound; qualification starts from zero"
-	fi
-	systemctl start tabs6-typec-role-watch.service
-}
-
 case "${1:-status}" in
-host|device|boot-vbus)
+boot-vbus)
 	mkdir -p "${LOCK%/*}"
 	exec 9>"$LOCK"
 	flock -x 9
@@ -293,17 +191,6 @@ esac
 
 case "${1:-status}" in
 status) status ;;
-host)
-	kernel_yield || die "could not release kernel role owner"
-	if ! to_host; then
-		log "manual host failed; run device to verify boost-off and resume kernel policy"
-		exit 1
-	fi
-	;;
-device)
-	kernel_yield || die "could not release kernel role owner"
-	to_device && kernel_resume
-	;;
 gadget-start) gadget_start ;;
 gadget-stop)
 	# Host can qualify before systemd starts the gadget. Cancel its late-UDC
@@ -324,7 +211,7 @@ boot-role)
 	;;
 boot-vbus) boot_vbus ;;
 *)
-	echo "usage: tabs6-usb-role [status|host|device|gadget-start|gadget-stop|boot-role|boot-vbus]" >&2
+	echo "usage: tabs6-usb-role [status|gadget-start|gadget-stop|boot-role|boot-vbus]" >&2
 	exit 2
 	;;
 esac

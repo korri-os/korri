@@ -1,16 +1,18 @@
 # Phase B: permanent Kishi V2 with optional pass-through charger
 
-## Current owner: read-only kernel policy
+## Current owner: kernel policy with battery source (2026-11-25)
 
-The Korri product now uses `s2mm005-read-only`, not `tabs6-typec-auto`.
-`typec-kernel.md` describes the exact unchanged sink-host interlocks, 100 ms
-sampling, standard Type-C port, read-only resource access, user-space detach
-workaround and manual override through driver unbind/rebind. There is no
-user-space automatic policy or fallback. The kernel policy no longer uses the fuel
-gauge: the gauge interlock below (Charging) flapped at 100 % battery with the
-charger in, and the chip checks already prove incoming power (owner decision
-2026-11-24; reason and measurements in `typec-kernel.md`). The policy/history below records
-prior user-space implementation and measurements, not current instructions.
+The Korri product uses the kernel driver described in `typec-kernel.md`. It
+keeps the sink-host data role while a charger supplies the port, and it now
+powers non-PD sinks such as the Kishi from the battery, following Samsung's
+own kernel (process_cc_attach: boost on in source states, off on sink states,
+detach and OTG faults). The "Automatic HOST is blocked" policy below is
+superseded: it required the source flag to come back while our boost was on,
+which stock never requires. Stock keeps boost in state 14 with attached 0,
+exactly what the live trials showed. The remaining unknown, Kishi pass-through
+isolation while a charger is plugged in during boost, and the evidence still
+valid while boosting are recorded in `typec-kernel.md`. Everything below is
+history.
 
 ## Previous user-space policy: charging host data role only (2026-11-24)
 
