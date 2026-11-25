@@ -109,7 +109,7 @@ the handheld's 75/85 °C limits as measurements of the sender.
 | Stream-cadence copy/source tests | 5 + 3 passed |
 | Stream-cadence plugin-viewer tests | 54 passed |
 | Proof helper tests | 11 passed |
-| Ruff and Rust formatting | Passed |
+| `ruff check clients/viewer/proof/v4l2m2m` (repository configuration) and Rust formatting | Passed |
 | korrid Clippy with `-D warnings` | Blocked by 16 existing lints in acquisition/surface/game_assets; none in the added test |
 | Final signed dry run | All four jobs succeeded |
 

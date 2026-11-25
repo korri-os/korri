@@ -2131,16 +2131,22 @@ korrid setting to choose the core.
 
 ## Next slices
 
-The handheld paths still need bench proof (ADR 0063). No handheld image
-seeds `@korri:viewer` yet. The install path for tabs6 and op6 is the
-removable plugin (ADR 0061), not the stage-0 `bin/moonlight` symlink.
-`korri-plugins` exports the viewer plugin only on x86_64. Before seeding
-it on those two images, the plugins repo must build it for aarch64 from
-a Korri revision with this path and publish it in the approved catalog.
-With that catalog pinned, add the viewer to just `tabs6` and `op6` in
-`nix/product/plugin-selection.nix`. The existing selection in korrid
-prefers an enabled viewer with a matching treaty over Moonlight and runs
-its immutable `files.viewer` through the lifecycle socket.
+The `v4l2m2m` picture path passed its picture proof on tabs6 on
+2026-11-24, with a signed aarch64 `@korri:viewer` from a korri-plugins dry
+run (`proof/v4l2m2m/README.md`). The korrid-launched stream and controller
+input through korrid on tabs6 are still open. op6 has no proof: the owner
+approved the install on tabs6 only. The `v4l2request` path still needs its
+bench proof (ADR 0063).
+
+No handheld image seeds `@korri:viewer` yet. The install path for tabs6
+and op6 is the removable plugin (ADR 0061). The korri-plugins branch
+`proof/viewer-aarch64-616` exports the viewer plugin for aarch64, with the
+lifecycle VM gate on x86_64 only, because the hosted ARM runner has no KVM.
+That branch is not on korri-plugins `main`, and the aarch64 viewer is not
+in the published catalog. After publication and a catalog pin, add the
+viewer to just `tabs6` and `op6` in `nix/product/plugin-selection.nix`.
+korrid requires an enabled viewer with a matching treaty (ADR 0099) and
+runs its immutable `files.viewer` through the lifecycle socket.
 
 The cross-UID socket proof is an explicit root-only test: build
 `cargo test --manifest-path clients/viewer/Cargo.toml --test lifecycle_security --no-run`
