@@ -4351,9 +4351,12 @@ mod hook_unit_tests {
                     .collect::<Vec<_>>()
             };
             // The one intended difference: the hook's audio socket is optional.
+            let optional =
+                format!("-/run/korri-game-audio-{ID}/native:/run/korri-game-audio/native");
             assert!(hook
                 .iter()
-                .any(|arg| arg.contains(&format!(" -/run/korri-game-audio-{ID}/native:"))));
+                .filter_map(|arg| arg.strip_prefix("--property=BindReadOnlyPaths="))
+                .any(|binds| binds.split(' ').any(|bind| bind == optional)));
             assert_eq!(sandbox(&game), sandbox(&game_audio_socket_required(&hook)));
             assert!(hook.contains(&"--uid=1000".into()));
             assert!(hook.contains(&"--gid=1000".into()));
