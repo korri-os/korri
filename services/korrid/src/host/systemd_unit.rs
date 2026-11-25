@@ -3525,6 +3525,7 @@ mod tests {
                         pulse_audio: false,
                         steam_engine: false,
                     },
+                    AudioSocket::Required,
                 )
                 .unwrap();
             let hidden = properties
