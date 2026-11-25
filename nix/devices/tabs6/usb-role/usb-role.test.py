@@ -47,6 +47,12 @@ echo "$4 $(( $5 ))" >> "$TABS6_TEST_REGS/writes"
 """
 SYSTEMCTL = """#!/usr/bin/env bash
 echo "$*" >> "$TABS6_TEST_REGS/systemctl"
+case "$*" in
+"stop --no-block usb-gadget.service"|"stop usb-gadget.service")
+    echo failed > "$TABS6_TEST_REGS/gadget-state" ;;
+"reset-failed usb-gadget.service")
+    echo inactive > "$TABS6_TEST_REGS/gadget-state" ;;
+esac
 if [ "$*" = "restart inputplumber.service korri-inputd.service" ]; then
     printf 'provider-restart role=%s cntl=%s\n' "$(cat "$TABS6_SYSFS"/class/usb_role/*/role)" "$(cat "$TABS6_TEST_REGS/0x0c")" >> "$TABS6_TEST_REGS/order"
     [ ! -e "$TABS6_TEST_REGS/provider-failure" ] || exit 1
@@ -437,9 +443,10 @@ class UsbRole(unittest.TestCase):
     def test_host_gadget_cleanup_never_writes_role_or_chip_registers(self):
         self.set_role("host")
         self.assertEqual(self.run_role("gadget-stop").returncode, 0)
-        self.assertEqual(self.systemctl(), ["stop --no-block usb-gadget.service"])
+        self.assertEqual(self.systemctl(), ["stop usb-gadget.service", "reset-failed usb-gadget.service"])
         self.assertEqual(self.role(), "host")
         self.assertEqual(self.writes(), [])
+        self.assertEqual((self.regs / "gadget-state").read_text().strip(), "inactive")
 
     def test_detach_workaround_only_restarts_after_kernel_teardown(self):
         self.set_role("device")
@@ -469,7 +476,7 @@ class UsbRole(unittest.TestCase):
             try:
                 time.sleep(0.15)
                 self.assertIsNone(proc.poll())
-                self.assertEqual(self.systemctl(), ["stop --no-block usb-gadget.service"])
+                self.assertEqual(self.systemctl(), ["stop usb-gadget.service", "reset-failed usb-gadget.service"])
                 # A transient unreadable role must not erase the last host.
                 role_path = self.sys / "class/usb_role/a600000.usb-role-switch/role"
                 role_path.unlink()

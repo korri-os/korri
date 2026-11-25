@@ -315,7 +315,12 @@ detached) detached ;;
 gadget-stop)
 	# Host can qualify before systemd starts the gadget. Cancel its late-UDC
 	# wait without changing the shared product gadget or the kernel's role.
-	[ -z "$GADGET_UNIT" ] || systemctl stop --no-block "$GADGET_UNIT"
+	if [ -n "$GADGET_UNIT" ]; then
+		# A pending oneshot killed by a deliberate stop can retain Result=signal.
+		# Wait for that job before clearing its failure, never before it ends.
+		timeout --signal=KILL 3s systemctl stop "$GADGET_UNIT" || exit 1
+		systemctl reset-failed "$GADGET_UNIT"
+	fi
 	;;
 boot-role)
 	[ -z "$(kernel_client)" ] || die "kernel owns boot data role"

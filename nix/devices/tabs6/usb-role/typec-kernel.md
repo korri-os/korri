@@ -98,8 +98,10 @@ operator override, not proof of safe pass-through sourcing.
 
 Kernel host qualification can finish before systemd starts the gadget.
 The role watcher starts without waiting for the gadget. On an initial or new
-host role it stops the gadget with `systemctl --no-block`, which cancels its
-late-UDC wait and avoids delaying network startup for 60 seconds. On return to
+host role it stops the gadget (with a three-second command deadline), which
+cancels its late-UDC wait and avoids delaying network startup for 60 seconds.
+It clears the intentional stop's failed state only after the stop job completes;
+a pending oneshot can otherwise retain `Result=signal`. On return to
 device it restarts the gadget. This keeps the shared product gadget unchanged;
 only the Tab S6 edge knows about its role switch. No role or chip write is part
 of either gadget lifecycle action.
