@@ -21,7 +21,6 @@ Three consecutive fresh samples permit host only when **all** of these hold:
 | PD state 21 | `sample.state == 21` |
 | Attached, source=0, DFP=1 | `(sample.flags & 7) == 5` |
 | MUIC VBUS exactly 01 | `sample.muic_vbus == 1`, not just bit0 |
-| Gauge Charging or Full | fresh `POWER_SUPPLY_PROP_STATUS` is `CHARGING` or `FULL` (`s2mm005_gauge_sinking`) |
 | Charger CNTL mode 5 | `(sample.cntl & 7) == 5` |
 | Three fresh successful reads | saturating counter in `s2mm005-policy.h` |
 
@@ -45,18 +44,30 @@ it can remain asserted without acknowledgement, so a polling safety path is
 required anyway. Polling costs periodic wakeups; 100 ms is a target interval,
 not a hard real-time deadline. A slow/failing I2C controller can delay a sample.
 
-### Why gauge Full counts (owner decision, 2026-11-24)
+### Why the fuel gauge is not an interlock (owner decision, 2026-11-24)
 
-At 100 % battery with the charger in, the gauge flipped Charging → Full →
-Charging about every 30 s (`sink-host-full-flap.txt`: +69 mA, MUIC VBUS 01,
-CNTL 0x05 throughout). A Charging-only rule revoked host for about 1.2 s each
-time, and the provider restart dropped input for about 6 s. `sm5705_fg` reports
-Full only when |current| < 50 mA and SOC ≥ 99. On battery alone the tablet
-drew about −0.5 A (`current_now` −536132 µA, measured at 98 %), far outside
-that band, so Full needs incoming power. Full counts for the sink-host data
-role only. The other six checks stay, and VBUS=01 + SNK_Ready remain the
-incoming-power proof. Discharging, Not charging, Unknown and read errors
-still revoke. Manual host and VBUS sourcing rules do not change.
+The previous user-space policy and the first kernel builds also required gauge
+Charging. At 100 % battery with the charger in, that check revoked host by
+itself while the chip state held still:
+
+| Trace | Gauge | MUIC VBUS / CNTL / PD | Effect of a gauge interlock |
+| --- | --- | --- | --- |
+| `sink-host-full-flap.txt` | Charging → Full for ~0.6 s, every ~30 s (+69 mA) | 01 / 0x05 / unchanged | host → device → host, ~6 s input loss per provider restart |
+| `sink-host-full-discharging-dips.txt` | Full → Discharging for 0.2–0.4 s (current around the 50 mA deadband) | 01 / 0x05 / unchanged | five device dips in about 4 minutes |
+
+`sm5705_fg` derives status from current alone: Charging above +50 mA,
+Discharging below −50 mA, otherwise Full (SOC ≥ 99) or Not charging. With a
+full battery the charger tapers, so the current crosses the deadband and the
+gauge cannot tell "charger in, battery full" from "on battery".
+
+The gauge was a redundant power check. `typec-phase-b.md` records that this
+board sources VBUS only through SM5705 mode 7, never through the dwc3 role
+switch. While CNTL reads mode 5, MUIC VBUS=01 together with SNK_Ready,
+attached and source=0 therefore means the charger supplies the port, and the
+data role cannot source it. The policy keeps those six checks, three fresh
+samples and immediate revocation on any of them or on a read error. Manual
+host and the VBUS sourcing rules are unchanged; manual host still requires a
+Discharging gauge. The driver no longer depends on the gauge driver at all.
 
 ## Register and resource grounding
 
@@ -72,7 +83,6 @@ commit `37cf30da0578a6378a3e3ef5e17aede89233defe`.
 | SM5705 adapter `&i2c4`, 0x890000 | Stock DTBO fragment 133. `samsung,sm5705-i2c` phandle resolves the adapter, never a Linux adapter number. |
 | MUIC 0x25, 0x15, one byte | `muic_regmap_sm5705.c`, REG_RSVDID1 / RSVDID1_VBUS_VALID. The existing policy requires the whole byte to equal 01. |
 | Charger 0x49, CNTL 0x0c, one byte | `include/linux/mfd/sm5705/sm5705.h`; bits2:0 mode 5 = CHG_ON. |
-| Gauge `&sm5705_fg` on i2c11, 0x71 | Existing DTS and `sm5705_fuelgauge.c`. `power-supplies` phandle uses Linux 7.3's `power_supply_get_by_reference`, the successor to `power_supply_get_by_phandle`. STATUS reads fresh current (and SOC when needed), not the five-second notification cache. The existing gauge owns its current decode and 50 mA deadband. |
 | dwc3 | Standard reciprocal OF graph endpoints link the controller to `&usb_1_dwc3`; `usb_role_switch_get` defers until the switch exists. Its default is peripheral. |
 
 The charger and MUIC addresses are deliberately **not** reserved with dummy
@@ -81,8 +91,7 @@ with the unchanged charge-maintenance and boot boost-off i2c-dev services,
 which would otherwise fail with EBUSY. No forced I2C access is used. This board
 specific driver must be revisited if either address gains a kernel owner.
 Cross-chip reads are sequential, as before; they are not a hardware-atomic
-snapshot. Every poll gets new facts, and no observer log or gauge notification
-cache grants permission.
+snapshot. Every poll gets new facts, and no observer log grants permission.
 
 ## User-space remainder and manual override
 
@@ -140,9 +149,9 @@ the screen and consider a ramoops region or a late-bound module for diagnosis.
 ## Verification
 
 `tabs6-typec-policy` compiles the exact header included by the kernel driver.
-It replays all five real traces (Phase A, charging, sourcing flap, bounded
-shutdown and the 100 % Full flap, which must hold host), exhausts every gauge
-status, checks that Full with any other failing interlock revokes, exhausts all PD states/flag
+It replays all six real traces (Phase A, charging, sourcing flap, bounded
+shutdown, and both 100 % gauge traces, which must hold host with no role
+change), exhausts all PD states/flag
 bytes and MUIC/CNTL bytes, checks each revocation and error/reset, and keeps a
 detached Kishi in device for 600 samples (60 s at the target period).
 `tabs6-usb-role` retains the manual interlock/write-order/failure tests and adds

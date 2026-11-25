@@ -99,7 +99,7 @@ connects. A trusted controller reconnects by itself when switched on.
 
 The Korri product kernel owns the USB-C data role through the read-only
 `s2mm005-read-only` driver. Three fresh qualifying samples select host while
-the Kishi pass-through powers the tablet (gauge Charging or Full), without enabling boost. Charger
+the Kishi pass-through powers the tablet, without enabling boost. Charger
 unplug selects device on the next sample. The standard `/sys/class/typec`
 port exposes the observed attachment and roles. See `usb-role/typec-kernel.md`
 for exact interlocks and limits. The console retains manual role control.

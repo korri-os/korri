@@ -54,11 +54,11 @@ standard Type-C port and owns dwc3's data role through the USB role-switch API.
 product. The console source, DT and kernel configuration stay unchanged.
 
 The driver polls every 100 ms without requesting or acknowledging IRQ123.
-Three fresh sink-ready/attached/not-source/DFP + MUIC VBUS=01 + gauge Charging
-or Full + CNTL mode5 samples enable host. Any other sample or error revokes at once.
+Three fresh sink-ready/attached/not-source/DFP + MUIC VBUS=01 + CNTL mode 5
+samples enable host. Any other sample or error revokes at once.
 No chip register data writes, PD commands, VBUS or firmware access exist.
-The existing gauge supplies fresh STATUS through its OF reference; SM5705
-charger/MUIC reads use the i2c4 adapter phandle without reserving addresses.
+It does not use the fuel gauge (see the linked doc). SM5705 charger/MUIC
+reads use the i2c4 adapter phandle without reserving addresses.
 The charge and boot boost-off services keep their existing access.
 
 See `../usb-role/typec-kernel.md` for register grounding, manual host unbind /

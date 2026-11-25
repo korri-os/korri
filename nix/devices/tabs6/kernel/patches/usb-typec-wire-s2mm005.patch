@@ -6,7 +6,7 @@ diff --git a/drivers/usb/typec/Kconfig b/drivers/usb/typec/Kconfig
  
 +config TYPEC_S2MM005_READ_ONLY
 +	tristate "Galaxy Tab S6 read-only s2mm005 data-role policy"
-+	depends on TYPEC && I2C && OF && POWER_SUPPLY && USB_ROLE_SWITCH
++	depends on TYPEC && I2C && OF && USB_ROLE_SWITCH
 +	help
 +	  Read only the s2mm005 and SM5705 status registers on Galaxy Tab S6.
 +	  Select the host data role only while sinking power with three fresh

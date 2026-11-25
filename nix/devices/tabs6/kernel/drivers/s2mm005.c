@@ -6,7 +6,6 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/of.h>
-#include <linux/power_supply.h>
 #include <linux/slab.h>
 #include <linux/usb/role.h>
 #include <linux/usb/typec.h>
@@ -19,7 +18,6 @@
 struct s2mm005 {
 	struct i2c_client *client;
 	struct i2c_adapter *sm5705;
-	struct power_supply *gauge;
 	struct usb_role_switch *role_sw;
 	struct typec_port *port;
 	struct typec_partner *partner;
@@ -48,7 +46,6 @@ static int s2mm005_sample(struct s2mm005 *s, struct s2mm005_sample *sample)
 {
 	u8 dummy_reg[] = { 0x00, 0x08 }, func_reg[] = { 0x00, 0x20 };
 	u8 muic_reg = 0x15, cntl_reg = 0x0c, dummy, func[4];
-	union power_supply_propval status;
 	int ret;
 
 	/* Match the observer's ordinary dummy read, not a flash/boot command. */
@@ -66,17 +63,7 @@ static int s2mm005_sample(struct s2mm005 *s, struct s2mm005_sample *sample)
 			   &sample->muic_vbus, 1);
 	if (ret)
 		return ret;
-	ret = s2mm005_read(s->sm5705, 0x49, &cntl_reg, 1, &sample->cntl, 1);
-	if (ret)
-		return ret;
-	/* sm5705_fg_get_property(STATUS) performs fresh CURRENT/SOC reads;
-	 * its five-second change-notification poll is NOT a status cache.
-	 */
-	ret = power_supply_get_property(s->gauge, POWER_SUPPLY_PROP_STATUS, &status);
-	if (ret)
-		return ret;
-	sample->gauge_status = status.intval;
-	return 0;
+	return s2mm005_read(s->sm5705, 0x49, &cntl_reg, 1, &sample->cntl, 1);
 }
 
 static int s2mm005_role(struct s2mm005 *s, enum usb_role role)
@@ -195,16 +182,11 @@ static int s2mm005_probe(struct i2c_client *client)
 		ret = -EOPNOTSUPP;
 		goto put_adapter;
 	}
-	s->gauge = power_supply_get_by_reference(dev_fwnode(dev), "power-supplies");
-	if (IS_ERR_OR_NULL(s->gauge)) {
-		ret = s->gauge ? PTR_ERR(s->gauge) : -EPROBE_DEFER;
-		goto put_adapter;
-	}
 	cap.fwnode = dev_fwnode(dev);
 	s->port = typec_register_port(dev, &cap);
 	if (IS_ERR(s->port)) {
 		ret = PTR_ERR(s->port);
-		goto put_gauge;
+		goto put_adapter;
 	}
 	ret = s2mm005_role(s, USB_ROLE_DEVICE);
 	if (ret)
@@ -216,8 +198,6 @@ static int s2mm005_probe(struct i2c_client *client)
 
 unregister_port:
 	typec_unregister_port(s->port);
-put_gauge:
-	power_supply_put(s->gauge);
 put_adapter:
 	i2c_put_adapter(s->sm5705);
 put_role:
@@ -244,7 +224,6 @@ static void s2mm005_remove(struct i2c_client *client)
 	s2mm005_quiesce(s);
 	s2mm005_partner(s, NULL);
 	typec_unregister_port(s->port);
-	power_supply_put(s->gauge);
 	i2c_put_adapter(s->sm5705);
 	usb_role_switch_put(s->role_sw);
 }
