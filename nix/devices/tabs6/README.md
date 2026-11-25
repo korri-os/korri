@@ -116,9 +116,9 @@ VBUS and no configured gadget. It is an unmonitored operator override: select
 `device` verifies boost-off and restores policy. Reboot also restores policy.
 
 There is no automatic user-space role writer or chip-status daemon.
-`tabs6-typec-role-watch` watches only the selected role and restarts the gadget,
-InputPlumber and inputd after kernel detach. This temporary workaround never
-writes chip registers or the role. The old Phase A diagnostic observer is not
+`tabs6-typec-role-watch` watches only the selected role: it stops the gadget
+in host role and restarts it on return to device. It never writes chip
+registers or the role, and it does not restart input providers. The old Phase A diagnostic observer is not
 started and works only with the kernel driver unbound. Existing charge-current
 maintenance and boot boost-off remain unchanged.
 

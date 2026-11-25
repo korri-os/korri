@@ -68,23 +68,11 @@ exact callback order. In the automatic-host boot, source re-add succeeded and
 continued reading, but shell navigation did not return. No EBUSY was logged
 in that second failure. Do not describe it as a proven instance of the first.
 
-This change does not edit or deploy the tablet role policy. If the parent
-removes its provider-restart workaround after combining the kernel-role work,
-remove only the provider coupling:
-
-- In `typec-auto.rs`, use `apply("device")` instead of `apply("sink-device")`
-  in sink-host failure and detach handling. Keep boost-off/device-role safety.
-- In `tabs6-usb-role.sh`, remove `to_sink_device`, the `sink-device` command
-  dispatch/lock/usage entries, and the automatic-only provider restart path.
-  Keep `to_device` and the host-controller teardown behavior.
-- In `usb-role.test.py`, remove the provider-failure behavior in the systemctl
-  fixture, the provider-restart ordering and failure tests, and the daemon
-  assertion requiring a provider restart. Retain host/device/host cycling and
-  assert that detach does not restart either input provider.
-- Replace the provider-restart paragraphs in `typec-phase-b.md` with the
-  InputPlumber lifecycle fix and its VM proof. Keep the separate automatic-host
-  shell-navigation failure explicitly unverified until bench acceptance.
+The tablet's provider-restart workaround was removed on 2026-11-25, after the
+kernel took over the data role (`nix/devices/tabs6/usb-role/typec-kernel.md`).
+The role watcher now restarts only the USB gadget on detach, and its tests
+assert that neither input provider is restarted.
 
 No test here proves that the separate automatic-host shell-navigation failure
-is fixed. Keeping the workaround until that failure is independently checked
-costs a provider restart per tablet detach, but avoids overstating this proof.
+is fixed. A tablet replug that re-adds the source but does not restore shell
+navigation is evidence of that failure.

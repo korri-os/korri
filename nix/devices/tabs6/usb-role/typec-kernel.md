@@ -98,13 +98,19 @@ snapshot. Every poll gets new facts, and no observer log grants permission.
 `tabs6-typec-auto` is removed. No USB role service polls chip registers or writes an
 automatic role. The old observer is not started; its diagnostic CLI is usable
 only while the controller is unbound. `tabs6-typec-role-watch` reads **only**
-`/sys/class/usb_role/*/role` every 50 ms. On host-to-device it invokes
-`tabs6-usb-role detached`. That command waits for device role and zero host USB
-devices, restarts the gadget, then restarts InputPlumber and inputd. It never
-writes a role or any chip register. This is the temporary InputPlumber
-workaround, not role policy. Kernel qualification does not wait for user-space
-provider cleanup. A rapid replug can therefore race cleanup; the physical
-acceptance sequence must check shell input, not enumeration alone.
+`/sys/class/usb_role/*/role` every 50 ms. On device-to-host it stops the
+gadget; on host-to-device it restarts it (`tabs6-usb-role gadget-start`). It
+never writes a role or any chip register, and it does not restart input
+providers. The earlier provider restart (InputPlumber and inputd on every
+detach) was removed on 2026-11-25: InputPlumber's source-teardown fix
+(`services/inputd/tests/inputplumber-reattach.md`, VM-proven) handles the
+EBUSY re-add. The separate failure "source re-adds but shell input does not
+return" (case B) is unverified; a replug that does not restore shell input is
+evidence of it. Check shell input, not enumeration alone.
+
+The driver logs each change of the qualifying facts (`facts: state … flags …
+vbus … cntl … (qualified n/3)`, rate limited) and `qualified 3/3`, so the time
+from physical replug to SNK_Ready and to host is visible in the journal.
 
 The manual battery-powered Kishi path remains available:
 
@@ -229,5 +235,5 @@ $(nix build --no-link --print-out-paths .#tabs6-deploy-over-ssh)/bin/deploy-over
 ```
 
 Use the counted boot and LAST KNOWN GOOD path only. Inspect the driver, Type-C
-port, CNTL and input-provider journals with `journalctl -o short-monotonic`.
+port, CNTL and the driver `facts:` lines with `journalctl -o short-monotonic`.
 Do not claim shell-input acceptance from a USB enumeration or a Ready log alone.
