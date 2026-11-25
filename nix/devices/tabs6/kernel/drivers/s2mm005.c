@@ -83,14 +83,22 @@ static int s2mm005_role(struct s2mm005 *s, enum usb_role role)
 {
 	int ret;
 
-	if (s->requested == role)
+	/* Compare with the switch too: the role file stays writable, and an
+	 * outside write must not leave the cached decision unenforced.
+	 */
+	if (s->requested == role && usb_role_switch_get_role(s->role_sw) == role)
 		return 0;
+	if (s->requested == role)
+		dev_warn_ratelimited(&s->client->dev, "role changed outside policy; %s again\n",
+				     usb_role_string(role));
 	ret = usb_role_switch_set_role(s->role_sw, role);
 	if (ret) {
 		dev_err_ratelimited(&s->client->dev, "role %s failed: %d\n",
 				   usb_role_string(role), ret);
 		return ret;
 	}
+	if (s->requested == role)
+		return 0;
 	s->requested = role;
 	typec_set_data_role(s->port, role == USB_ROLE_HOST ? TYPEC_HOST : TYPEC_DEVICE);
 	dev_info(&s->client->dev, "data role %s (read-only, no VBUS writes)\n",

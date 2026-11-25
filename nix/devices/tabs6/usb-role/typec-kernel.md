@@ -27,7 +27,11 @@ Three consecutive fresh samples permit host only when **all** of these hold:
 
 Any nonqualifying sample or read error selects device and resets the counter
 on the same work invocation. Only enables wait. A normal PC/UFP never qualifies.
-Role-set errors reset qualification and force a device request. Probe, remove,
+Role-set errors reset qualification and force a device request. Each poll also compares the decision with the switch's actual role. The
+role file stays writable (dwc3 allows user-space control), so an outside write
+is logged (`role changed outside policy`) and undone on the next poll. This
+was added after another session's old daemon wrote the role 293 times during
+an overlapping deploy on 2026-11-24. Probe, remove,
 shutdown and suspend request device. Resume starts qualification from zero.
 The API schedules dwc3's role work; a successful request is not proof that
 controller teardown has completed.
