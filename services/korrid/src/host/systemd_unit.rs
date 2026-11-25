@@ -1710,7 +1710,23 @@ impl SystemdLaunchUnitBackend {
         // Physical sound devices bypass the launch's audio gate. Every game
         // and hook unit is denied them, whatever groups the runtime user has.
         let mut hidden_audio = String::from(" -/dev/snd");
-        if sandbox.pulse_audio {
+        if sandbox.pulse_audio && self.stream_viewer {
+            // A stream viewer plays the host's already-gated stream. It has
+            // no launch audio unit and reaches the device's Pulse server.
+            read_only_binds.push_str(&format!(
+                " /run/user/{}/pulse:/run/korri-game-audio",
+                self.runtime_uid
+            ));
+            if let Some(config) = &self.game_alsa_config {
+                if !valid_protected_path(config) {
+                    return Err(LaunchUnitError::new(
+                        LaunchUnitErrorKind::InvalidConfiguration,
+                        "invalid game ALSA configuration",
+                    ));
+                }
+                read_only_binds.push_str(&format!(" {}:/etc/alsa/conf.d", config.display()));
+            }
+        } else if sandbox.pulse_audio {
             // Only this launch's Pulse socket is visible. The helper's own
             // runtime directory stays hidden at its original path.
             let optional = match audio_socket {
@@ -3686,6 +3702,37 @@ mod tests {
                 )]),
             )
             .is_err());
+    }
+
+    #[test]
+    fn stream_viewers_reach_the_device_pulse_server_without_a_launch_audio_unit() {
+        let viewer = backend(2001)
+            .with_game_alsa_config(Some("/nix/store/abc-korri-game-alsa".into()))
+            .for_stream_viewer();
+        let launch = viewer
+            .launch_arguments(
+                LAUNCH_ID,
+                &["/games/viewer".into()],
+                &BTreeMap::from([(
+                    "PULSE_SERVER".into(),
+                    "unix:/run/korri-game-audio/native".into(),
+                )]),
+            )
+            .unwrap();
+        let binds = launch
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--property=BindReadOnlyPaths="))
+            .unwrap();
+        assert_eq!(
+            binds,
+            "/tmp/.X11-unix/X0 /run/user/2001/pulse:/run/korri-game-audio /nix/store/abc-korri-game-alsa:/etc/alsa/conf.d"
+        );
+        let paths = launch
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--property=InaccessiblePaths="))
+            .unwrap();
+        assert!(paths.split_whitespace().any(|path| path == "-/dev/snd"));
+        assert!(!paths.contains("korri-game-audio-"), "{paths}");
     }
 
     #[test]
