@@ -7,6 +7,7 @@ pkgs.runCommand "tabs6-typec-policy-check" { nativeBuildInputs = [ pkgs.stdenv.c
     ${../usb-role/phase-b-flap.txt} ${../usb-role/phase-b-host-transition.txt} \
     ${../usb-role/sink-host-full-flap.txt} \
     ${../usb-role/sink-host-full-discharging-dips.txt} \
-    ${../usb-role/kishi-unpowered-cycle-replug.txt}
+    ${../usb-role/kishi-unpowered-cycle-replug.txt} \
+    ${../usb-role/kishi-battery-unplug-devt3.txt}
   touch "$out"
 ''

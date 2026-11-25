@@ -261,6 +261,67 @@ static void replay_battery_attach(const char *path)
 	fclose(f);
 }
 
+/* Step 2 trace, all facts logged: the first 14 held for two polls must
+ * enable, despite the latched MUIC DEVT3 DCD_OUT_SDP (0x04).
+ */
+static void replay_battery_unplug(const char *path)
+{
+	FILE *f = fopen(path, "r");
+	char line[256];
+	struct s2mm005_sample cur = { 0 };
+	struct s2mm005_policy p = { 0 };
+	double last = -1, t, enabled_at = -1;
+	unsigned int rows = 0;
+
+	assert(f);
+	while (fgets(line, sizeof(line), f) && enabled_at < 0) {
+		if (line[0] == '#')
+			continue;
+		t = strtod(strchr(line, '=') + 1, NULL);
+		for (double u = last + 0.1; last >= 0 && u < t && enabled_at < 0; u += 0.1)
+			if (s2mm005_decide(&p, &cur, (unsigned long)(u * 1000)).action ==
+			    S2MM005_ENABLE)
+				enabled_at = u;
+		cur.state = field(line, "state ", 10);
+		cur.flags = field(line, "flags 0x", 16);
+		cur.muic_vbus = field(line, "vbus 0x", 16);
+		cur.cntl = field(line, "cntl 0x", 16);
+		cur.status1 = field(line, "st1 0x", 16);
+		cur.status3 = field(line, "st3 0x", 16);
+		{
+			unsigned int d = field(line, "devt ", 16);
+
+			cur.devt[0] = d >> 16;
+			cur.devt[1] = d >> 8;
+			cur.devt[2] = d;
+		}
+		cur.gauge_status = field(line, "gauge ", 10);
+		last = t;
+		rows++;
+	}
+	assert(cur.devt[2] == S2MM005_DEVT3_DCD_OUT_SDP);
+	/* first 14 at 895.255, enable on its second poll */
+	assert(enabled_at > 895.25 && enabled_at < 895.5);
+	/* in boost, the latched bit must not revoke */
+	{
+		struct s2mm005_sample b = cur;
+		unsigned long now = (unsigned long)(enabled_at * 1000);
+
+		s2mm005_enabled(&p, now);
+		b.state = 14;
+		b.cntl = 7;
+		b.muic_vbus = 1;
+		b.status1 = 0x21;
+		for (int i = 0; i < 200; i++)
+			assert(s2mm005_decide(&p, &b, now += 20).action == S2MM005_NONE);
+		/* any other DEVT3 charger bit still revokes */
+		b.devt[2] |= 0x80;
+		assert(s2mm005_decide(&p, &b, now += 20).action == S2MM005_DISABLE);
+	}
+	assert(rows > 2);
+	fclose(f);
+}
+
 static void start(struct s2mm005_policy *p, unsigned long *now)
 {
 	struct s2mm005_sample s = unpowered_kishi();
@@ -454,7 +515,7 @@ static void enable_interlocks(void)
 		assert(s2mm005_may_source(&s) == (v == 0));
 		s = good;
 		s.devt[2] = v;
-		assert(s2mm005_may_source(&s) == (v == 0));
+		assert(s2mm005_may_source(&s) == (v == 0 || v == 0x04));
 	}
 	for (int g = -1; g < 8; g++) {
 		struct s2mm005_sample s = good;
@@ -487,7 +548,7 @@ int main(int argc, char **argv)
 	unsigned int count = 0;
 	struct s2mm005_sample good = sinking_kishi();
 
-	assert(argc == 8);
+	assert(argc == 9);
 	replay(argv[1], false);
 	replay(argv[2], true);
 	replay_old_sourcing(argv[3]);
@@ -496,6 +557,7 @@ int main(int argc, char **argv)
 	replay_full_battery(argv[6]);
 	replay_unpowered_cycle(argv[7]);
 	replay_battery_attach(argv[4]);
+	replay_battery_unplug(argv[8]);
 	for (unsigned int state = 0; state < 256; state++) {
 		for (unsigned int flags = 0; flags < 256; flags++) {
 			struct s2mm005_sample s = good;

@@ -67,13 +67,19 @@ static inline bool s2mm005_source_state(unsigned char state)
 	return state == 1 || (state >= 3 && state <= 7) || state == 14;
 }
 
+/* DEVT3 bit 2, DCD_OUT_SDP (data contact detect timed out), stays latched
+ * after the charger is unplugged (measured: DEVT3 0x04 with VBUS 00, STATUS1
+ * 0x22, Discharging). It is a stale classification, not incoming power.
+ */
+#define S2MM005_DEVT3_DCD_OUT_SDP	0x04
+
 /* MUIC: none, passive UART (measured with the unpowered Kishi) or OTG.
  * Every charger, PC or unknown classification denies.
  */
 static inline bool s2mm005_muic_quiet(const struct s2mm005_sample *s)
 {
 	return (s->devt[0] == 0 || s->devt[0] == 0x08 || s->devt[0] == 0x80) &&
-	       s->devt[1] == 0 && s->devt[2] == 0;
+	       s->devt[1] == 0 && (s->devt[2] & ~S2MM005_DEVT3_DCD_OUT_SDP) == 0;
 }
 
 static inline bool s2mm005_faults(const struct s2mm005_sample *s)
