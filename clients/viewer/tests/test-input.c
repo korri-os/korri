@@ -10,6 +10,10 @@
 #include <string.h>
 #include <unistd.h>
 
+// The standalone input check links the presenter but never supplies a frame.
+// Rust owns this callback in the program; input alone must never report it.
+void korri_viewer_first_frame(void) { assert(0 && "input-only check presented a frame"); }
+
 static int keys, buttons, positions, moves, controllers;
 static unsigned short last_key;
 static int last_buttons;
