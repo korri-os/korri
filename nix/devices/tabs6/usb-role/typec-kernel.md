@@ -179,9 +179,16 @@ Bisect, all counted trials with deploy-over-ssh (ESP write, then reboot):
 
 | Kernel / DT | Userspace | Result |
 | --- | --- | --- |
-| mine (graph or phandle link) | mine | 6 of 12 fell back |
-| LKG kernel and DTB, byte-identical | mine (no boot-role unit, no observer) | 1 of 2 fell back |
-| LKG kernel and DTB | main | 0 of 4 |
+| mine (graph or phandle link) | mine (some with diagnostics) | 7 of 14 fell back |
+| LKG kernel and DTB, byte-identical | mine | 1 of 2 fell back |
+| LKG kernel and DTB | main `6911f5bac` | 2 of 14 fell back |
+
+Main fails too, so the reset exists without this work. Mine against main is
+8/16 against 2/14 (one-sided Fisher p ≈ 0.045): suggestive, not proven. Open
+question: does the shipped closure fall back more often than main? Measure it
+with about 10 counted trials of the landed main. Restoring the sysinit
+`tabs6-usb-role-boot` (1 fallback in 5) and the late module load did not
+remove it.
 
 LKG itself also failed one boot (boot `daa4c84c`, 2026-11-25 02:54, journal
 ends at 7.95 s during zram setup, no clean shutdown), directly after a failed
