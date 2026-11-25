@@ -1,7 +1,9 @@
 //! The `@korri:viewer` adapter. Production effects (selection.rs) start and
 //! clean up the unit and confirm compositor focus; only the typed socket
 //! supplies observations.
-use super::{LinuxStreamViewer, LinuxViewerError, LinuxViewerStatus, ViewerSnapshot};
+use super::{
+    LinuxStreamViewer, LinuxViewerError, LinuxViewerStatus, ViewerFirstFrame, ViewerSnapshot,
+};
 use crate::launcher::plugin_launch::PluginDisplay;
 use futures::future::BoxFuture;
 use korri_viewer_treaty::{
@@ -17,7 +19,7 @@ use std::{
     },
     path::PathBuf,
     sync::{
-        atomic::{AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
     },
     time::Duration,
@@ -74,10 +76,37 @@ pub struct SocketLinuxStreamViewer {
     operation: Mutex<()>,
     changed: Arc<Notify>,
 }
+// A holder can end while Start is in flight. Dropping that start must
+// clean up the exact unit too. The production start/stop callbacks share their
+// operation lock, so cleanup cannot race a still-running unit launcher.
+struct CancelStart {
+    launch: String,
+    stop: Option<StopSocketViewer>,
+}
+impl Drop for CancelStart {
+    fn drop(&mut self) {
+        if let Some(stop) = self.stop.take() {
+            let launch = self.launch.clone();
+            tokio::spawn(async move {
+                match timeout(CLEANUP_DEADLINE, stop(launch.clone())).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(reason)) => eprintln!(
+                        "korrid viewer: cancelled start cleanup failed for {launch}: {reason}"
+                    ),
+                    Err(reason) => eprintln!(
+                        "korrid viewer: cancelled start cleanup timed out for {launch}: {reason}"
+                    ),
+                }
+            });
+        }
+    }
+}
 struct Connection {
     launch: String,
     exchange: Mutex<(OwnedWriteHalf, mpsc::Receiver<Result<R, LinuxViewerError>>)>,
     terminal: Arc<AtomicU8>,
+    first_frame: tokio::sync::watch::Sender<ViewerFirstFrame>,
+    revealed: AtomicBool,
 }
 // Dropping an in-flight request (including caller cancellation) invalidates the
 // ordered exchange. A late reply must never confirm a different mutation.
@@ -149,7 +178,12 @@ impl SocketLinuxStreamViewer {
             .await
             .map_err(|_| error("viewer focus deadline exceeded"))??;
         }
-        ok(connection.request(command).await?)
+        let reveal = matches!(command, C::ResumeAndFocus);
+        ok(connection.request(command).await?)?;
+        if reveal {
+            connection.revealed.store(true, Ordering::Release);
+        }
+        Ok(())
     }
 }
 fn ok(reply: R) -> Result<(), LinuxViewerError> {
@@ -219,6 +253,8 @@ impl Connection {
         let (send, receive) = mpsc::channel(1);
         let terminal = Arc::new(AtomicU8::new(ALIVE));
         let observed = terminal.clone();
+        let first_frame = tokio::sync::watch::channel(ViewerFirstFrame::Waiting).0;
+        let presented = first_frame.clone();
         tokio::spawn(async move {
             let mut reader = BufReader::new(read);
             loop {
@@ -240,8 +276,12 @@ impl Connection {
                 .await;
                 match message {
                     Ok(M::Event(event)) => {
+                        if matches!(event, E::FirstFrame) {
+                            presented.send_replace(ViewerFirstFrame::Shown);
+                        }
                         if matches!(event, E::Status(S::Stopped)) {
                             observed.store(STOPPED, Ordering::Release);
+                            presented.send_replace(ViewerFirstFrame::Stopped);
                         }
                         changed.notify_one();
                     }
@@ -254,6 +294,7 @@ impl Connection {
                         if observed.load(Ordering::Acquire) != STOPPED {
                             observed.store(LOST, Ordering::Release);
                         }
+                        presented.send_replace(ViewerFirstFrame::Stopped);
                         let _ = send.send(Err(e)).await;
                         changed.notify_one();
                         break;
@@ -265,6 +306,8 @@ impl Connection {
             launch,
             exchange: Mutex::new((write, receive)),
             terminal,
+            first_frame,
+            revealed: AtomicBool::new(false),
         }))
     }
     async fn request(&self, command: C) -> Result<R, LinuxViewerError> {
@@ -313,6 +356,14 @@ impl Connection {
 }
 
 impl LinuxStreamViewer for SocketLinuxStreamViewer {
+    fn first_frame<'a>(
+        &'a self,
+        launch: &'a str,
+    ) -> BoxFuture<'a, Result<tokio::sync::watch::Receiver<ViewerFirstFrame>, LinuxViewerError>>
+    {
+        Box::pin(async move { Ok(self.connection(launch).await?.first_frame.subscribe()) })
+    }
+
     fn change_signal(&self) -> Option<Arc<Notify>> {
         Some(self.changed.clone())
     }
@@ -333,6 +384,10 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
                 return Err(error("viewer launch already started"));
             }
             let size = (self.display)();
+            let mut cancelled = CancelStart {
+                launch: launch.into(),
+                stop: Some(self.stop_process.clone()),
+            };
             let result = async {
                 let path = timeout(
                     DEADLINE,
@@ -354,9 +409,6 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
                         display: size.map(display),
                     })
                     .await?)?;
-                timeout(DEADLINE, (self.focus)(launch.into(), false))
-                    .await
-                    .map_err(|_| error("viewer focus deadline exceeded"))??;
                 self.connections
                     .lock()
                     .await
@@ -369,8 +421,10 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
                 timeout(CLEANUP_DEADLINE, (self.stop_process)(launch.into()))
                     .await
                     .map_err(|_| error("viewer failure cleanup deadline exceeded"))??;
+                cancelled.stop = None;
                 return Err(start_error);
             }
+            cancelled.stop = None;
             Ok(())
         })
     }
@@ -389,6 +443,9 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
                 return Ok(LinuxViewerStatus::Stopped);
             }
             match connection.request(C::Status).await? {
+                R::Status(S::Running) if !connection.revealed.load(Ordering::Acquire) => {
+                    Ok(LinuxViewerStatus::Backgrounded)
+                }
                 R::Status(s) => Ok(s.into()),
                 _ => Err(error("unexpected viewer status reply")),
             }
@@ -408,7 +465,11 @@ impl LinuxStreamViewer for SocketLinuxStreamViewer {
             let _guard = self.operation.lock().await;
             super::production::validate_launch(launch)?;
             let Some(connection) = self.connections.lock().await.get(launch).cloned() else {
-                return Ok(());
+                // Start may have been cancelled before the socket was inserted.
+                // Confirm its exact unit gone, not just its lifecycle absence.
+                return timeout(CLEANUP_DEADLINE, (self.stop_process)(launch.into()))
+                    .await
+                    .map_err(|_| error("viewer stop cleanup deadline exceeded"))?;
             };
             let exchange = if connection.terminal.load(Ordering::Acquire) == STOPPED {
                 Ok(())

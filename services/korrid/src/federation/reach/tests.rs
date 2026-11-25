@@ -209,6 +209,43 @@ async fn key_only_connection_carries_signed_peer_rpc_and_rejects_local_authority
         .unwrap()
         .is_ok());
     assert_eq!(devices.da.snapshot().unwrap()[0].state, PeerState::Ready);
+    // The exact launch's initial snapshot and terminal change travel on a
+    // second stream of this same iroh connection, with no status polling.
+    let prepared = client.prepare_stream("game", None).await.unwrap();
+    let mut events = client
+        .session_events(&outgoing, &prepared.session.launch_id)
+        .await
+        .unwrap();
+    let initial = timeout(Duration::from_secs(5), events.next())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        matches!(initial, crate::upstream::UpstreamSessionStatus::SessionStatus { active: Some(active) } if active.launch_id == prepared.session.launch_id)
+    );
+    client
+        .session_stop(&prepared.session.launch_id, false)
+        .await
+        .unwrap();
+    let ended = timeout(Duration::from_secs(5), events.next())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        ended,
+        crate::upstream::UpstreamSessionStatus::SessionStatus { active: None }
+    ));
+    let mut stale = client
+        .session_events(&outgoing, "ffffffffffffffffffffffffffffffff")
+        .await
+        .unwrap();
+    assert!(matches!(
+        timeout(Duration::from_secs(5), stale.next())
+            .await
+            .unwrap()
+            .unwrap(),
+        crate::upstream::UpstreamSessionStatus::SessionStatus { active: None }
+    ));
     let denied = http::post(
         &outgoing,
         "/rpc",

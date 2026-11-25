@@ -67,6 +67,7 @@ impl HostSessionControl {
                 if changed {
                     replace_active(&self.identity_root, &record)
                         .map_err(|_| recovery_blocked_failure())?;
+                    self.session_changes.send_replace(());
                 }
             }
             active.focus_ownership = ownership;
@@ -109,7 +110,10 @@ mod tests {
             control.stream_play("wrong", player()).unwrap_err().code,
             "LaunchMismatch"
         );
+        let mut changes = control.session_changes();
         let active = control.stream_play(&session.launch_id, player()).unwrap();
+        assert!(changes.has_changed().unwrap());
+        changes.borrow_and_update();
         assert_eq!(active.stream_players, vec![player()]);
         assert_eq!(active.person_public_key.as_deref(), Some(person.as_str()));
         assert_eq!(
@@ -119,6 +123,10 @@ mod tests {
                 .stream_players
                 .len(),
             1
+        );
+        assert!(
+            !changes.has_changed().unwrap(),
+            "an unchanged registration is not a status change"
         );
         let recovered = HostSessionControl::new(root.path(), backend);
         assert_eq!(

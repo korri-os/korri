@@ -13,6 +13,7 @@ pub mod account_sign_in;
 pub mod acquisition;
 pub mod invites;
 pub mod netplay;
+pub mod session_events;
 pub mod stream_play;
 use invites::{InviteDismissOutcome, InviteRequest, InvitesListOutcome, InvitesListRequest};
 use stream_play::{
@@ -1698,6 +1699,8 @@ pub enum RpcRequest {
     InvitesDismiss(InviteRequest),
     #[serde(rename = "app.session.status")]
     SessionStatus(SessionStatusRequest),
+    #[serde(rename = "app.session.events")]
+    SessionEvents(session_events::SessionEventsRequest),
     #[serde(rename = "app.session.controls")]
     SessionControls(SessionControlsRequest),
     #[serde(rename = "app.session.control.invoke")]
@@ -4023,6 +4026,12 @@ async fn dispatch(
         RpcRequest::InvitesDismiss(request) => {
             RpcResponse::InvitesDismiss(invites::device::dismiss(state, &request))
         }
+        RpcRequest::SessionEvents(_) => {
+            RpcResponse::SessionStatus(SessionStatusOutcome::Err(RpcFailure {
+                code: "OperationUnsupported".into(),
+                message: "session events require the peer session-events stream".into(),
+            }))
+        }
         RpcRequest::SessionStatus(_)
             if matches!(state.mode, ServerMode::Brain(_))
                 && matches!(authorization, authorization::AuthorizationContext::Peer(_)) =>
@@ -6214,11 +6223,27 @@ fn surface_hub_for(
     let network = surface_host.network.clone();
     let korrid = surface::korrid::Korrid::new(send)
         .with_idle_power(surface_host.idle_power.clone())
-        .with_session_changes(match &surface_host.mode {
-            ServerMode::Host(runtime) => runtime
-                .session_changes()
-                .map(|receiver| Arc::new(move || receiver.clone()) as surface::korrid::Changes),
-            _ => None,
+        .with_session_changes({
+            let (changed, receiver) = tokio::sync::watch::channel(());
+            let mut sources = Vec::new();
+            match &surface_host.mode {
+                ServerMode::Host(runtime) => {
+                    sources.extend(runtime.session_changes());
+                    if let Some(remote) = &surface_host.remote {
+                        sources.push(remote.session_changes());
+                    }
+                }
+                ServerMode::Brain(brain) => sources.push(brain.upstream.session_changes()),
+            }
+            for mut source in sources {
+                let changed = changed.clone();
+                tokio::spawn(async move {
+                    while source.changed().await.is_ok() {
+                        changed.send_replace(());
+                    }
+                });
+            }
+            Some(Arc::new(move || receiver.clone()) as surface::korrid::Changes)
         })
         .with_network_changes(Arc::new(move || network.changes()))
         .with_onboarding_changes(Arc::new(onboarding::changes));

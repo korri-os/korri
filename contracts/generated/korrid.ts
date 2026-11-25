@@ -2144,6 +2144,11 @@ export interface SessionEndResult {
 	phase: SessionEndPhase;
 }
 
+/** The launch returned by prepare. A subscription never follows a replacement. */
+export interface SessionEventsRequest {
+	launchId: string;
+}
+
 export interface SessionLeaveRequest {
 	/** Required by every host surface to leave an exact live session. */
 	expectedLaunchId?: string;
@@ -2635,6 +2640,7 @@ export type RpcRequest =
 	| { _tag: "app.invites.streamPlay", payload: InviteRequest }
 	| { _tag: "app.invites.dismiss", payload: InviteRequest }
 	| { _tag: "app.session.status", payload: SessionStatusRequest }
+	| { _tag: "app.session.events", payload: SessionEventsRequest }
 	| { _tag: "app.session.controls", payload: SessionControlsRequest }
 	| { _tag: "app.session.control.invoke", payload: SessionControlInvokeRequest }
 	| { _tag: "app.session.end", payload: SessionEndRequest }

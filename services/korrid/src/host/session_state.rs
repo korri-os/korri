@@ -314,6 +314,7 @@ struct SessionStateGuard<'a> {
     control: &'a HostSessionControl,
     state: MutexGuard<'a, ActiveState>,
     reconcile: bool,
+    before: HostSessionStatus,
     dim_rollback: Option<(String, Option<String>)>,
 }
 
@@ -368,6 +369,9 @@ impl Drop for SessionStateGuard<'_> {
                 }
                 let _ = self.control.thaw_shell();
             }
+        }
+        if self.before != status_from_state(&self.state) {
+            self.control.session_changes.send_replace(());
         }
         *self
             .control
@@ -627,6 +631,7 @@ impl HostSessionControl {
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some((operation, Instant::now()));
         SessionStateGuard {
+            before: status_from_state(&state),
             control: self,
             state,
             reconcile: true,
@@ -1195,6 +1200,7 @@ impl HostSessionControl {
             }
         };
         let guard = SessionStateGuard {
+            before: status_from_state(&state),
             control: self,
             state,
             reconcile: true,
@@ -3237,7 +3243,11 @@ impl HostSessionControl {
                         {
                             if exact == &launch_id {
                                 if let Some(text) = text {
+                                    let before = progress.current;
                                     progress.advance(&text);
+                                    if before != progress.current {
+                                        self.session_changes.send_replace(());
+                                    }
                                 }
                             }
                         }

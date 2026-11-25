@@ -131,11 +131,24 @@ impl UpstreamRegistry {
             viewer: Some(viewer),
         };
         registry.set_selected(selected.clone());
-        if let Err(error) = registry
-            .viewer
-            .start(launch_id, &address, selected.display.clone())
+        let ready = match registry
+            .start_session_events(&selected, client, Duration::from_secs(30))
             .await
         {
+            Ok(ready) => ready,
+            Err(error) => {
+                registry.clear_selected_if(&selected);
+                return Err(error);
+            }
+        };
+        let start = registry
+            .viewer
+            .start(launch_id, &address, selected.display.clone());
+        let result = tokio::select! {
+            result = start => result.map_err(|error| viewer_error("ViewerStartFailed", error.to_string())),
+            error = registry.until_session_ends(launch_id) => Err(error),
+        };
+        if let Err(error) = result {
             if let Some(reach) = selected
                 .viewer
                 .as_ref()
@@ -151,7 +164,10 @@ impl UpstreamRegistry {
                 .await
                 .map_err(|cleanup| viewer_error("ViewerControlFailed", cleanup.to_string()))?;
             registry.clear_selected_if(&selected);
-            return Err(viewer_error("ViewerStartFailed", error.to_string()));
+            return Err(error);
+        }
+        if let Some(ready) = ready {
+            let _ = ready.send(());
         }
         registry.set_viewer_confirmed(&selected, true);
         registry
@@ -193,6 +209,9 @@ impl UpstreamRegistry {
             if let Some(active) =
                 active_session(status).filter(|a| a.launch_id == selected.launch_id)
             {
+                if self.reveal_waiting(selected) {
+                    return Ok(status.clone());
+                }
                 self.synchronize_viewer(selected, HolderPhase::parse(active.phase.as_deref())?)
                     .await?;
                 return Ok(status.clone());

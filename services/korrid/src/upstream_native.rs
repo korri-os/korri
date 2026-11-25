@@ -442,6 +442,61 @@ impl NativeClient {
         }
     }
 
+    /// Headers have a deadline; an idle event stream has no body timeout.
+    /// The caller supplies the launch's existing connection. Never redial.
+    pub(crate) async fn session_events(
+        &self,
+        connection: &iroh::endpoint::Connection,
+        launch: &str,
+    ) -> Result<crate::session_events::Client, UpstreamError> {
+        self.ensure_not_revoked()?;
+        let credentials = self
+            .credentials
+            .clone()
+            .ok_or_else(|| UpstreamError::Wire("peer credentials unavailable".into()))?;
+        let peer = self
+            .expected_peer_public_key
+            .clone()
+            .ok_or_else(|| UpstreamError::Wire("peer identity unavailable".into()))?;
+        let encoded = credentials
+            .encode_request(
+                &peer,
+                RpcRequest::SessionEvents(crate::session_events::SessionEventsRequest {
+                    launch_id: launch.into(),
+                }),
+                unix_time(),
+            )
+            .map_err(|e| UpstreamError::Wire(e.to_string()))?;
+        let proof = self
+            .directory
+            .as_ref()
+            .ok_or_else(|| UpstreamError::Wire("peer directory unavailable".into()))?
+            .own_endpoint_event(&peer)
+            .map_err(|_| UpstreamError::Wire("endpoint proof unavailable".into()))?;
+        let response = tokio::time::timeout(
+            NATIVE_RPC_TIMEOUT,
+            crate::federation::reach::http::post(
+                connection,
+                "/peer-session-events",
+                encoded.event_json.clone(),
+                None,
+                Some(&proof),
+            ),
+        )
+        .await
+        .map_err(|_| UpstreamError::Unreachable("session events deadline exceeded".into()))?
+        .map_err(|e| UpstreamError::Unreachable(e.to_string()))?;
+        if !response.status().is_success() {
+            return Err(UpstreamError::Http(response.status().as_u16()));
+        }
+        Ok(crate::session_events::Client::new(
+            response,
+            credentials,
+            peer,
+            encoded,
+        ))
+    }
+
     pub async fn session_status(&self) -> Result<UpstreamSessionStatus, UpstreamError> {
         Self::session_status_response(
             self.call(RpcRequest::SessionStatus(SessionStatusRequest {}))
@@ -490,7 +545,7 @@ impl NativeClient {
         Self::session_status_response(result?)
     }
 
-    fn session_status_response(
+    pub(crate) fn session_status_response(
         response: RpcResponse,
     ) -> Result<UpstreamSessionStatus, UpstreamError> {
         match response {

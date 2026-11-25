@@ -374,3 +374,14 @@ pub(crate) fn run_with_lifecycle(
     ensure!(error == 0, "stream terminated: {error}");
     recorded
 }
+
+/// Called directly by the Linux presenter after its first successful frame.
+#[cfg(not(target_os = "android"))]
+#[unsafe(no_mangle)]
+pub extern "C" fn korri_viewer_first_frame() {
+    crate::callback::guarded("first frame", (), || {
+        if let Some((lifecycle, _, _)) = &*LIFECYCLE.lock().unwrap() {
+            lifecycle.first_frame();
+        }
+    });
+}

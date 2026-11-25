@@ -138,13 +138,17 @@ void frame_times_decoded(int64_t pts) {
   pthread_mutex_unlock(&lock);
 }
 
+extern void korri_viewer_first_frame(void);
+
 void frame_times_displayed(int64_t pts) {
   uint64_t now = monotonic_ns();
   // The start's last mark, in the form of the viewer's own (src/marks.rs),
   // with or without a record. A Linux viewer's process runs one stream, so
   // its first frame is the first after Start.
-  if (!atomic_exchange(&shown, true))
+  if (!atomic_exchange(&shown, true)) {
     fprintf(stderr, "start: first frame shown at %.3f ms\n", (double)now / 1e6);
+    korri_viewer_first_frame();
+  }
   if (!times || pts == AV_NOPTS_VALUE) return;
   pthread_mutex_lock(&lock);
   // Frames reach the display in stream order, so no older unit can follow.

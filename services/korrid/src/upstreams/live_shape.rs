@@ -450,6 +450,18 @@ impl ShapeControls {
     }
 }
 impl LinuxStreamViewer for ShapeControls {
+    fn first_frame<'a>(
+        &'a self,
+        launch: &'a str,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            tokio::sync::watch::Receiver<crate::linux_viewer::ViewerFirstFrame>,
+            LinuxViewerError,
+        >,
+    > {
+        self.0.viewer.first_frame(launch)
+    }
     fn change_signal(&self) -> Option<Arc<tokio::sync::Notify>> {
         self.0.viewer.change_signal()
     }

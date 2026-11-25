@@ -367,9 +367,13 @@ fn default_viewer() -> Arc<dyn LinuxStreamViewer> {
 }
 
 mod live_shape;
+mod session_events;
 
 #[derive(Clone)]
 pub struct UpstreamRegistry {
+    session_events: Arc<Mutex<Option<session_events::Events>>>,
+    session_changes: tokio::sync::watch::Sender<()>,
+    viewer_intent_changes: tokio::sync::watch::Sender<()>,
     live_shape: Arc<Mutex<Option<live_shape::ClientShape>>>,
     last_stream_play_end: Arc<Mutex<Option<crate::stream_play::StreamPlayEnded>>>,
     hosts: Vec<RegisteredHost>,
@@ -478,6 +482,9 @@ impl UpstreamRegistry {
             })
             .collect();
         Self {
+            session_events: Arc::new(Mutex::new(None)),
+            session_changes: tokio::sync::watch::channel(()).0,
+            viewer_intent_changes: tokio::sync::watch::channel(()).0,
             last_stream_play_end: Arc::new(Mutex::new(None)),
             hosts,
             credentials,
@@ -529,6 +536,9 @@ impl UpstreamRegistry {
         match Self::from_file_inner(path, credentials.clone()) {
             Ok(registry) => registry,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self {
+                session_events: Arc::new(Mutex::new(None)),
+                session_changes: tokio::sync::watch::channel(()).0,
+                viewer_intent_changes: tokio::sync::watch::channel(()).0,
                 last_stream_play_end: Arc::new(Mutex::new(None)),
                 hosts: vec![],
                 credentials: credentials.clone(),
@@ -641,6 +651,9 @@ impl UpstreamRegistry {
 
     fn invalid_configuration(message: String) -> Self {
         Self {
+            session_events: Arc::new(Mutex::new(None)),
+            session_changes: tokio::sync::watch::channel(()).0,
+            viewer_intent_changes: tokio::sync::watch::channel(()).0,
             last_stream_play_end: Arc::new(Mutex::new(None)),
             hosts: vec![],
             credentials: None,
@@ -675,6 +688,9 @@ impl UpstreamRegistry {
         let mut registry = configured.into_owned();
         registry.directory = Some(directory.clone());
         registry.credentials = self.credentials.clone();
+        registry.session_events = self.session_events.clone();
+        registry.session_changes = self.session_changes.clone();
+        registry.viewer_intent_changes = self.viewer_intent_changes.clone();
         registry.last_stream_play_end = self.last_stream_play_end.clone();
         registry.selected_remote_session = self.selected_remote_session.clone();
         registry.remote_prepare_mutation = self.remote_prepare_mutation.clone();
@@ -743,6 +759,9 @@ impl UpstreamRegistry {
             Ok(mut registry) if registry.configuration_error.is_none() => {
                 // The deferred file is static configuration only. Selection and
                 // mutation ordering belong to the runtime, not a rebuilt registry.
+                registry.session_events = self.session_events.clone();
+                registry.session_changes = self.session_changes.clone();
+                registry.viewer_intent_changes = self.viewer_intent_changes.clone();
                 registry.last_stream_play_end = self.last_stream_play_end.clone();
                 registry.selected_remote_session = self.selected_remote_session.clone();
                 registry.remote_prepare_mutation = self.remote_prepare_mutation.clone();
@@ -1100,6 +1119,7 @@ impl UpstreamRegistry {
         host_label: Option<&str>,
         launch: StreamedLaunch,
     ) -> Result<crate::game_routes::SelectedGameLaunch, UpstreamError> {
+        let started_at = tokio::time::Instant::now();
         let host = self.host_for(host_label)?;
         let _mutation = self.remote_prepare_mutation.lock().await;
         let direct_legacy = self.is_legacy_only();
@@ -1180,21 +1200,56 @@ impl UpstreamRegistry {
                     viewer: Some(viewer),
                 };
                 self.set_selected(selected.clone());
-                if let Err(error) = self
-                    .viewer
-                    .start(
-                        &prepared.session.launch_id,
-                        &moonlight_address,
-                        selected.display.clone(),
+                let ready = match self
+                    .start_session_events(
+                        &selected,
+                        client,
+                        Duration::from_secs(30).saturating_sub(started_at.elapsed()),
                     )
                     .await
                 {
+                    Ok(ready) => ready,
+                    Err(error) => {
+                        return self
+                            .compensate_viewer_start_failure(client, &selected, error.to_string())
+                            .await
+                    }
+                };
+                let start = self.viewer.start(
+                    &prepared.session.launch_id,
+                    &moonlight_address,
+                    selected.display.clone(),
+                );
+                let result = tokio::select! {
+                    result = start => result.map_err(|error| viewer_error("ViewerStartFailed", error.to_string())),
+                    error = self.until_session_ends(&selected.launch_id) => Err(error),
+                };
+                if let Err(error) = result {
+                    if matches!(
+                        error.code(),
+                        "HostLaunchFailed"
+                            | "NoActiveSession"
+                            | "SelectedRemoteSessionReplaced"
+                            | "StaleLaunchIdentity"
+                    ) {
+                        self.viewer
+                            .stop(&selected.launch_id)
+                            .await
+                            .map_err(|cleanup| {
+                                viewer_error("ViewerControlFailed", cleanup.to_string())
+                            })?;
+                        self.clear_selected_if(&selected);
+                        return Err(error);
+                    }
                     if let Some(reach) = &reach {
                         reach.release();
                     }
                     return self
                         .compensate_viewer_start_failure(client, &selected, error.to_string())
                         .await;
+                }
+                if let Some(ready) = ready {
+                    let _ = ready.send(());
                 }
                 self.set_viewer_confirmed(&selected, true);
                 prepared
@@ -1398,6 +1453,9 @@ impl UpstreamRegistry {
                     // restarting, focusing or resizing a viewer for a dying
                     // game. Authoritative absence below retires it normally.
                     if active.phase.as_deref() == Some("stopping") {
+                        return Ok(status);
+                    }
+                    if self.reveal_waiting(&selected) {
                         return Ok(status);
                     }
                     if selected.viewer.is_some() {
@@ -1611,12 +1669,28 @@ impl UpstreamRegistry {
                 .ok_or_else(|| {
                     viewer_error("ViewerStopped", "The viewer address is unavailable")
                 })?;
+            let ready = if let SelectedRemoteRoute::Native { device_public_key } = &resumed.route {
+                let host = registry
+                    .native_host_by_route_key(device_public_key)
+                    .ok_or(UpstreamError::SourcePeerNotFound)?;
+                let RegisteredClient::Native(client) = &host.client else {
+                    unreachable!()
+                };
+                registry
+                    .start_session_events(&resumed, client, Duration::from_secs(30))
+                    .await?
+            } else {
+                None
+            };
             registry
                 .viewer
                 .start(&resumed.launch_id, &address, resumed.display.clone())
                 .await
                 .map_err(|error| viewer_error("ViewerStartFailed", error.to_string()))?;
-        } else {
+            if let Some(ready) = ready {
+                let _ = ready.send(());
+            }
+        } else if !registry.reveal_waiting(&selected) {
             registry
                 .viewer
                 .resume_and_focus(&selected.launch_id)
@@ -1868,37 +1942,41 @@ impl UpstreamRegistry {
                 "Peer connection is gone. Leave or end this session.",
             ));
         }
-        let result = match &selected.route {
-            SelectedRemoteRoute::Native { device_public_key } => {
-                let host = self
-                    .native_host_by_route_key(device_public_key)
-                    .ok_or_else(|| {
-                        UpstreamError::Wire("selected native peer disappeared".into())
+        let result = if let Some(status) = self.pushed_status(selected).await {
+            status
+        } else {
+            match &selected.route {
+                SelectedRemoteRoute::Native { device_public_key } => {
+                    let host = self
+                        .native_host_by_route_key(device_public_key)
+                        .ok_or_else(|| {
+                            UpstreamError::Wire("selected native peer disappeared".into())
+                        })?;
+                    host.native_session_status().await
+                }
+                SelectedRemoteRoute::Legacy { label } => {
+                    let host = self.legacy_host_by_label(label).ok_or_else(|| {
+                        UpstreamError::Wire("selected legacy peer disappeared".into())
                     })?;
-                host.native_session_status().await
-            }
-            SelectedRemoteRoute::Legacy { label } => {
-                let host = self.legacy_host_by_label(label).ok_or_else(|| {
-                    UpstreamError::Wire("selected legacy peer disappeared".into())
-                })?;
-                let RegisteredClient::Legacy(client) = &host.client else {
-                    unreachable!("legacy_host_by_label returned a native client")
-                };
-                timeout(CATALOG_HOST_TIMEOUT, client.session_status())
-                    .await
-                    .map_err(|_| {
-                        UpstreamError::Unreachable(format!(
-                            "host {:?} session status timed out",
-                            host.label
-                        ))
-                    })?
-                    .map(|status| {
-                        if self.hosts.len() > 1 {
-                            host.qualify_status(status)
-                        } else {
-                            status
-                        }
-                    })
+                    let RegisteredClient::Legacy(client) = &host.client else {
+                        unreachable!("legacy_host_by_label returned a native client")
+                    };
+                    timeout(CATALOG_HOST_TIMEOUT, client.session_status())
+                        .await
+                        .map_err(|_| {
+                            UpstreamError::Unreachable(format!(
+                                "host {:?} session status timed out",
+                                host.label
+                            ))
+                        })?
+                        .map(|status| {
+                            if self.hosts.len() > 1 {
+                                host.qualify_status(status)
+                            } else {
+                                status
+                            }
+                        })
+                }
             }
         };
         match result {
@@ -2138,6 +2216,7 @@ impl UpstreamRegistry {
             current.route == expected.route && current.launch_id == expected.launch_id
         }) {
             current.viewer_target = target;
+            self.viewer_intent_changes.send_replace(());
         }
     }
 
@@ -2194,6 +2273,7 @@ impl UpstreamRegistry {
                 reach.release();
             }
             *selected = None;
+            self.session_events.lock().expect("session events").take();
         }
     }
 

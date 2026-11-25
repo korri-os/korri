@@ -99,6 +99,18 @@ impl LocalInputViewer {
     }
 }
 impl LinuxStreamViewer for LocalInputViewer {
+    fn first_frame<'a>(
+        &'a self,
+        launch: &'a str,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            tokio::sync::watch::Receiver<crate::linux_viewer::ViewerFirstFrame>,
+            LinuxViewerError,
+        >,
+    > {
+        self.viewer.first_frame(launch)
+    }
     fn change_signal(&self) -> Option<Arc<tokio::sync::Notify>> {
         self.viewer.change_signal()
     }
@@ -146,7 +158,7 @@ impl LinuxStreamViewer for LocalInputViewer {
             let _operation = self.operation.lock().await;
             self.input(launch, Input::Begin).await?;
             let result = match self.viewer.start(launch, address, display).await {
-                Ok(()) => self.input(launch, Input::Focus).await,
+                Ok(()) => Ok(()),
                 Err(error) => Err(error),
             };
             if result.is_err() {

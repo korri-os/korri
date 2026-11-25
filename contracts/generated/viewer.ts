@@ -70,6 +70,8 @@ export interface ViewerSnapshot {
  * in the same native callbacks as Moonlight patch 0023, not process existence.
  */
 export type ViewerEvent =
+	/** The first picture accepted by the local presenter for this launch. */
+	| { kind: "FirstFrame", value?: undefined }
 	| { kind: "Status", value: ViewerStatus }
 	| { kind: "Snapshot", value: ViewerSnapshot };
 

@@ -79,6 +79,9 @@ impl StreamLease {
     pub(crate) fn release(&self) {
         self.0.release();
     }
+    pub(crate) fn connection(&self) -> &Connection {
+        &self.0.connection
+    }
     pub(crate) fn connection_gone(&self) -> bool {
         self.0.connection.close_reason().is_some()
     }

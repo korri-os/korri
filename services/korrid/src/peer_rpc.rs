@@ -2,6 +2,8 @@
 mod installs_piece;
 #[path = "saves/peer/object_route.rs"]
 mod saves_object;
+#[path = "session_events/route.rs"]
+mod session_events;
 
 use crate::{
     authorization::{self, Authorization, AuthorizationContext},
@@ -569,6 +571,7 @@ impl PeerRpcServer {
     pub fn router(self, shell: Option<Router>) -> Router {
         let peer = Router::new()
             .route("/peer-rpc", post(peer_rpc))
+            .route("/peer-session-events", post(session_events::route))
             .route("/peer-saves-object", post(saves_object::object_route))
             .route("/peer-installs-piece", post(installs_piece::piece_route))
             .layer(DefaultBodyLimit::max(MAX_PEER_EVENT_BYTES))
@@ -1509,6 +1512,79 @@ mod tests {
         assert_eq!(
             post(&base, "/rpc", plaintext).await.status(),
             StatusCode::UPGRADE_REQUIRED
+        );
+    }
+
+    #[tokio::test]
+    async fn session_events_are_authorized_and_bound_to_one_launch() {
+        let (host_root, _client_root, credentials, host_key, config) = setup();
+        let base = serve(crate::secure_host_router_with_in_memory_units_at(
+            &config,
+            host_root.path(),
+            NOW,
+        ))
+        .await;
+        let client = crate::upstream_native::NativeClient::new_secure_at(
+            base.clone(),
+            host_key.clone(),
+            credentials.clone(),
+            NOW,
+            token(80),
+            token(81),
+        );
+        client.prepare_stream("neverball", None).await.unwrap();
+        let request = RpcRequest::SessionEvents(crate::session_events::SessionEventsRequest {
+            launch_id: "ffffffffffffffffffffffffffffffff".into(),
+        });
+        let encoded = credentials
+            .encode_request_with_tokens(&host_key, request.clone(), NOW, token(82), token(83))
+            .unwrap();
+        let response = post(&base, "/peer-session-events", encoded.event_json.clone()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let record = tokio::time::timeout(std::time::Duration::from_secs(1), response.text())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            record.lines().count(),
+            1,
+            "a replaced launch terminates after one record"
+        );
+        assert!(
+            matches!(credentials.decode_response(&host_key, &encoded, record.trim(), NOW).unwrap(),
+            RpcResponse::SessionStatus(crate::SessionStatusOutcome::Err(failure)) if failure.code == "StaleLaunchIdentity")
+        );
+        assert_eq!(
+            post(&base, "/peer-session-events", encoded.event_json)
+                .await
+                .status(),
+            StatusCode::CONFLICT
+        );
+        let stranger_root = tempfile::tempdir().unwrap();
+        let stranger = test_owned_credentials(stranger_root.path(), OTHER, OTHER_OWNER);
+        let denied = stranger
+            .encode_request_with_tokens(&host_key, request, NOW, token(84), token(85))
+            .unwrap();
+        assert_eq!(
+            post(&base, "/peer-session-events", denied.event_json)
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        let health = credentials
+            .encode_request_with_tokens(
+                &host_key,
+                RpcRequest::Health(crate::HealthRequest {}),
+                NOW,
+                token(86),
+                token(87),
+            )
+            .unwrap();
+        assert_eq!(
+            post(&base, "/peer-session-events", health.event_json)
+                .await
+                .status(),
+            StatusCode::BAD_REQUEST
         );
     }
 

@@ -149,11 +149,28 @@ pub struct ViewerShapeSnapshot {
     pub ready: bool,
 }
 
+/// Per-runtime presenter fact. Watch receivers are broadcast and level-triggered:
+/// a concurrent status observer cannot consume the reveal's notification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ViewerFirstFrame {
+    Waiting,
+    Shown,
+    Stopped,
+}
+
 /// Controls a viewer by the same exact launch ID used by the holder's korrid.
 /// Implementations must never select a viewer by process name, address, or
 /// "most recent" state when an exact launch ID is supplied. Every successful
 /// mutation must return only after the requested runtime state is confirmed.
 pub trait LinuxStreamViewer: Send + Sync {
+    /// Android and non-socket adapters keep their current reveal behavior.
+    fn first_frame<'a>(
+        &'a self,
+        _launch: &'a str,
+    ) -> BoxFuture<'a, Result<tokio::sync::watch::Receiver<ViewerFirstFrame>, LinuxViewerError>>
+    {
+        Box::pin(async { Ok(tokio::sync::watch::channel(ViewerFirstFrame::Shown).1) })
+    }
     fn change_signal(&self) -> Option<std::sync::Arc<tokio::sync::Notify>> {
         None
     }
@@ -355,9 +372,11 @@ pub(crate) mod test_backend {
         pub display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     }
 
-    #[derive(Clone, Default)]
+    #[derive(Clone)]
     pub struct TestLinuxStreamViewer {
         inner: Arc<Mutex<TestViewerState>>,
+        changed: Arc<tokio::sync::Notify>,
+        frame: tokio::sync::watch::Sender<ViewerFirstFrame>,
     }
 
     #[derive(Default)]
@@ -371,7 +390,24 @@ pub(crate) mod test_backend {
         applications: Vec<(String, String)>,
     }
 
+    impl Default for TestLinuxStreamViewer {
+        fn default() -> Self {
+            Self {
+                inner: Default::default(),
+                changed: Default::default(),
+                frame: tokio::sync::watch::channel(ViewerFirstFrame::Shown).0,
+            }
+        }
+    }
     impl TestLinuxStreamViewer {
+        pub fn set_first_frame(&self, first: bool) {
+            self.frame.send_replace(if first {
+                ViewerFirstFrame::Shown
+            } else {
+                ViewerFirstFrame::Waiting
+            });
+            self.changed.notify_one();
+        }
         pub fn set_snapshot(&self, snapshot: Option<ViewerSnapshot>) {
             self.inner.lock().unwrap().snapshot = snapshot;
         }
@@ -440,6 +476,16 @@ pub(crate) mod test_backend {
     }
 
     impl LinuxStreamViewer for TestLinuxStreamViewer {
+        fn first_frame<'a>(
+            &'a self,
+            _launch: &'a str,
+        ) -> BoxFuture<'a, Result<tokio::sync::watch::Receiver<ViewerFirstFrame>, LinuxViewerError>>
+        {
+            Box::pin(async { Ok(self.frame.subscribe()) })
+        }
+        fn change_signal(&self) -> Option<Arc<tokio::sync::Notify>> {
+            Some(self.changed.clone())
+        }
         fn resize<'a>(
             &'a self,
             launch: &'a str,

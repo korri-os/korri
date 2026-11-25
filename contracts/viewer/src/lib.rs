@@ -130,6 +130,8 @@ pub enum ViewerReply {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", content = "value", deny_unknown_fields)]
 pub enum ViewerEvent {
+    /// The first picture accepted by the local presenter for this launch.
+    FirstFrame,
     Status(ViewerStatus),
     Snapshot(ViewerSnapshot),
 }
@@ -194,6 +196,19 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+    #[test]
+    fn first_frame_is_a_lifecycle_event() {
+        let mut bytes = Vec::new();
+        write_message(&mut bytes, &ViewerMessage::Event(ViewerEvent::FirstFrame)).unwrap();
+        assert_eq!(
+            bytes,
+            b"{\"kind\":\"Event\",\"value\":{\"kind\":\"FirstFrame\"}}\n"
+        );
+        assert!(matches!(
+            read_message::<ViewerMessage>(&mut Cursor::new(bytes)).unwrap(),
+            Some(ViewerMessage::Event(ViewerEvent::FirstFrame))
+        ));
     }
     #[test]
     fn commands_and_nested_control_values_round_trip() {

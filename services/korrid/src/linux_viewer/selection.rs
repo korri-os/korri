@@ -155,6 +155,18 @@ impl InstalledLinuxStreamViewer {
 }
 
 impl LinuxStreamViewer for InstalledLinuxStreamViewer {
+    fn first_frame<'a>(
+        &'a self,
+        launch: &'a str,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            tokio::sync::watch::Receiver<crate::linux_viewer::ViewerFirstFrame>,
+            LinuxViewerError,
+        >,
+    > {
+        self.korri.first_frame(launch)
+    }
     fn change_signal(&self) -> Option<Arc<tokio::sync::Notify>> {
         self.korri.change_signal()
     }

@@ -59,3 +59,27 @@ non-black frame, worst case 3 ms behind the 33–60 ms capture step. It also
 fires on Steam dialogs, Proton error dialogs and black fade-ins. The slowest
 signal came after 17.4 s. Raw data on zao at
 `/home/simonwjackson/korri-510-spike/`; summary in #510.
+
+## Linux stream implementation (slice 2)
+
+The viewer keeps mapping and presenting its X11 window. The existing Sway
+`for_window [all] move scratchpad` and `no_focus [all]` rules keep it off
+screen. korrid moves that exact unit's window out of scratchpad and makes it
+full screen only at reveal. Leaving presentation running avoids making the
+first-frame signal depend on mapping or visibility, and covers the viewer's
+picture paths without a second window-control protocol. The viewer device
+must have slice 1's Sway rules before this build runs.
+
+`app.session.events` subscribes to one launch on `/peer-session-events`.
+Each newline carries a signed, encrypted `SessionStatus` response bound to
+that subscription's request. It uses a stream of the launch's existing iroh
+connection. The holder subscribes to local session changes before reading
+the initial snapshot. It checks the same stream scope as session status,
+checks current authority again before each record, and never follows a
+replacement launch. A slow reader holds one pending record, not a queue.
+
+The Linux lifecycle treaty adds `FirstFrame`. The presenter sends it from
+the same successful presentation that records `start: first frame shown`.
+`Start` no longer focuses a viewer. The viewer device keeps the surface's
+starting state until both facts hold and compositor focus is confirmed.
+Android keeps its existing reveal path.

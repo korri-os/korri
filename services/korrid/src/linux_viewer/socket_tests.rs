@@ -34,9 +34,12 @@ async fn socket_viewer_uses_exact_launch_typed_events_and_no_unit_observation() 
                     assert_eq!(address, "127.0.0.1");
                     R::Ok
                 }
-                ("Snapshot", C::Snapshot) => R::Snapshot {
-                    snapshot: Some(Default::default()),
-                },
+                ("Snapshot", C::Snapshot) => {
+                    write_message(socket.get_mut(), &M::Event(E::FirstFrame)).unwrap();
+                    R::Snapshot {
+                        snapshot: Some(Default::default()),
+                    }
+                }
                 ("Background", C::Background) | ("ResumeAndFocus", C::ResumeAndFocus) => R::Ok,
                 ("Status", C::Status) => R::Status(S::Backgrounded),
                 (
@@ -97,7 +100,31 @@ async fn socket_viewer_uses_exact_launch_typed_events_and_no_unit_observation() 
         }),
     );
     viewer.start(LAUNCH, "127.0.0.1", None).await.unwrap();
+    assert!(
+        focused.lock().unwrap().is_empty(),
+        "Start must not reveal the window"
+    );
+    assert_eq!(
+        *viewer.first_frame(LAUNCH).await.unwrap().borrow(),
+        ViewerFirstFrame::Waiting
+    );
+    let mut reveal_frame = viewer.first_frame(LAUNCH).await.unwrap();
+    let mut status_frame = viewer.first_frame(LAUNCH).await.unwrap();
     assert!(viewer.snapshot(LAUNCH).await.unwrap().is_some());
+    // Neither an existing status observer nor a late subscriber can consume
+    // the reveal's fact. This is a broadcast, level-triggered observation.
+    reveal_frame.changed().await.unwrap();
+    status_frame.changed().await.unwrap();
+    assert_eq!(*reveal_frame.borrow(), ViewerFirstFrame::Shown);
+    assert_eq!(*status_frame.borrow(), ViewerFirstFrame::Shown);
+    assert_eq!(
+        *viewer.first_frame(LAUNCH).await.unwrap().borrow(),
+        ViewerFirstFrame::Shown
+    );
+    assert!(
+        focused.lock().unwrap().is_empty(),
+        "a picture alone must not reveal"
+    );
     viewer.background(LAUNCH).await.unwrap();
     assert_eq!(
         viewer.status(LAUNCH).await.unwrap(),
@@ -144,11 +171,7 @@ async fn socket_viewer_uses_exact_launch_typed_events_and_no_unit_observation() 
     );
     assert_eq!(
         *focused.lock().unwrap(),
-        vec![
-            (LAUNCH.into(), false),
-            (LAUNCH.into(), true),
-            (LAUNCH.into(), false)
-        ]
+        vec![(LAUNCH.into(), true), (LAUNCH.into(), false)]
     );
     assert!(viewer
         .background("ffffffffffffffffffffffffffffffff")
@@ -467,4 +490,47 @@ fn treaty_status_and_snapshot_map_to_korrids_observations() {
     assert_eq!(shape.connection, "7:1:2");
     assert_eq!((shape.screen.width, shape.encoded.height), (2400, 720));
     assert!(snapshot.sampled_at.is_none());
+}
+
+#[tokio::test]
+async fn cancelling_a_start_cleans_up_the_exact_viewer_unit() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("viewer.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let (started, start_seen) = tokio::sync::oneshot::channel();
+    let server = std::thread::spawn(move || {
+        let mut socket = BufReader::new(listener.accept().unwrap().0);
+        let _: ViewerRequest = read_message(&mut socket).unwrap().unwrap();
+        started.send(()).unwrap();
+        // A cancelled ordered exchange shuts down the socket, not just its task.
+        use std::io::Read;
+        let mut byte = [0];
+        assert_eq!(socket.read(&mut byte).unwrap(), 0);
+    });
+    let cleaned = Arc::new(tokio::sync::Notify::new());
+    let cleanup = cleaned.clone();
+    let viewer = Arc::new(SocketLinuxStreamViewer::new(
+        Arc::new(|| None),
+        unsafe { libc::geteuid() },
+        Arc::new(move |_, _, _| {
+            let path = path.clone();
+            Box::pin(async move { Ok(path) })
+        }),
+        Arc::new(|_, _| Box::pin(async { panic!("a cancelled start must never focus") })),
+        Arc::new(move |launch| {
+            assert_eq!(launch, LAUNCH);
+            cleanup.notify_one();
+            Box::pin(async { Ok(()) })
+        }),
+    ));
+    let starting = tokio::spawn(async move { viewer.start(LAUNCH, "127.0.0.1", None).await });
+    start_seen.await.unwrap();
+    starting.abort();
+    let _ = starting.await;
+    tokio::time::timeout(std::time::Duration::from_secs(1), cleaned.notified())
+        .await
+        .unwrap();
+    server.join().unwrap();
 }

@@ -95,6 +95,7 @@ impl std::error::Error for Stopping {}
 struct State {
     start: Option<Start>,
     started: bool,
+    first_frame: bool,
     screen: Option<ViewerDisplay>,
     /// The screen changed and has not settled (`Lifecycle::screen`).
     unsettled: bool,
@@ -414,6 +415,15 @@ impl Lifecycle {
         let snapshot = state.snapshot.clone();
         self.0.emit(&mut state, E::Snapshot(snapshot));
         self.0.changed.notify_all();
+    }
+
+    /// Once per runtime, from the presenter's successful first presentation.
+    pub fn first_frame(&self) {
+        let mut state = self.0.state.lock().unwrap();
+        if !state.first_frame && state.started && !state.finished {
+            state.first_frame = true;
+            self.0.emit(&mut state, E::FirstFrame);
+        }
     }
 
     pub fn disconnected(&self) {
@@ -849,6 +859,24 @@ mod tests {
 
     // Linux's viewer, and Android's before its stream attaches them: the
     // replies of the trait's defaults.
+    #[test]
+    fn the_presenter_reports_its_first_frame_once_per_runtime() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let observed = events.clone();
+        let lifecycle = Lifecycle::in_process("a", move |event| {
+            if matches!(event, E::FirstFrame) {
+                observed.lock().unwrap().push(());
+            }
+        })
+        .unwrap();
+        lifecycle.first_frame();
+        assert!(events.lock().unwrap().is_empty());
+        lifecycle.0.state.lock().unwrap().started = true;
+        lifecycle.first_frame();
+        lifecycle.first_frame();
+        assert_eq!(events.lock().unwrap().len(), 1);
+    }
+
     #[test]
     fn without_controls_a_snapshot_has_none_and_apply_is_unavailable() {
         let lifecycle = in_app();

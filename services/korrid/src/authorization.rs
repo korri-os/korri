@@ -257,7 +257,7 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::SessionReserve(_)
         | RpcRequest::SessionStart(_)
         | RpcRequest::SessionCancel(_) => PeerPolicy::LocalOnly,
-        RpcRequest::SessionStatus(_) | RpcRequest::SessionControls(_) => {
+        RpcRequest::SessionStatus(_) | RpcRequest::SessionEvents(_) | RpcRequest::SessionControls(_) => {
             PeerPolicy::ExplicitScope(Scope::StreamLaunch)
         }
         RpcRequest::SessionControlInvoke(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
@@ -1518,6 +1518,12 @@ mod tests {
                 stream,
             ),
             (
+                request(
+                    serde_json::json!({"_tag":"app.session.events","payload":{"launchId":"0123456789abcdef0123456789abcdef"}}),
+                ),
+                stream,
+            ),
+            (
                 request(serde_json::json!({"_tag":"app.session.end","payload":{}})),
                 stream,
             ),
@@ -1654,7 +1660,7 @@ mod tests {
                 Local,
             ),
         ];
-        assert_eq!(cases.len(), 34);
+        assert_eq!(cases.len(), 35);
         for (request, expected) in cases {
             assert_eq!(policy_for(&request), expected);
             assert_eq!(
@@ -2047,6 +2053,9 @@ mod tests {
                 ),
                 request(serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"g"}})),
                 request(serde_json::json!({"_tag":"app.session.status","payload":{}})),
+                request(
+                    serde_json::json!({"_tag":"app.session.events","payload":{"launchId":"0123456789abcdef0123456789abcdef"}}),
+                ),
                 request(serde_json::json!({"_tag":"app.session.end","payload":{}})),
                 request(
                     serde_json::json!({"_tag":"app.moonlight.certificate.attest","payload":{"hostUuid":"h"}}),
@@ -2144,6 +2153,9 @@ mod tests {
         for denied in [
             request(serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"g"}})),
             request(serde_json::json!({"_tag":"app.session.status","payload":{}})),
+            request(
+                serde_json::json!({"_tag":"app.session.events","payload":{"launchId":"0123456789abcdef0123456789abcdef"}}),
+            ),
             request(serde_json::json!({"_tag":"app.session.leave","payload":{}})),
             request(serde_json::json!({"_tag":"system.health","payload":{}})),
         ] {
