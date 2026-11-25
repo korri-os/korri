@@ -111,6 +111,15 @@ SM5705 registers can survive warm reboot. The product has no user-space
 `boot-role` writer; the driver owns boot data role. The console retains its
 old manual boot-role service. Nothing here changes charge-current maintenance.
 
+## Open risk: one unexplained trial fallback (2026-11-24)
+
+The first counted trial of this kernel fell back to LAST KNOWN GOOD. That boot
+left no journal entries and no pstore record (only EFI pstore is registered;
+no ramoops region is configured). Its cause is unknown. The next counted trial
+of the same kernel image booted, enumerated the Kishi as host while charging,
+and was blessed. Do not treat the fallback as explained. If it recurs, capture
+the screen and consider a ramoops region or a late-bound module for diagnosis.
+
 ## Verification
 
 `tabs6-typec-policy` compiles the exact header included by the kernel driver.
