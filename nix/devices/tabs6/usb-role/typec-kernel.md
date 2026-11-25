@@ -147,6 +147,33 @@ fell back (see "Open risk"); it was restored for that reason.
 The existing boot `boot-vbus` service still requests verified boost-off because
 SM5705 registers can survive warm reboot. The boot-role writer runs on both systems. Nothing here changes charge-current maintenance.
 
+## Replug latency (measured 2026-11-25)
+
+Replug test on `1gabybg1` (boot 74593cd9 series, monotonic seconds, driver
+`facts:` lines and InputPlumber at debug level):
+
+| Event | Time | Owner |
+| --- | --- | --- |
+| Charger unplugged: VBUS 00, device | 188.83, 188.84 | chip, driver (one poll) |
+| Unplugged, the chip re-runs detection every ~15.8 s (state 0 → 14) | 204.2, 219.9, 235.7 … 377.8, 393.9 | s2mm005 firmware |
+| Charger replugged: MUIC VBUS 01 | 380.08 | SM5705 |
+| Chip still in state 14 until its next cycle | 380.08 → 393.86 (13.8 s) | s2mm005 firmware |
+| 17 (wait caps) → VBUS dip (pass-through) → 20 → 21 SNK_Ready, DFP=0 | 395.05 → 396.80 | chip, charger, Kishi |
+| DFP=1 | 398.72 (1.9 s after SNK_Ready) | chip/PD |
+| `qualified 3/3`, host | 398.94 | driver (0.22 s) |
+| USB enumerates; InputPlumber re-adds evdev://event9 into the surviving CompositeDevice0, no EBUSY, no restart | 399.31; 400.25–400.63 | kernel, InputPlumber |
+
+The driver's part is about 0.2 s and the input stack about 1.7 s. Almost all of
+the ~20 s Simon saw is the s2mm005 firmware's ~15.8 s detection cycle: VBUS can
+arrive anywhere in it, so replug latency varies between about 3 s and about
+18 s by phase (inferred from one replug; the earlier ~9 s with the old daemon
+fits a luckier phase). Shortening the cycle would need chip configuration
+writes (low-power or DRP settings), which this driver must never send. Treat
+the cycle as a hardware limit unless the owner decides otherwise.
+
+Case B (source re-adds but no shell input) did not reproduce: the highlight
+moved, with the InputPlumber teardown fix and no provider restart.
+
 ## Late module load (2026-11-24)
 
 The driver is a module (`CONFIG_TYPEC_S2MM005_READ_ONLY=m`). It is
