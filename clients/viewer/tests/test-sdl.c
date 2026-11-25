@@ -15,6 +15,8 @@
 #include <unistd.h>
 
 static int frame_number;
+static int first_frames;
+void korri_viewer_first_frame(void) { ++first_frames; }
 
 static void submit(unsigned char* data, int length) {
   LENTRY entry = {.data = (char*)data, .length = length};
@@ -143,6 +145,7 @@ int main(int argc, char** argv) {
   fclose(recorded);
   unlink(times);
   unlink(recording);
+  assert(first_frames == 1);
   puts("SDL software fallback decoded, presented and recorded eight H.264 frames; "
        "a new stream size fits the window between black bars");
 }

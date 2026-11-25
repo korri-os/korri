@@ -14,6 +14,11 @@
 #include <time.h>
 #include <unistd.h>
 
+// The standalone presenter check observes the same callback Rust owns in
+// the program. A record is optional; the lifecycle fact is not.
+static int first_frames;
+void korri_viewer_first_frame(void) { ++first_frames; }
+
 static int64_t arrive(int frame_number, const char* bytes) {
   LENTRY entry = {.data = (char*)bytes, .length = (int)strlen(bytes)};
   DECODE_UNIT unit = {.frameNumber = frame_number, .bufferList = &entry,
@@ -60,6 +65,7 @@ int main(void) {
   frame_times_displayed(AV_NOPTS_VALUE);
   double after = monotonic_ms();
   frame_times_displayed(AV_NOPTS_VALUE);
+  assert(first_frames == 1);
   assert(picture_frame_times_close() == 0);
   fflush(stderr);
   assert(dup2(saved, 2) == 2);
@@ -90,6 +96,7 @@ int main(void) {
   frame_times_decoded(4);
   assert(picture_frame_times_close() == 0);
 
+  assert(first_frames == 1);
   assert(strcmp(contents(recording), "aabbbcdddde") == 0);
   char* line = contents(times);
   assert(strncmp(line, "index,frame_number,enqueue_ns,decoded_ns,display_ns\n", 52) == 0);

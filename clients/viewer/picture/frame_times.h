@@ -2,7 +2,7 @@
 // The viewer's own record of each frame, for the outside measure (#435).
 // Off unless Rust opened it (picture_frame_times_open); then every call is a
 // no-op, except that the first displayed frame still writes its start mark
-// (#391). A decode unit's record index travels through FFmpeg as the
+// (#391) and reports the lifecycle fact to Rust (ADR 0098). A decode unit's record index travels through FFmpeg as the
 // packet's and the frame's pts.
 #ifndef FRAME_TIMES_H
 #define FRAME_TIMES_H

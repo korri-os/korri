@@ -173,7 +173,8 @@ impl UpstreamRegistry {
 }
 
 /// A deadline replaces only the absent holder fact. It cannot invent a local
-/// picture or turn a failed/ended/replaced exact launch into a reveal.
+/// picture or turn a failed/ended/replaced exact launch into a reveal. The
+/// holder's existing Frozen/FocusFailed background policy still applies.
 fn may_reveal(
     status: &Result<UpstreamSessionStatus, UpstreamError>,
     launch: &str,
@@ -181,7 +182,7 @@ fn may_reveal(
     expired: bool,
 ) -> bool {
     matches!(status, Ok(UpstreamSessionStatus::SessionStatus { active: Some(active) })
-        if active.launch_id == launch && active.phase.as_deref() != Some("stopping")
+        if active.launch_id == launch && active.phase.as_deref() == Some("running")
         && first_frame && (expired || active.initial_handoff == Some(crate::InitialHandoff::Observed)))
 }
 
@@ -216,7 +217,13 @@ async fn run(
             }
             status = events.next() => {
                 let status = status.unwrap_or_else(|| Err(UpstreamError::Unreachable("session events stream closed".into())));
-                eprintln!("korrid: SessionEventArrived {{ launch_id: {launch}, at_ms: {:?} }}", crate::linux_viewer::monotonic_ms());
+                let (handoff, phase, failure) = match &status {
+                    Ok(UpstreamSessionStatus::SessionStatus { active: Some(active) }) =>
+                        (active.initial_handoff, active.phase.as_deref(), None),
+                    Err(error) => (None, None, Some(error.code())),
+                    _ => (None, None, None),
+                };
+                eprintln!("korrid: SessionEventArrived {{ launch_id: {launch}, at_ms: {:?}, initial_handoff: {handoff:?}, phase: {phase:?}, failure: {failure:?} }}", crate::linux_viewer::monotonic_ms());
                 state.status = Some(status);
             }
             _ = intent.changed() => {},
@@ -469,21 +476,23 @@ mod tests {
     }
 
     #[test]
-    fn neither_a_replacement_nor_a_stopping_game_can_reveal_at_the_deadline() {
+    fn a_replaced_or_backgrounded_holder_cannot_reveal_at_the_deadline() {
         assert!(!may_reveal(
             &status(crate::InitialHandoff::Observed),
             "another",
             true,
             true
         ));
-        let mut stopping = status(crate::InitialHandoff::Observed);
-        if let Ok(UpstreamSessionStatus::SessionStatus {
-            active: Some(active),
-        }) = &mut stopping
-        {
-            active.phase = Some("stopping".into());
+        for phase in ["stopping", "frozen", "focus-failed"] {
+            let mut backgrounded = status(crate::InitialHandoff::Observed);
+            if let Ok(UpstreamSessionStatus::SessionStatus {
+                active: Some(active),
+            }) = &mut backgrounded
+            {
+                active.phase = Some(phase.into());
+            }
+            assert!(!may_reveal(&backgrounded, LAUNCH, true, true));
         }
-        assert!(!may_reveal(&stopping, LAUNCH, true, true));
         assert!(!may_reveal(
             &status(crate::InitialHandoff::Observed),
             LAUNCH,

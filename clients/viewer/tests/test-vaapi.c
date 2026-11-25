@@ -6,6 +6,9 @@
 #include "bridge.h"
 #include "video/ffmpeg_vaapi.h"
 
+// No presentation may follow a failed VA-API initialization.
+void korri_viewer_first_frame(void) { assert(0 && "failed VA-API presented a frame"); }
+
 // Which pictures vaapi_queue gives to EGL first (#476, #391 step F5).
 static void routes(void) {
   struct picture_place filled = picture_fit(1920, 1080, 1920, 1080);
