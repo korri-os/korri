@@ -106,7 +106,10 @@ None of them can resume after an interruption.
 
 The #551 cut moves the ready folders of provider installs. On each device
 that ran a provider download before the cut, the operator runs this once,
-as the `korrid` user, with korrid stopped. `<provider cache>` is each
+as the `korrid` user, with korrid and its two sockets stopped
+(`systemctl stop korrid-cli.socket korrid-control.socket korrid.service`):
+a client that connects to a socket starts korrid again within seconds.
+`<provider cache>` is each
 `cache/<plugin short>/<provider name>/` folder of an acquisition provider
 (ADR 0016). Do not run it on an ADR 0012 artifact folder: an artifact
 version can also be a long hex name.
@@ -117,9 +120,16 @@ for ready in <provider cache>/*; do
   name=$(basename "$ready")
   case ${#name} in 40|64) ;; *) continue ;; esac
   if [ -e "$name" ]; then chmod -R u+w "$ready" && rm -rf "$ready"
-  else mv "$ready" "$name"; fi
+  else chmod u+w "$ready" && mv "$ready" "$name" && chmod u-w "$name"; fi
 done
 ```
+
+A ready folder is read-only (`placement::freeze_and_sync` clears its write
+bits when an install is published).
+Moving a directory to another parent rewrites its `..` entry, which needs
+write access to the directory itself, so the move opens the folder and
+closes it again. Found on ibuki on 2026-11-24: a plain `mv` failed with
+"Permission denied".
 
 A folder that already exists under its release key holds the same bytes,
 because the name is their identity, so the copy in the provider cache goes.
