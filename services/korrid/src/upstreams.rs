@@ -1244,8 +1244,12 @@ impl UpstreamRegistry {
                     if let Some(reach) = &reach {
                         reach.release();
                     }
+                    let message = match error {
+                        UpstreamError::Tagged { message, .. } => message,
+                        other => other.to_string(),
+                    };
                     return self
-                        .compensate_viewer_start_failure(client, &selected, error.to_string())
+                        .compensate_viewer_start_failure(client, &selected, message)
                         .await;
                 }
                 if let Some(ready) = ready {

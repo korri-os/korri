@@ -756,8 +756,9 @@ fn real_binary_never_launches_after_a_signal_right_after_start() {
 // #468 review (P1): LiStartConnection blocks for the whole handshake. Here
 // no RTSP port listens, so the core retries its connection for 10 s unless
 // it is interrupted. The signal must interrupt it.
+#[cfg(not(feature = "nightjar"))]
 #[test]
-fn real_binary_interrupts_its_stream_connection_on_a_signal() {
+fn c_core_interrupts_its_connection_retry_on_a_signal() {
     let dir = support::scratch();
     let path = dir.path().join("control/viewer.sock");
     if support::refused_below_an_unmapped_root(&path) {
@@ -804,6 +805,64 @@ fn real_binary_interrupts_its_stream_connection_on_a_signal() {
         }
         std::thread::sleep(Duration::from_millis(5));
     }
+
+    signal(&child, libc::SIGTERM);
+
+    let status = exit_within(&mut child, Duration::from_secs(5));
+    assert!(
+        status.success(),
+        "a stop after Start is not a failure: {status:?}"
+    );
+    assert!(!path.parent().unwrap().exists());
+    assert!(
+        remaining_messages(&mut controller)
+            .iter()
+            .any(|m| matches!(m, M::Event(E::Status(ViewerStatus::Stopped))))
+    );
+}
+
+// #468 review (P1): the core blocks for the whole handshake. Accept its
+// actual RTSP request but never answer it. The signal must interrupt that
+// wait in nightjar; a C-only stdout line cannot prove this for nightjar.
+#[cfg(feature = "nightjar")]
+#[test]
+fn nightjar_interrupts_its_held_rtsp_handshake_on_a_signal() {
+    let dir = support::scratch();
+    let path = dir.path().join("control/viewer.sock");
+    if support::refused_below_an_unmapped_root(&path) {
+        return;
+    }
+    let rtsp = TcpListener::bind("127.0.0.1:0").unwrap();
+    rtsp.set_nonblocking(true).unwrap();
+    let host = Host::start(
+        &dir.path().join("keys"),
+        None,
+        format!("rtsp://127.0.0.1:{}", rtsp.local_addr().unwrap().port()),
+    );
+    let mut child = viewer_for(&host, &path).spawn().unwrap();
+    let mut controller = accepted_controller(&path, &mut child);
+    start(&mut controller, host.http_port);
+    host.wait_for("/launch", &mut child);
+    let until = Instant::now() + Duration::from_secs(5);
+    let mut connection = loop {
+        match rtsp.accept() {
+            Ok((connection, _)) => break connection,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= until {
+                    let _ = child.kill();
+                    panic!("the core did not connect to RTSP");
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => panic!("RTSP accept failed: {error}"),
+        }
+    };
+    connection
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    connection
+        .read_exact(&mut [0])
+        .expect("the core must send its RTSP request");
 
     signal(&child, libc::SIGTERM);
 

@@ -127,6 +127,15 @@ async fn stream_play_local_buttons_reach_seats_only_while_the_viewer_is_focused(
     control.idle_displays().unwrap();
     assert_eq!(*compositor.0.lock().unwrap(), ["seat * idle_notify"]);
     control.status(); // The local-game watcher must not take the viewer's input.
+    let starting_writes = seats.0.lock().unwrap().len();
+    send(GamepadState::neutral());
+    send(button);
+    assert_eq!(
+        seats.0.lock().unwrap().len(),
+        starting_writes,
+        "Starting keeps input with Korri until reveal"
+    );
+    viewer.resume_and_focus(launch).await.unwrap();
     send(GamepadState::neutral());
     send(button);
     assert_eq!(seats.0.lock().unwrap().last(), Some(&(1, button)));
