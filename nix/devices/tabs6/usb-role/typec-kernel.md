@@ -83,7 +83,7 @@ commit `37cf30da0578a6378a3e3ef5e17aede89233defe`.
 | SM5705 adapter `&i2c4`, 0x890000 | Stock DTBO fragment 133. `samsung,sm5705-i2c` phandle resolves the adapter, never a Linux adapter number. |
 | MUIC 0x25, 0x15, one byte | `muic_regmap_sm5705.c`, REG_RSVDID1 / RSVDID1_VBUS_VALID. The existing policy requires the whole byte to equal 01. |
 | Charger 0x49, CNTL 0x0c, one byte | `include/linux/mfd/sm5705/sm5705.h`; bits2:0 mode 5 = CHG_ON. |
-| dwc3 | Standard reciprocal OF graph endpoints link the controller to `&usb_1_dwc3`; `usb_role_switch_get` defers until the switch exists. Its default is peripheral. |
+| dwc3 | `usb-role-switch = <&usb_1_dwc3>` on the typec node; `usb_role_switch_get` resolves the phandle and defers until the switch exists. `usb_1_dwc3` is unchanged (no graph port, no default-mode property; dwc3 defaults to peripheral). An earlier OF-graph link made fw_devlink report a dwc3 ↔ typec@33 cycle and was the prime suspect for the trial fallbacks. |
 
 The charger and MUIC addresses are deliberately **not** reserved with dummy
 clients. They have no kernel drivers. Adapter-locked combined reads coexist

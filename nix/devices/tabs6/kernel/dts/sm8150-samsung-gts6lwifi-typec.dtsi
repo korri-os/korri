@@ -1,26 +1,18 @@
 /* Product only. Stock DTBO: s2mm005 on se15, SM5705 charger/MUIC on se4.
  * IRQ TLMM gpio123 is deliberately NOT requested: it may stay asserted and
  * the driver must never acknowledge/clear it. See usb-role/typec.md.
+ *
+ * The role switch is linked by a plain phandle, not an OF graph. A graph
+ * port on usb_1_dwc3 made fw_devlink report a dwc3 <-> typec@33 dependency
+ * cycle; counted trials with that DT fell back before the journal persisted
+ * (usb-role/typec-kernel.md). usb_1_dwc3 is left exactly as before; dwc3
+ * defaults to peripheral without usb-role-switch-default-mode.
  */
 &i2c15 {
 	typec@33 {
 		compatible = "samsung,s2mm005-read-only";
 		reg = <0x33>;
 		samsung,sm5705-i2c = <&i2c4>;
-
-		port {
-			s2mm005_usb: endpoint {
-				remote-endpoint = <&dwc3_typec>;
-			};
-		};
-	};
-};
-
-&usb_1_dwc3 {
-	usb-role-switch-default-mode = "peripheral";
-	port {
-		dwc3_typec: endpoint {
-			remote-endpoint = <&s2mm005_usb>;
-		};
+		usb-role-switch = <&usb_1_dwc3>;
 	};
 };
