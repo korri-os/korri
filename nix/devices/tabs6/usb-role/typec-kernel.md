@@ -66,7 +66,7 @@ Enable, boost off, two consecutive fresh samples with **all** of:
 | Source state | 1, 3–7, or 14. **14 is our measured extension of stock**: the unpowered Kishi sits there (0 ↔ 14 every ~15.8 s, `kishi-unpowered-cycle-replug.txt`); stock enters boost earlier and only keeps it in 14 |
 | No incoming VBUS | MUIC VBUS 00 and STATUS1 exactly VBUSUVLO (no VBUSPOK, OVP, LIMIT, wireless input) |
 | On battery | gauge Discharging (fresh read; the gauge decides only enables) |
-| No charger/PC signature | MUIC DEVT1 none, UART (measured) or OTG; DEVT2 and DEVT3 zero |
+| No charger/PC signature | MUIC DEVT1 none, UART (measured) or OTG; DEVT2 zero; DEVT3 zero except bit 2 DCD_OUT_SDP, which stays latched after the charger is unplugged (measured 0x04 with VBUS 00, STATUS1 0x22, Discharging; `kishi-battery-unplug-devt3.txt`) |
 | No fault | STATUS3 OTGFAIL clear |
 | Boost off | CNTL mode 5 |
 | Not backing off | see below |
@@ -74,14 +74,27 @@ Enable, boost off, two consecutive fresh samples with **all** of:
 Revoke at once, every poll while boosting: read error; CNTL no longer mode 7
 (including the charger forcing mode 5 on incoming VBUS); OTGFAIL, VBUSOVP,
 VBUSLIMIT or wireless input; any MUIC charger/PC signature; and any state
-outside the source set: 0 (detach), 17, 18, 20, 21, 29, 52 or unknown.
+outside the source set: 17, 18, 20, 21, 29, 52 or unknown. State 0 is a
+detach after its 1.5 s episode (below).
+
+`boost_telemetry` (module parameter, off by default, writable in
+`/sys/module/s2mm005/parameters/`) logs every poll while boosting: STATUS1–4,
+MUIC INT1–3 (reading clears these latches; nothing else in Linux uses them)
+and the gauge current. It exists to find a charger-arrival signal that works
+while we source VBUS.
 
 **Fixed grace window, 1.5 s (owner decision 2026-11-25).** After a verified
 enable the chip re-detects: state 0 for about 0.7 s (attached flickering),
 then 14 with attached 0 (`phase-b-host-transition.txt`, 95–794 ms). During
 the window only 0 and 14 are tolerated, only while CNTL reads 7; everything
-else above still revokes at once. The window never extends. A start that is
-revoked in its window or still reads 0 when it ends is a failed start: no
+else above still revokes at once. The window never extends. **State-0 episodes, 1.5 s each (owner decision 2026-11-25).** Even while we
+boost, the chip keeps its ~16 s re-detection cycle and drops to state 0 for
+under a second before 14 returns (`kishi-battery-boost-cycle.txt`). While
+boosting, a state-0 episode is tolerated for at most 1.5 s from its first
+poll, never extended; a source state ends it; longer is a detach. Removing the
+Kishi on battery therefore leaves boost on for at most ~1.5 s into an open
+port. A start that is revoked in its window or still reads 0 when it ends is
+a failed start: no
 re-enable until the chip shows a source state for two fresh polls, after a
 backoff of 3, 6, 12 … 60 s (reset by 60 s of stable boost). Any other revoke
 waits a fixed 3 s before the next enable. Only enables wait.

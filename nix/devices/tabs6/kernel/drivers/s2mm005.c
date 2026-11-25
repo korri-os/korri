@@ -47,6 +47,15 @@
 #define SM5705_BSTOUT_5100MV	0x0b
 #define SM5705_BSTOUT_4500MV	0x05
 #define SM5705_OFF_TRIES	3
+#define SM5705_MUIC_INT1	0x03	/* INT1..INT3, read-to-clear latches */
+
+/* Diagnostic only: while boosting, log every poll's STATUS1-4, MUIC INT1-3
+ * (reading clears them; nothing else in Linux uses them) and gauge current,
+ * to find a charger-arrival discriminator that works while we source VBUS.
+ */
+static bool boost_telemetry;
+module_param(boost_telemetry, bool, 0644);
+MODULE_PARM_DESC(boost_telemetry, "log charger/MUIC/gauge telemetry every poll while boosting");
 
 struct s2mm005 {
 	struct i2c_client *client;
@@ -64,6 +73,7 @@ struct s2mm005 {
 	bool last_valid;
 	enum usb_role requested;
 	struct ratelimit_state facts_rs;
+	struct ratelimit_state telemetry_rs;
 };
 
 static unsigned long s2mm005_now(void)
@@ -291,6 +301,25 @@ static void s2mm005_log_facts(struct s2mm005 *s, const struct s2mm005_sample *x)
 			 s->policy.boost);
 }
 
+static void s2mm005_telemetry(struct s2mm005 *s)
+{
+	u8 chg_reg = SM5705_STATUS1, int_reg = SM5705_MUIC_INT1, chg[5], mint[3];
+	union power_supply_propval cur = { 0 };
+
+	if (s2mm005_read(s->sm5705, SM5705_CHG_ADDR, &chg_reg, 1, chg, sizeof(chg)) ||
+	    s2mm005_read(s->sm5705, SM5705_MUIC_ADDR, &int_reg, 1, mint, sizeof(mint)) ||
+	    power_supply_get_property(s->gauge, POWER_SUPPLY_PROP_CURRENT_NOW, &cur)) {
+		if (__ratelimit(&s->telemetry_rs))
+			dev_info(&s->client->dev, "telemetry: read error\n");
+		return;
+	}
+	if (__ratelimit(&s->telemetry_rs))
+		dev_info(&s->client->dev,
+			 "telemetry: st1-4 %02x %02x %02x %02x cntl %02x muic-int %02x %02x %02x i_ua %d\n",
+			 chg[0], chg[1], chg[2], chg[3], chg[4], mint[0], mint[1],
+			 mint[2], cur.intval);
+}
+
 static void s2mm005_poll(struct work_struct *work)
 {
 	struct s2mm005 *s = container_of(to_delayed_work(work), struct s2mm005, poll);
@@ -348,6 +377,8 @@ static void s2mm005_poll(struct work_struct *work)
 	case S2MM005_NONE:
 		break;
 	}
+	if (boost_telemetry && s2mm005_boosting(&s->policy))
+		s2mm005_telemetry(s);
 	if (d.host && !was_host && !s2mm005_boosting(&s->policy))
 		dev_info(&s->client->dev, "qualified 3/3\n");
 
@@ -387,6 +418,7 @@ static int s2mm005_probe(struct i2c_client *client)
 	s->client = client;
 	i2c_set_clientdata(client, s);
 	ratelimit_state_init(&s->facts_rs, HZ, 50);
+	ratelimit_state_init(&s->telemetry_rs, HZ, 60);
 	INIT_DELAYED_WORK(&s->poll, s2mm005_poll);
 	s->role_sw = usb_role_switch_get(dev);
 	if (IS_ERR(s->role_sw))

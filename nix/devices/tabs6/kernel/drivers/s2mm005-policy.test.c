@@ -322,6 +322,74 @@ static void replay_battery_unplug(const char *path)
 	fclose(f);
 }
 
+/* Measured boost cycle: enable, ~0.7 s of state 0, 14, then the chip's ~16 s
+ * re-detection. Boost must hold through both episodes and through repeated
+ * cycles; a 0 that persists 1.5 s is a detach.
+ */
+static void replay_boost_cycle(const char *path)
+{
+	FILE *f = fopen(path, "r");
+	char line[256];
+	struct s2mm005_sample cur = { 0 };
+	struct s2mm005_policy p = { 0 };
+	double last = -1, t;
+	bool enabled = false, requested = false;
+	unsigned long now = 0;
+
+	assert(f);
+	while (fgets(line, sizeof(line), f)) {
+		if (line[0] == '#')
+			continue;
+		t = strtod(strchr(line, '=') + 1, NULL);
+		for (double u = last + 0.02; last >= 0 && u < t; u += 0.02) {
+			struct s2mm005_decision d;
+
+			now = (unsigned long)(u * 1000);
+			d = s2mm005_decide(&p, &cur, now);
+			if (!enabled) {
+				requested |= d.action == S2MM005_ENABLE;
+				continue;
+			}
+			assert(d.action == S2MM005_NONE && d.host);
+		}
+		/* the trace's boost was verified 25 ms before its first CNTL 7 */
+		if (!enabled && strstr(line, "cntl 0x07")) {
+			assert(requested);
+			s2mm005_enabled(&p, (unsigned long)(t * 1000) - 25);
+			enabled = true;
+		}
+		cur.state = field(line, "state ", 10);
+		cur.flags = field(line, "flags 0x", 16);
+		cur.muic_vbus = field(line, "vbus 0x", 16);
+		cur.cntl = field(line, "cntl 0x", 16);
+		cur.status1 = field(line, "st1 0x", 16);
+		cur.status3 = field(line, "st3 0x", 16);
+		cur.devt[2] = field(line, "devt ", 16) & 0xff;
+		cur.gauge_status = field(line, "gauge ", 10);
+		last = t;
+	}
+	fclose(f);
+	assert(enabled && p.boost == S2MM005_BOOST_ON && cur.state == 0);
+	/* the trace ends on the cycle's first 0: hold it 0.85 s (as unpowered),
+	 * then 14 for 15 s, five more cycles, no revoke */
+	for (int cycle = 0; cycle < 6; cycle++) {
+		cur.state = 0;
+		for (int i = 0; i < 42; i++) {
+			cur.flags = i & 1 ? 0x89 : 0x88;
+			assert(s2mm005_decide(&p, &cur, now += 20).action == S2MM005_NONE);
+		}
+		cur.state = 14;
+		cur.flags = 0x88;
+		for (int i = 0; i < 750; i++)
+			assert(s2mm005_decide(&p, &cur, now += 20).action == S2MM005_NONE);
+	}
+	/* Kishi removed: 0 persists, revoke at 1.5 s */
+	cur.state = 0;
+	for (int i = 0; i < 75; i++)
+		assert(s2mm005_decide(&p, &cur, now += 20).action == S2MM005_NONE);
+	assert(s2mm005_decide(&p, &cur, now += 20).action == S2MM005_DISABLE);
+}
+
 static void start(struct s2mm005_policy *p, unsigned long *now)
 {
 	struct s2mm005_sample s = unpowered_kishi();
@@ -388,8 +456,13 @@ static void detach_and_window(void)
 	start(&p, &now);
 	settle(&p, &now);
 	s.state = 0;
-	d = s2mm005_decide(&p, &s, now += 20);
+	t0 = now + 20;
+	do
+		d = s2mm005_decide(&p, &s, now += 20);
+	while (d.action == S2MM005_NONE);
+	/* a state-0 episode is tolerated for 1.5 s, never longer */
 	assert(d.action == S2MM005_DISABLE && !strcmp(d.why, "detach"));
+	assert(now - t0 >= S2MM005_REDETECT_MS && now - t0 < S2MM005_REDETECT_MS + 20);
 	s2mm005_disabled(&p);
 	t0 = now;
 	s = unpowered_kishi();
@@ -408,11 +481,13 @@ static void detach_and_window(void)
 		t0 = now;
 		s = boosted_kishi();
 		s.state = 0;
-		while (now + 20 - t0 < S2MM005_GRACE_MS)
-			assert(s2mm005_decide(&p, &s, now += 20).action == S2MM005_NONE);
-		/* the window never extends: the next state-0 poll revokes */
-		d = s2mm005_decide(&p, &s, now += 20);
+		do
+			d = s2mm005_decide(&p, &s, now += 20);
+		while (d.action == S2MM005_NONE);
+		/* never extended: the window, then the episode, both 1.5 s */
 		assert(d.action == S2MM005_DISABLE);
+		assert(now - t0 >= S2MM005_GRACE_MS && now - t0 <= S2MM005_REDETECT_MS + 20);
+		assert(p.backoff_ms);
 		s2mm005_disabled(&p);
 		t0 = now;
 		s = unpowered_kishi();
@@ -548,7 +623,7 @@ int main(int argc, char **argv)
 	unsigned int count = 0;
 	struct s2mm005_sample good = sinking_kishi();
 
-	assert(argc == 9);
+	assert(argc == 10);
 	replay(argv[1], false);
 	replay(argv[2], true);
 	replay_old_sourcing(argv[3]);
@@ -558,6 +633,7 @@ int main(int argc, char **argv)
 	replay_unpowered_cycle(argv[7]);
 	replay_battery_attach(argv[4]);
 	replay_battery_unplug(argv[8]);
+	replay_boost_cycle(argv[9]);
 	for (unsigned int state = 0; state < 256; state++) {
 		for (unsigned int flags = 0; flags < 256; flags++) {
 			struct s2mm005_sample s = good;

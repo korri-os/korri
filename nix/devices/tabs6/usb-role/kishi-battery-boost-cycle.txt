@@ -1,0 +1,11 @@
+# 2026-11-25 runtime module c80f98247 on battery: boost on at 1253.08 (Kishi enumerated), chip
+# re-detects at 0.7 s after enable, then stays 14 until its ~16 s cycle at 1269.03, which the
+# c80f98247 policy revoked as a detach (and so cycled the Kishi every ~19 s). Change events at
+# 20 ms polls; the replay must hold boost through both state-0 episodes.
+uptime=1252.951739 state 14 flags 0x8f vbus 0x00 cntl 0x05 st1 0x22 st3 0x00 devt 000004 gauge 2
+uptime=1253.104057 state 0 flags 0x88 vbus 0x00 cntl 0x07 st1 0x22 st3 0x00 devt 000004 gauge 0
+uptime=1253.129076 state 0 flags 0x88 vbus 0x01 cntl 0x07 st1 0x21 st3 0x00 devt 000004 gauge 0
+uptime=1253.305067 state 0 flags 0x89 vbus 0x01 cntl 0x07 st1 0x21 st3 0x00 devt 000004 gauge 0
+uptime=1253.725114 state 0 flags 0x88 vbus 0x01 cntl 0x07 st1 0x21 st3 0x00 devt 000004 gauge 0
+uptime=1253.830734 state 14 flags 0x88 vbus 0x01 cntl 0x07 st1 0x21 st3 0x00 devt 000004 gauge 0
+uptime=1269.027066 state 0 flags 0x00 vbus 0x01 cntl 0x07 st1 0x21 st3 0x00 devt 000004 gauge 0

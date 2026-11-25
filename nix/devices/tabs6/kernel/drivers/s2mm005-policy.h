@@ -36,6 +36,7 @@ struct s2mm005_sample {
 
 #define S2MM005_SOURCE_POLLS	2
 #define S2MM005_GRACE_MS	1500
+#define S2MM005_REDETECT_MS	1500
 #define S2MM005_RETRY_MS	3000
 #define S2MM005_MAX_BACKOFF_MS	60000
 #define S2MM005_STABLE_MS	60000
@@ -123,6 +124,8 @@ struct s2mm005_policy {
 	unsigned long since_ms;
 	unsigned long retry_at_ms;
 	unsigned long backoff_ms;
+	bool zero;			/* in a state-0 episode while boosting */
+	unsigned long zero_since_ms;
 };
 
 struct s2mm005_decision {
@@ -144,8 +147,10 @@ static inline void s2mm005_backoff(struct s2mm005_policy *p, unsigned long now)
 	p->retry_at_ms = now + p->backoff_ms;
 }
 
-/* Why boost must go off now, or NULL. Applies every poll while boosting. */
-static inline const char *s2mm005_revoke(const struct s2mm005_policy *p,
+/* Why boost must go off now, or NULL. Applies every poll while boosting.
+ * Updates the state-0 episode.
+ */
+static inline const char *s2mm005_revoke(struct s2mm005_policy *p,
 				       const struct s2mm005_sample *s,
 				       unsigned long now)
 {
@@ -160,14 +165,23 @@ static inline const char *s2mm005_revoke(const struct s2mm005_policy *p,
 		return "fault";
 	if (!s2mm005_muic_quiet(s))
 		return "MUIC charger/PC signature";
-	/* After a verified enable the chip re-detects: state 0 for ~0.7 s, then
-	 * 14 with attached 0 (phase-b-host-transition.txt). Only those two are
-	 * tolerated in the fixed window; any sink state revokes at once.
+	/* The chip re-detects even while we boost: state 0 for ~0.7 s after a
+	 * verified enable (phase-b-host-transition.txt) and again on its ~16 s
+	 * cycle (kishi-battery-boost-cycle.txt). A state-0 episode is tolerated
+	 * for at most S2MM005_REDETECT_MS from its first poll, never extended;
+	 * a source state ends it. Longer is a detach.
 	 */
+	if (s->state == 0) {
+		if (!p->zero) {
+			p->zero = true;
+			p->zero_since_ms = now;
+		}
+		return now - p->zero_since_ms < S2MM005_REDETECT_MS ? NULL : "detach";
+	}
+	p->zero = false;
+	/* In the fixed window only 14 (besides 0) is tolerated. */
 	if (grace)
-		return s->state == 0 || s->state == 14 ? NULL : "state in grace";
-	if (s->state == 0)
-		return "detach";
+		return s->state == 14 ? NULL : "state in grace";
 	return s2mm005_source_state(s->state) ? NULL : "left source states";
 }
 
@@ -208,7 +222,11 @@ s2mm005_decide(struct s2mm005_policy *p, const struct s2mm005_sample *s,
 			d.why = why;
 			return d;
 		}
-		if (grace && now - p->since_ms >= S2MM005_GRACE_MS)
+		/* A start succeeds only once the window is over and the chip shows a
+		 * source state; a window ending in state 0 stays a start, so its
+		 * revoke backs off.
+		 */
+		if (grace && now - p->since_ms >= S2MM005_GRACE_MS && !p->zero)
 			p->boost = S2MM005_BOOST_ON;
 		if (p->boost == S2MM005_BOOST_ON &&
 		    now - p->since_ms >= S2MM005_STABLE_MS)
@@ -238,6 +256,7 @@ static inline void s2mm005_enabled(struct s2mm005_policy *p, unsigned long now)
 {
 	p->boost = S2MM005_BOOST_GRACE;
 	p->since_ms = now;
+	p->zero = false;
 }
 
 /* Enable failed part way: the caller turns boost off; this start failed. */
