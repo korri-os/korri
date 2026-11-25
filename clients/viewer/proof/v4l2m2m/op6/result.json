@@ -1,0 +1,20 @@
+{
+  "device": "op6",
+  "status": "not_installed",
+  "reason": "owner approved tabs6 only (2026-11-24)",
+  "picture_verdict": null,
+  "stream_started": false,
+  "viewer_archive_uploaded": false,
+  "viewer_installed": false,
+  "viewer_enabled": false,
+  "decoder_node_observed": "/dev/video13",
+  "decoder_name_observed": "qcom-venus-decoder",
+  "preflight_max_temperature_c": 33.5,
+  "stream_duration_s": null,
+  "frames_decoded": null,
+  "frames_presented": null,
+  "dropped_frames": null,
+  "audio": "not_run",
+  "controller_input": "not_run",
+  "clean_stream_stop": null
+}

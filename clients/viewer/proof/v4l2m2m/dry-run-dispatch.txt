@@ -1,0 +1,4 @@
+source=cc68c375613ef35972c348061ced20decae89951
+packages=korri-plugin-viewer
+selection_sha256=1d7a94fa219a54251f3926b220e6187fd081124f7c5a3a08e18c22ccdc98eb4d
+https://github.com/korri-os/plugins/actions/runs/45480578514

@@ -1,0 +1,233 @@
+== UTC ==
+2026-11-24T23:47:28+00:00
+== system ==
+/nix/store/0ghaibw1bh2z58ysbk2dvsszdgp4zyvv-nixos-system-tabs6-26.11.20260923.4975466
+== thermal zones (millidegrees C) ==
+/sys/class/thermal/thermal_zone0 aoss0-thermal 38600 
+/sys/class/thermal/thermal_zone1 cpu0-thermal 42500 
+/sys/class/thermal/thermal_zone10 cpu7-top-thermal 40900 
+/sys/class/thermal/thermal_zone11 cpu4-bottom-thermal 41700 
+/sys/class/thermal/thermal_zone12 cpu5-bottom-thermal 43200 
+/sys/class/thermal/thermal_zone13 cpu6-bottom-thermal 42500 
+/sys/class/thermal/thermal_zone14 cpu7-bottom-thermal 41700 
+/sys/class/thermal/thermal_zone15 gpu-top-thermal 38600 
+/sys/class/thermal/thermal_zone16 aoss1-thermal 39700 
+/sys/class/thermal/thermal_zone17 wlan-thermal 39000 
+/sys/class/thermal/thermal_zone18 video-thermal 40100 
+/sys/class/thermal/thermal_zone19 mem-thermal 40500 
+/sys/class/thermal/thermal_zone2 cpu1-thermal 43200 
+/sys/class/thermal/thermal_zone20 q6-hvx-thermal 39700 
+/sys/class/thermal/thermal_zone21 camera-thermal 39700 
+/sys/class/thermal/thermal_zone22 compute-thermal 41700 
+/sys/class/thermal/thermal_zone23 modem-thermal 39000 
+/sys/class/thermal/thermal_zone3 cpu2-thermal 42800 
+/sys/class/thermal/thermal_zone4 cpu3-thermal 41700 
+/sys/class/thermal/thermal_zone5 cluster0-thermal 44000 
+/sys/class/thermal/thermal_zone6 cluster1-thermal 42500 
+/sys/class/thermal/thermal_zone7 cpu4-top-thermal 40900 
+/sys/class/thermal/thermal_zone8 cpu5-top-thermal 41700 
+/sys/class/thermal/thermal_zone9 cpu6-top-thermal 40900 
+== decoder nodes ==
+/sys/class/video4linux/video0 qcom-iris-decoder
+/sys/class/video4linux/video1 qcom-iris-encoder
+== running services ==
+active
+active
+== runtime session ==
+uid=1000(korri) gid=1000(korri) groups=1000(korri),17(audio),26(video),303(render)
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus HOME=/home/korri KORRI_COMPOSITOR_OUTPUT_HEIGHT=1600 KORRI_COMPOSITOR_OUTPUT_NAME=DSI-1 KORRI_COMPOSITOR_OUTPUT_WIDTH=2560 KORRI_RENDER_DEVICE=/dev/dri/renderD128 KORRI_SWAY_CONFIG=/nix/store/bxji08dk3qkchfhhmdjp558g40qyjv5h-korri-sway.conf KORRI_WAYLAND_DISPLAY=korri-wayland LIBSEAT_BACKEND=seatd LOCALE_ARCHIVE=/nix/store/k8as1kdn16q5w6zq6z3vih70qby9l40i-glibc-locales-2.42-84/lib/locale/locale-archive PATH=/nix/store/kik5qyy1h61vkhamvi53l0iw18zfp4gh-dbus-1.16.2/bin:/nix/store/gwh8k3z08hx2dpcv7875yk8z38xb98wf-sway-1.12/bin:/nix/store/p6s91vq6xsrqca1p3hldzl4pfqibrkfr-xwayland-24.1.13/bin:/nix/store/p7xdvcvl4aw7m229qzlq601aq0w0nb9n-coreutils-9.11/bin:/nix/store/xqx65i7cwacw7rsnj3dlbqas27mwvpn2-findutils-4.11.0/bin:/nix/store/3b3k72bbr01bgff7bdkiz6r05gmlx5s9-gnugrep-3.12/bin:/nix/store/1nwgsy4c5862g44s9lkf50643p3nbwm5-gnused-4.10/bin:/nix/store/x0iv5hlpqfrpykdckbj8jdxy78clbjpz-systemd-261.2/bin:/nix/store/kik5qyy1h61vkhamvi53l0iw18zfp4gh-dbus-1.16.2/sbin:/nix/store/gwh8k3z08hx2dpcv7875yk8z38xb98wf-sway-1.12/sbin:/nix/store/p6s91vq6xsrqca1p3hldzl4pfqibrkfr-xwayland-24.1.13/sbin:/nix/store/p7xdvcvl4aw7m229qzlq601aq0w0nb9n-coreutils-9.11/sbin:/nix/store/xqx65i7cwacw7rsnj3dlbqas27mwvpn2-findutils-4.11.0/sbin:/nix/store/3b3k72bbr01bgff7bdkiz6r05gmlx5s9-gnugrep-3.12/sbin:/nix/store/1nwgsy4c5862g44s9lkf50643p3nbwm5-gnused-4.10/sbin:/nix/store/x0iv5hlpqfrpykdckbj8jdxy78clbjpz-systemd-261.2/sbin SWAYSOCK=/run/korri-compositor/sway-ipc.sock TZDIR=/nix/store/i8an849ir6g3f4n2wrsm88s2qgrzjayq-tzdata-2026c/share/zoneinfo WLR_BACKENDS=drm,libinput WLR_DRM_DEVICES=/dev/dri/by-path/platform-ae01000.display-controller-card WLR_NO_HARDWARE_CURSORS=1 WLR_RENDERER=gles2 WLR_RENDER_DRM_DEVICE=/dev/dri/renderD128 XDG_CONFIG_HOME=/run/korri-compositor/config XDG_CURRENT_DESKTOP=sway XDG_DATA_HOME=/run/korri-compositor/data XDG_RUNTIME_DIR=/run/user/1000 XDG_STATE_HOME=/run/korri-compositor/state
+User=korri
+== screenshot tool ==
+== input nodes ==
+/dev/input/event16
+/dev/input/event15
+/dev/input/event14
+/dev/input/event13
+/dev/input/event12
+/dev/input/event11
+/dev/input/event10
+/dev/input/event9
+/dev/input/event19
+/dev/input/event18
+/dev/input/event17
+/dev/input/event8
+/dev/input/event7
+/dev/input/event6
+/dev/input/event5
+/dev/input/event4
+/dev/input/event3
+/dev/input/event2
+/dev/input/event1
+/dev/input/event0
+== audio sockets ==
+/run/user/1000/wayland-1
+/run/user/1000/pipewire-0-manager
+/run/user/1000/pipewire-0
+/run/user/1000/pulse/native
+/run/user/1000/bus
+/run/user/1000/systemd/report/io.systemd.Manager
+/run/user/1000/systemd/io.systemd.Manager
+/run/user/1000/systemd/private
+/run/user/1000/systemd/notify
+/run/user/1000/systemd/inaccessible/sock
+== audio cards ==
+ 0 [SMT860         ]: sm8250 - SM-T860
+                      Samsung-TabS6WIFI-gts6lwifi-MTP
+== CLI ==
+Control Korri on this device
+
+Usage: korri [OPTIONS] [COMMAND]
+
+Commands:
+  version          Show the installed CLI version without contacting korrid
+  completion       Generate shell completion without contacting korrid
+  status           Show live Korri state
+  devices          List and name verified devices of this owner
+  library          Manage library folders, games and attention
+  play             Ask korrid to launch a library game; acceptance is not gameplay readiness
+  leave            Leave the exact observed live session without ending it
+  resume           Resume the exact observed live session
+  end              End a live session or resolve an ended failed or blocked host session
+  launch-settings  Show effective launch values and edit authorized settings
+  get              Download a library game, or find and acquire it from a provider
+  downloads        Inspect game artifacts and provider jobs without mixing their IDs
+  controllers      Configure Korri controller seats
+  plugins          Review and manage plugins without bypassing host policy
+  wifi             Manage this device's Wi-Fi through korrid
+  saves            Read and select this person's save snapshots on this device
+  accounts         Show this person's account sign-ins on this device, and sign in or out
+  identity         Manage this device's person key and person name
+  join             Join a new device to this person's devices with a 10-digit code
+  setup            Start or rerun setup using the shell's network, settings and completion calls; keep the current identity unless explicitly switched
+  help             Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                  Print unchanged RPC responses as JSON
+      --yes                   Confirm destructive actions; never grants plugin permissions
+      --device <NAME_OR_KEY>  Device performing the operation, not a streaming route
+      --socket <PATH>         Local korrid person socket
+  -h, --help                  Print help
+  -V, --version               Print version
+Review and manage plugins without bypassing host policy
+
+Usage: korri plugins [OPTIONS] <COMMAND>
+
+Commands:
+  list          List installed plugins, or the catalog at an exact repository URL
+  review        Inspect publisher policy, native units, ports and dependencies before approval
+  install       Install disabled using the exact reviewed approval digest; --yes never grants permissions
+  update        Move an installed plugin to another release from the repository it came from; it keeps its on/off state
+  on            Enable an already-approved plugin; the host rechecks its approval
+  off           Disable an installed plugin
+  repositories  Manage catalog sources; removing a source retains its installed plugins
+  publishers    List this device's bound and trusted publishers
+  trust         Trust a publisher on this device with its full Nix public key
+  revoke        Revoke a publisher pin; its plugins can no longer start
+  credential    Show, set or clear the secret a plugin uses, such as an API key; never show its value
+  new           Start a plugin with its own TypeScript contract; no daemon needed
+  build         Build locally with Nix and print the outputs; no daemon needed
+  publish       Build and sign a repository folder; does not upload it
+  sideload      Build locally, then review and approve a signed archive on a device
+  help          Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                  Print unchanged RPC responses as JSON
+      --yes                   Confirm destructive actions; never grants plugin permissions
+      --device <NAME_OR_KEY>  Device performing the operation, not a streaming route
+      --socket <PATH>         Local korrid person socket
+  -h, --help                  Print help
+List installed plugins, or the catalog at an exact repository URL
+
+Usage: korri plugins list [OPTIONS] [SOURCE_URL]
+
+Arguments:
+  [SOURCE_URL]  
+
+Options:
+      --json                  Print unchanged RPC responses as JSON
+      --yes                   Confirm destructive actions; never grants plugin permissions
+      --device <NAME_OR_KEY>  Device performing the operation, not a streaming route
+      --socket <PATH>         Local korrid person socket
+  -h, --help                  Print help
+List this device's bound and trusted publishers
+
+Usage: korri plugins publishers [OPTIONS]
+
+Options:
+      --json                  Print unchanged RPC responses as JSON
+      --yes                   Confirm destructive actions; never grants plugin permissions
+      --device <NAME_OR_KEY>  Device performing the operation, not a streaming route
+      --socket <PATH>         Local korrid person socket
+  -h, --help                  Print help
+Ask korrid to launch a library game; acceptance is not gameplay readiness
+
+Usage: korri play [OPTIONS] <game>
+
+Arguments:
+  <game>  
+
+Options:
+      --json                  Print unchanged RPC responses as JSON
+      --set <KEY=VALUE>       
+      --keep[=<PLACE>]        Keep --set values only after launch succeeds; default game, or device/system:ID/release:ID/profile:ID
+      --yes                   Confirm destructive actions; never grants plugin permissions
+      --device <NAME_OR_KEY>  Device performing the operation, not a streaming route
+      --runner <runner>       Exact installed runner ID; never a device or streaming route
+      --socket <PATH>         Local korrid person socket
+  -h, --help                  Print help
+== publishers ==
+{"_tag":"system.plugins.publishers","outcome":{"_tag":"Ok","payload":{"entries":[{"namespace":"@korri","fingerprint":"korri-plugins-1 qlK5 Mgb3 dYhF 76WC","state":"Bound","installed":["@korri:beetle-ngp","@korri:beetle-pce-fast","@korri:beetle-wswan","@korri:fake08","@korri:fbneo","@korri:flycast","@korri:gambatte","@korri:gamescope","@korri:genesis-plus-gx","@korri:gw","@korri:handy","@korri:homebrewhub","@korri:melonds","@korri:mgba","@korri:moonlight","@korri:mupen64plus","@korri:nestopia","@korri:pcsx-rearmed","@korri:pico8","@korri:picodrive","@korri:prosystem","@korri:retroarch","@korri:retrobrews","@korri:snes9x","@korri:solarus","@korri:ssh","@korri:starter-pack","@korri:stella","@korri:sunshine","@korri:viewer","@korri:zquest-classic"]}]}}}
+== installed plugins ==
+{"_tag":"system.plugins.repositories","outcome":{"_tag":"Ok","payload":{"official":"https://github.com/korri-os/plugins/releases/download/build-eae4ae220f5d-tailscale-signin/catalog.json","userAdded":[],"repositoryInstalls":[{"id":"@korri:beetle-ngp","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:beetle-pce-fast","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:beetle-wswan","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:fake08","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:fbneo","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:flycast","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:gambatte","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:gamescope","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:genesis-plus-gx","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:gw","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:handy","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:homebrewhub","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:melonds","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:mgba","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:moonlight","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:mupen64plus","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:nestopia","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:pcsx-rearmed","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:pico8","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:picodrive","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:prosystem","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:retroarch","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:retrobrews","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:snes9x","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:solarus","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:ssh","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:starter-pack","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":false},{"id":"@korri:stella","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:sunshine","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true},{"id":"@korri:zquest-classic","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-b036fa5e3160-sunshine-0046/catalog.json","releaseVersion":"build-b036fa5e3160-sunshine-0046","enabled":true}],"otherInstalls":[{"id":"@korri:viewer","title":"Korri viewer","enabled":true}]}}}
+== session status ==
+[
+  {
+    "_tag": "app.session.status",
+    "outcome": {
+      "_tag": "Err",
+      "payload": {
+        "code": "NoActiveSession",
+        "message": "no host launch is active"
+      }
+    }
+  }
+]
+== existing receipt directories ==
+/var/lib/korri-plugin-host/korri-plugin-74f8b9373f75f7d5c9ed8d5a0febb735dc334e639e6d8969c2318da894692ae0/selection.json
+/var/lib/korri-plugin-host/korri-plugin-186b22949ee1eb207b16cd9f8a7eb5a734b04c911346fddafaaa176e9d680279/selection.json
+/var/lib/korri-plugin-host/korri-plugin-85ec34baca48bcbeb3612e854c7cac50e41de915ebef2aece16b4580d0230956/selection.json
+/var/lib/korri-plugin-host/korri-plugin-4ce5297595c830f01bb115a2e3fbd370207b7de4301636b55251cce391b911d2/selection.json
+/var/lib/korri-plugin-host/korri-plugin-bb74fd03bf97d3b10e2aae97e0d84d36e8f033d81265114719d8c6c868d17c6a/selection.json
+/var/lib/korri-plugin-host/korri-plugin-ffcd11d83e4022547c07118f4d921b71ff4d056f8f2433290f91b136833ce679/selection.json
+/var/lib/korri-plugin-host/korri-plugin-d3bd5b1ef0c51771ea6b5e3c60635bb595b9a46dbbade349e60beeed877ca8a4/selection.json
+/var/lib/korri-plugin-host/korri-plugin-191ce9cf1c3fdbaaa30811125ee214da2e1b31db6f2213997019dd89643fb34e/selection.json
+/var/lib/korri-plugin-host/korri-plugin-f770f7cc58c9b85aad6d2915238cc6e04df738949a8423df1639aa3cb6c5854d/selection.json
+/var/lib/korri-plugin-host/korri-plugin-c7c84fe62887843c97431b110e2309ff939a4c4249752747a7ef20d262faa58a/selection.json
+/var/lib/korri-plugin-host/korri-plugin-37b4094bdfec4a06ba4b948b4982b22b3457f146a2ae8dccfdfc0b27835d5231/selection.json
+/var/lib/korri-plugin-host/korri-plugin-479f677ec3c4c485d6dd9e17f40904b5f834ccc0dab44ef269c655b0bcb3cc5b/selection.json
+/var/lib/korri-plugin-host/korri-plugin-89167f191fb9c6433f0bf6450298adc8dec8227f5318fe8457531bf2b4ce4043/selection.json
+/var/lib/korri-plugin-host/korri-plugin-f6670e1f775be3731e836b777db590a15d935c20bce991bbeb2f4316a7ff47c3/selection.json
+/var/lib/korri-plugin-host/korri-plugin-58c0bb501afddd23356b8445d00805e57c18deee9d1eadf8fc4b06c53b74f809/selection.json
+/var/lib/korri-plugin-host/korri-plugin-26a632d52815d138da4918a5f59ab3810c5604a8e8ff620657bbe6c70e73168d/selection.json
+/var/lib/korri-plugin-host/korri-plugin-5609d27276d06475e934a3ab0ac8e8ff361861b8c094773e29c5dce9adf11c85/selection.json
+/var/lib/korri-plugin-host/korri-plugin-b82b61fb34daa0849e28608254b8f767e08e11c16fda7aad1b48278916c1d447/selection.json
+/var/lib/korri-plugin-host/korri-plugin-182c19e467aabba9728c3de955f7fa4abb08c2b94d194d9853683089b4a59259/selection.json
+/var/lib/korri-plugin-host/korri-plugin-3b3a41970c4fcebfb538e4af666ffd3d51f138c247c5871d878e7b5aa0df5b22/selection.json
+/var/lib/korri-plugin-host/korri-plugin-e8bc529bbb9a0ffc1bf05dc3fc9036285ad3cbc2131548ebc4d8a4b17cb02a2e/selection.json
+/var/lib/korri-plugin-host/korri-plugin-5e94ead1d5d15daa4db6f745d6eec1e7083df702c74c228defc6e4319086d903/selection.json
+/var/lib/korri-plugin-host/korri-plugin-5fda77533f709eee057137e8d93f78da03bd4838295d5f334e31a1a73ada4c4a/selection.json
+/var/lib/korri-plugin-host/korri-plugin-11378d4830c98e717605c494bb58bf4bfcd5e49e790780be77813d9fd59fa19a/selection.json
+/var/lib/korri-plugin-host/korri-plugin-768a94a9e7fe0f78e5e64e761b490200c0686cc7dc2ab47cc98536e654eae898/selection.json
+/var/lib/korri-plugin-host/korri-plugin-1795826a15fdd93d1e3faea2a59a6a5bab8319fa05ca195d92e3fa39ced791e2/selection.json
+/var/lib/korri-plugin-host/korri-plugin-c9382bb9fc86a8eae649e5c408272f4a16eb3903fb68b7edca8bca811599f7ee/selection.json
+/var/lib/korri-plugin-host/korri-plugin-b0c4d061fceb448374ed954697357aa54dd5d763da0957eef359adc6dee3d6de/selection.json
+/var/lib/korri-plugin-host/korri-plugin-fc9caa431b65c35d0f1dfed45ba4474d845e2e1a8bdcd4e919d2bc492fad2159/selection.json
+/var/lib/korri-plugin-host/korri-plugin-d8ad0a0d5b35108560571d57d412a17a3886e4d924c58ae0750274461ee85423/selection.json
+/var/lib/korri-plugin-host/korri-plugin-f407cf1b9edeab7da96cc83df457a8b141f5e442ce403ed5a61909e6871fe171/selection.json
+== Nix device policy ==
+builders = 
+fallback = false
+max-jobs = 0
+require-sigs = true
+substituters = https://cache.nixos.org/ https://korri-os.github.io/nix-cache/
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= korri-cache-fuji-1:E8MOww6FoNRlVavEll8JPc2XHYC4HhZnrhqQcd64OtQ= korri-cache-zao-1:thKjQnMnPl8AqTuZWJTn+ej9BORTPqzleGue4ZfJ2u4= korri-cache-ci-1:iH8gsPMtGrreeuXt2kt6M2ca+y4u/dO+T2km6AUuI8c= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= korri-cache-fuji-1:E8MOww6FoNRlVavEll8JPc2XHYC4HhZnrhqQcd64OtQ= korri-cache-zao-1:thKjQnMnPl8AqTuZWJTn+ej9BORTPqzleGue4ZfJ2u4= korri-cache-ci-1:iH8gsPMtGrreeuXt2kt6M2ca+y4u/dO+T2km6AUuI8c= korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=

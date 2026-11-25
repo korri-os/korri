@@ -1,0 +1,4 @@
+korri-viewer 0.1.0 (GPL-3.0-or-later)
+Usage: korri-viewer stream|pair [Moonlight arguments] HOST
+PC picture, sound and input. -viewonly disables input device discovery; the window's own keyboard and mouse still forward, as in Moonlight.
+Handheld picture: -platform v4l2request or -platform v4l2m2m, with -input <device> up to 6 times.

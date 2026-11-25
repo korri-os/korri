@@ -21,6 +21,47 @@ fn viewer_asks_for_the_picture_as_seen_on_a_quarter_turned_main_display() {
     assert!(viewer_dimensions("[]", None).is_err());
 }
 
+/// Build the picture proof's command through the production argument builder.
+/// The caller supplies observed device facts and the installed plugin's own
+/// rendered settings. This performs no network, process or device effect.
+#[test]
+#[ignore = "manual installed-viewer proof; requires KORRI_PROOF_* observations"]
+fn emit_the_installed_handheld_proof_command() {
+    let required = |name| std::env::var(name).unwrap_or_else(|_| panic!("{name} is required"));
+    let manifest: serde_json::Value =
+        serde_json::from_str(&required("KORRI_PROOF_MANIFEST")).unwrap();
+    let file =
+        |name: &str| PathBuf::from(manifest["files"][name].as_str().expect("installed file"));
+    let files = ViewerFiles {
+        executable: file("viewer"),
+        mapping: file("mapping"),
+        bootstrap: file("identity-bootstrap"),
+    };
+    let rendered: Vec<String> =
+        serde_json::from_str(&required("KORRI_PROOF_RENDERED_ARGS")).unwrap();
+    let seats: Vec<PathBuf> = serde_json::from_str(&required("KORRI_PROOF_INPUT_NODES")).unwrap();
+    let platform = platform_from_path(
+        Path::new(&required("KORRI_PROOF_COMPATIBLE_FILE")),
+        "aarch64",
+        Path::new("/dev/dri"),
+        |cause| panic!("the observed compatible file is unreadable: {cause}"),
+    );
+    assert_eq!(platform, "v4l2m2m");
+    let command = stream_args(
+        &files,
+        Path::new(&required("KORRI_PROOF_KEYDIR")),
+        &required("KORRI_PROOF_ADDRESS"),
+        &rendered,
+        platform,
+        &seats,
+    )
+    .unwrap();
+    println!(
+        "KORRI_PROOF_COMMAND={}",
+        serde_json::to_string(&command).unwrap()
+    );
+}
+
 #[test]
 fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
     let files = ViewerFiles {

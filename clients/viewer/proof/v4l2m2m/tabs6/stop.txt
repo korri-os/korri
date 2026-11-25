@@ -1,0 +1,4 @@
+duration_complete
+exit=0
+first_picture_s=2.0392215749998286
+end_s=82.72541667699988

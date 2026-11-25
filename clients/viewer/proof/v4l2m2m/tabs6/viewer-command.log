@@ -1,0 +1,7 @@
+
+running 1 test
+KORRI_PROOF_COMMAND=["/nix/store/7pl3smh70n1wbkp7ayi6ird2dbif9bqf-korri-viewer-0.1.0/bin/korri-viewer","stream","-app","Korri Stream","-platform","v4l2m2m","-mapping","/nix/store/7pl3smh70n1wbkp7ayi6ird2dbif9bqf-korri-viewer-0.1.0/share/moonlight/korri-inputplumber-gamecontrollerdb.txt","-keydir","/tmp/korri-v4l2m2m-proof.5a0dDJ/keys","-windowed","-autowindowresize","-viewonly","-port","38103","192.168.1.117","-width","2560","-height","1600","-bitrate","80000","-codec","h264","-localaudio"]
+test linux_viewer::production::tests::emit_the_installed_handheld_proof_command ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2099 filtered out; finished in 0.48s
+

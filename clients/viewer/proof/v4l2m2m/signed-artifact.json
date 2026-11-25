@@ -1,0 +1,20 @@
+{
+  "run": 45497299588,
+  "source_sha": "bcc857f267927e860944364c8b4fb3e68f810ea7",
+  "artifact_id": 14970428654,
+  "artifact_sha256": "sha256:ad14631cb40db0313b4fab68c0f09721813b13c6ac8a7d9e417628b384a2a846",
+  "architecture_job": "success",
+  "run_conclusion_at_download": null,
+  "record": {
+    "plugin_id": "@korri:viewer",
+    "title": "Korri viewer",
+    "release_version": "proof-viewer-v4l2m2m-616-bcc857f26792",
+    "platform": "aarch64-linux",
+    "store_path": "/nix/store/6ifslzp70aj95xfkzjrvginl47x7vjm2-korri-plugin",
+    "archive_url": "https://github.com/korri-os/plugins/releases/download/proof-viewer-v4l2m2m-616-bcc857f26792/korri-plugin-768a94a9e7fe0f78e5e64e761b490200c0686cc7dc2ab47cc98536e654eae898-proof-viewer-v4l2m2m-616-bcc857f26792-aarch64-linux.tar",
+    "archive_sha256": "623c4dbd7de9fac824cb5dd9fa13a2ececfa0f3c269b90314f1bac89a13534f2",
+    "publicKey": "korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98="
+  },
+  "local_archive": "/tmp/korri-616-signed-arm/contents/repository/korri-plugin-768a94a9e7fe0f78e5e64e761b490200c0686cc7dc2ab47cc98536e654eae898-proof-viewer-v4l2m2m-616-bcc857f26792-aarch64-linux.tar",
+  "run_conclusion_after_completion": "success"
+}

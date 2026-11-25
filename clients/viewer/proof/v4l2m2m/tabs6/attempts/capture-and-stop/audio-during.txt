@@ -1,0 +1,13 @@
+/proc/asound/card0/pcm0p/sub0/status
+state: RUNNING
+owner_pid   : 1848
+trigger_time: 8383.121404408
+tstamp      : 8418.135268966
+delay       : 2016
+avail       : 1824
+avail_max   : 3520
+-----
+hw_ptr      : 1681920
+appl_ptr    : 1683936
+/proc/asound/card0/pcm1p/sub0/status
+closed

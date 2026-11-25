@@ -1,0 +1,377 @@
+{
+  "device": "tabs6",
+  "package": "/nix/store/6ifslzp70aj95xfkzjrvginl47x7vjm2-korri-plugin",
+  "picture": "pass",
+  "korrid_launch": "deferred_to_land",
+  "controller_through_korrid": "deferred_to_land",
+  "raw_controller": "skipped: avoid adding a source during another session's input work",
+  "frame_counts": null,
+  "dropped_frames": null,
+  "screenshots": [
+    {
+      "file": "stream-5.png",
+      "seconds": 7.190441965125501,
+      "frame": {
+        "id": 616
+      }
+    },
+    {
+      "file": "stream-37.png",
+      "seconds": 40.67186735989526,
+      "frame": {
+        "id": 2574
+      }
+    },
+    {
+      "file": "stream-70.png",
+      "seconds": 72.41577675472945,
+      "frame": {
+        "id": 4428
+      }
+    }
+  ],
+  "sender_cooldown": {
+    "seconds": 30.387562580872327,
+    "start": {
+      "sender": [
+        {
+          "zone": "hwmon4/temp1",
+          "type": "k10temp Tctl",
+          "driver": "k10temp",
+          "temp": 87875,
+          "trips": [],
+          "unreadable": null,
+          "limits": {
+            "critical": null,
+            "start_below": 85000,
+            "end_at": 100000
+          }
+        }
+      ]
+    },
+    "end": {
+      "sender": [
+        {
+          "zone": "hwmon4/temp1",
+          "type": "k10temp Tctl",
+          "driver": "k10temp",
+          "temp": 75750,
+          "trips": [],
+          "unreadable": null,
+          "limits": {
+            "critical": null,
+            "start_below": 85000,
+            "end_at": 100000
+          }
+        }
+      ]
+    }
+  },
+  "sender_begin": {
+    "live_games": [],
+    "input_rule": "record"
+  },
+  "temporary_firewall_rules": [
+    [
+      "-s",
+      "192.168.1.119",
+      "-d",
+      "192.168.1.117",
+      "-p",
+      "tcp",
+      "--dport",
+      "38098:38124",
+      "-m",
+      "comment",
+      "--comment",
+      "korri-616-korri-stream-cadence-sender-3au2t8lz",
+      "-j",
+      "nixos-fw-accept"
+    ],
+    [
+      "-s",
+      "192.168.1.119",
+      "-d",
+      "192.168.1.117",
+      "-p",
+      "udp",
+      "--dport",
+      "38098:38124",
+      "-m",
+      "comment",
+      "--comment",
+      "korri-616-korri-stream-cadence-sender-3au2t8lz",
+      "-j",
+      "nixos-fw-accept"
+    ]
+  ],
+  "sender_last_sample": {
+    "threads": [
+      {
+        "tid": 1819116,
+        "name": "sunshine",
+        "policy": 0,
+        "policy_name": "SCHED_OTHER",
+        "priority": 0
+      },
+      {
+        "tid": 1819160,
+        "name": "sunshine",
+        "policy": 0,
+        "policy_name": "SCHED_OTHER",
+        "priority": 0
+      },
+      {
+        "tid": 1819161,
+        "name": "sunshine",
+        "policy": 0,
+        "policy_name": "SCHED_OTHER",
+        "priority": 0
+      },
+      {
+        "tid": 1819222,
+        "name": "nvhttp",
+        "policy": 0,
+        "policy_name": "SCHED_OTHER",
+        "priority": 0
+      },
+      {
+        "tid": 1819223,
+        "name": "confighttp",
+        "policy": 0,
+        "policy_name": "SCHED_OTHER",
+        "priority": 0
+      },
+      {
+        "tid": 1819224,
+        "name": "rtsp",
+        "policy": 0,
+        "policy_name": "SCHED_OTHER",
+        "priority": 0
+      },
+      {
+        "tid": 1819225,
+        "name": "nvhttp::38098",
+        "policy": 0,
+        "policy_name": "SCHED_OTHER",
+        "priority": 0
+      },
+      {
+        "tid": 1819226,
+        "name": "nvhttp::38103",
+        "policy": 0,
+        "policy_name": "SCHED_OTHER",
+        "priority": 0
+      },
+      {
+        "tid": 1819227,
+        "name": "confighttp::tcp",
+        "policy": 0,
+        "policy_name": "SCHED_OTHER",
+        "priority": 0
+      },
+      {
+        "tid": 1819228,
+        "name": "rtsp::handler",
+        "policy": 0,
+        "policy_name": "SCHED_OTHER",
+        "priority": 0
+      },
+      {
+        "tid": 1819550,
+        "name": "pool-spawner",
+        "policy": 0,
+        "policy_name": "SCHED_OTHER",
+        "priority": 0
+      },
+      {
+        "tid": 1819551,
+        "name": "gmain",
+        "policy": 0,
+        "policy_name": "SCHED_OTHER",
+        "priority": 0
+      }
+    ],
+    "journal": {
+      "file": "sender-sunshine.log.gz",
+      "encoding": "gzip",
+      "uncompressed_bytes": 11317907,
+      "uncompressed_sha256": "c9cfd75173f16de00f4648ab387dd7459b78f1ea50c6a9ca266b01bd87743530",
+      "source_uncompressed_sha256": "e1908958e769d6a25b382050848e58c03d91ffb0d61c7a37bb50406c2c05374b",
+      "transient_stream_key_redactions": 1
+    },
+    "machine": {
+      "ns": 416363011325885,
+      "cpu": [
+        53301633,
+        27986298,
+        15665468,
+        402533242,
+        461568,
+        875777,
+        501837,
+        0
+      ],
+      "own_ticks": 1615,
+      "loadavg": [
+        4.77,
+        5.2,
+        4.69
+      ],
+      "ticks_per_second": 100
+    }
+  },
+  "sender_evidence": {
+    "motion_log": {
+      "file": "sender-motion.log.gz",
+      "encoding": "gzip",
+      "uncompressed_bytes": 1161756,
+      "uncompressed_sha256": "9d962fecb99e4611cfc4eae2b07e794b063fa385d4b1e7019e99794fa9e47771",
+      "source_uncompressed_sha256": "9d962fecb99e4611cfc4eae2b07e794b063fa385d4b1e7019e99794fa9e47771",
+      "transient_stream_key_redactions": 0
+    },
+    "run_folder_bytes": 26093285
+  },
+  "stop": "duration_complete\nexit=0\nfirst_picture_s=2.0392215749998286\nend_s=82.72541667699988\n",
+  "checks": {
+    "readable": true,
+    "moving": true,
+    "at_least_60_seconds": true,
+    "hardware_path": true
+  },
+  "sender_cleanup": {
+    "live_games": [],
+    "product_units": {
+      "at_start": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 7961083
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 211930702886
+        },
+        "korri-clock-governor.service": {
+          "pid": 1061,
+          "started": 7962579
+        },
+        "korri-compositor.service": {
+          "pid": 1352929,
+          "started": 404824101886
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 1571090,
+          "started": 342814110000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 7963516
+        },
+        "korri-limits.service": {
+          "pid": 1063,
+          "started": 7965368
+        },
+        "korri-local-signer.service": {
+          "pid": 1571150,
+          "started": 342814382377
+        },
+        "korri-plugin-admin.service": {
+          "pid": 1269956,
+          "started": 137510202562
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 131413475918
+        },
+        "korri-shell.service": {
+          "pid": 1507962,
+          "started": 412370902710
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 106669,
+          "started": 5757180000
+        },
+        "korri-sunshine.service": {
+          "pid": 1352991,
+          "started": 404824516324
+        },
+        "korrid.service": {
+          "pid": 1507938,
+          "started": 412370844567
+        }
+      },
+      "at_end": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 7961083
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 211930702886
+        },
+        "korri-clock-governor.service": {
+          "pid": 1061,
+          "started": 7962579
+        },
+        "korri-compositor.service": {
+          "pid": 1352929,
+          "started": 404824101886
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 1571090,
+          "started": 342814110000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 7963516
+        },
+        "korri-limits.service": {
+          "pid": 1063,
+          "started": 7965368
+        },
+        "korri-local-signer.service": {
+          "pid": 1571150,
+          "started": 342814382377
+        },
+        "korri-plugin-admin.service": {
+          "pid": 1269956,
+          "started": 137510202562
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 131413475918
+        },
+        "korri-shell.service": {
+          "pid": 1507962,
+          "started": 412370902710
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 106669,
+          "started": 5757180000
+        },
+        "korri-sunshine.service": {
+          "pid": 1352991,
+          "started": 404824516324
+        },
+        "korrid.service": {
+          "pid": 1507938,
+          "started": 412370844567
+        }
+      },
+      "changed": []
+    },
+    "pass": true,
+    "pids_unchanged": {},
+    "run_folder": "/tmp/korri-stream-cadence-sender-3au2t8lz",
+    "run_folder_bytes": 26093583,
+    "run_folder_removed": true,
+    "stray_processes_killed": [],
+    "remaining_processes": [],
+    "other_processes": [],
+    "new_input_devices": [],
+    "gone_input_devices": [],
+    "input_rule": "record",
+    "errors": []
+  },
+  "cleanup_errors": []
+}

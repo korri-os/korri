@@ -1,0 +1,15 @@
+{
+  "id": "@korri:viewer",
+  "package": "/nix/store/6ifslzp70aj95xfkzjrvginl47x7vjm2-korri-plugin",
+  "provenance": {
+    "kind": "Sideload",
+    "archive_sha256": "623c4dbd7de9fac824cb5dd9fa13a2ececfa0f3c269b90314f1bac89a13534f2",
+    "platform": "aarch64-linux",
+    "signed": true
+  },
+  "approval": "d89823b5226a203a95650745e70303b1d2ea852e8a0ec1db531ea1229d65636b",
+  "desired": {
+    "state": "Enabled"
+  },
+  "previous": null
+}

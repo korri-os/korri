@@ -1,0 +1,151 @@
+{
+  "device": "tabs6",
+  "package": "/nix/store/6ifslzp70aj95xfkzjrvginl47x7vjm2-korri-plugin",
+  "picture": "fail",
+  "korrid_launch": "deferred_to_land",
+  "controller_through_korrid": "deferred_to_land",
+  "raw_controller": "skipped: avoid adding a source during another session's input work",
+  "frame_counts": null,
+  "dropped_frames": null,
+  "screenshots": [],
+  "sender_begin": {
+    "live_games": [],
+    "input_rule": "record"
+  },
+  "error": "pairing failed",
+  "sender_cleanup": {
+    "live_games": [],
+    "product_units": {
+      "at_start": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 7961083
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 211930702886
+        },
+        "korri-clock-governor.service": {
+          "pid": 1061,
+          "started": 7962579
+        },
+        "korri-compositor.service": {
+          "pid": 1352929,
+          "started": 404824101886
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 1571090,
+          "started": 342814110000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 7963516
+        },
+        "korri-limits.service": {
+          "pid": 1063,
+          "started": 7965368
+        },
+        "korri-local-signer.service": {
+          "pid": 1571150,
+          "started": 342814382377
+        },
+        "korri-plugin-admin.service": {
+          "pid": 1269956,
+          "started": 137510202562
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 131413475918
+        },
+        "korri-shell.service": {
+          "pid": 1507962,
+          "started": 412370902710
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 106669,
+          "started": 5757180000
+        },
+        "korri-sunshine.service": {
+          "pid": 1352991,
+          "started": 404824516324
+        },
+        "korrid.service": {
+          "pid": 1507938,
+          "started": 412370844567
+        }
+      },
+      "at_end": {
+        "korri-boot-splash-handoff.service": {
+          "pid": 0,
+          "started": 7961083
+        },
+        "korri-bundle-selector.service": {
+          "pid": 0,
+          "started": 211930702886
+        },
+        "korri-clock-governor.service": {
+          "pid": 1061,
+          "started": 7962579
+        },
+        "korri-compositor.service": {
+          "pid": 1352929,
+          "started": 404824101886
+        },
+        "korri-input-seat-receiver.service": {
+          "pid": 1571090,
+          "started": 342814110000
+        },
+        "korri-input-source-guard.service": {
+          "pid": 0,
+          "started": 7963516
+        },
+        "korri-limits.service": {
+          "pid": 1063,
+          "started": 7965368
+        },
+        "korri-local-signer.service": {
+          "pid": 1571150,
+          "started": 342814382377
+        },
+        "korri-plugin-admin.service": {
+          "pid": 1269956,
+          "started": 137510202562
+        },
+        "korri-plugin-host.service": {
+          "pid": 0,
+          "started": 131413475918
+        },
+        "korri-shell.service": {
+          "pid": 1507962,
+          "started": 412370902710
+        },
+        "korri-sunshine-input-setup.service": {
+          "pid": 106669,
+          "started": 5757180000
+        },
+        "korri-sunshine.service": {
+          "pid": 1352991,
+          "started": 404824516324
+        },
+        "korrid.service": {
+          "pid": 1507938,
+          "started": 412370844567
+        }
+      },
+      "changed": []
+    },
+    "pass": true,
+    "pids_unchanged": {},
+    "run_folder": "/tmp/korri-stream-cadence-sender-hb8ric5w",
+    "run_folder_bytes": 2275693,
+    "run_folder_removed": true,
+    "stray_processes_killed": [],
+    "remaining_processes": [],
+    "other_processes": [],
+    "new_input_devices": [],
+    "gone_input_devices": [],
+    "input_rule": "record",
+    "errors": []
+  },
+  "cleanup_errors": []
+}

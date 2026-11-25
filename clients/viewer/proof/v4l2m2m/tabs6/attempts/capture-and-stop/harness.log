@@ -1,0 +1,21 @@
+warning: Nix search path entry '/nix/var/nix/profiles/per-user/root/channels' does not exist, ignoring
+warning: Nix search path entry '/nix/var/nix/profiles/per-user/root/channels' does not exist, ignoring
+clients/viewer/proof/v4l2m2m/tabs6/viewer-command.json
+warning: Nix search path entry '/nix/var/nix/profiles/per-user/root/channels' does not exist, ignoring
+cat: /proc/917138/task/917138/children: No such file or directory
+clients/viewer/proof/v4l2m2m/tabs6/stream-5.png
+bash: line 60: 917138 Killed                     setsid runuser -u korri -- env HOME=/home/korri DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1 KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT=1 KORRI_MOONLIGHT_SERVER_CERTIFICATE="$root/server.pem" SDL_AUDIODRIVER=pulseaudio PULSE_SERVER=unix:/run/user/1000/pulse/native CADENCE_FRAME_TIMES="$root/frame-times.csv" CADENCE_DUMP="$root/recording.video" "$@" > "$root/viewer.log" 2>&1
+warning: Nix search path entry '/nix/var/nix/profiles/per-user/root/channels' does not exist, ignoring
+clients/viewer/proof/v4l2m2m/tabs6/stream-37.png
+Traceback (most recent call last):
+  File "/home/simonwjackson/code/sandbox/korri/.worktrees/c-ecbe67d82e69e36a4937c66992ed23081cbee749c69379f6100f945b138ab87a/clients/viewer/proof/v4l2m2m/picture.py", line 343, in <module>
+    main()
+    ~~~~^^
+  File "/home/simonwjackson/code/sandbox/korri/.worktrees/c-ecbe67d82e69e36a4937c66992ed23081cbee749c69379f6100f945b138ab87a/clients/viewer/proof/v4l2m2m/picture.py", line 278, in main
+    decoded = bar.read(image, bar.search(image))
+                              ~~~~~~~~~~^^^^^^^
+  File "/home/simonwjackson/code/sandbox/korri/.worktrees/c-ecbe67d82e69e36a4937c66992ed23081cbee749c69379f6100f945b138ab87a/nix/stream-cadence/bar.py", line 119, in search
+    raise ValueError(
+        "ID bar sync pattern not found; inspect discovered output transform"
+    )
+ValueError: ID bar sync pattern not found; inspect discovered output transform

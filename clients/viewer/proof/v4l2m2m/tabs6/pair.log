@@ -1,0 +1,9 @@
+start: Start at 9181868.684 ms
+start: http serverinfo answered at 9182353.851 ms (connected 16.2 ms, first byte 52.0 ms, total 52.1 ms)
+Please enter the following PIN on the target PC: [not shown]
+start: http pair answered at 9182369.284 ms (connected 2.0 ms, first byte 14.8 ms, total 15.0 ms)
+start: http pair answered at 9182375.025 ms (connected 2.0 ms, first byte 5.1 ms, total 5.2 ms)
+start: http pair answered at 9182383.876 ms (connected 4.7 ms, first byte 8.5 ms, total 8.7 ms)
+start: http pair answered at 9182398.031 ms (connected 3.1 ms, first byte 7.2 ms, total 7.4 ms)
+start: https pair answered at 9182430.418 ms (connected 1.9 ms, TLS done 26.9 ms, first byte 31.9 ms, total 32.1 ms)
+Successfully paired

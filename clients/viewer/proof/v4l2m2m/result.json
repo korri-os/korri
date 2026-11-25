@@ -1,0 +1,30 @@
+{
+  "issue": 616,
+  "adr": "0063",
+  "date_utc": "2026-11-24",
+  "overall": "partial_acceptance_picture_only_on_tabs6",
+  "tabs6": {
+    "picture_verdict": "pass",
+    "record": "tabs6/result.json"
+  },
+  "op6": {
+    "picture_verdict": null,
+    "status": "not_installed_owner_approved_tabs6_only",
+    "record": "op6/result.json"
+  },
+  "dry_run": {
+    "run": 45497299588,
+    "conclusion": "success",
+    "record": "dry-run-result.json"
+  },
+  "public_publication": false,
+  "default_branch_push": false,
+  "system_deployment": false,
+  "remaining": [
+    "land_Core_and_publisher_changes",
+    "production_korrid_launch_and_controller_check_deferred_to_land",
+    "separate_owner_decision_before_op6_install",
+    "authorized_pinned_publication_and_catalog_device_selection",
+    "performance_and_acoustic_acceptance_not_claimed"
+  ]
+}

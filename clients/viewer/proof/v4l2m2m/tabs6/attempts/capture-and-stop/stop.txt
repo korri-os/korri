@@ -1,0 +1,4 @@
+forced_stop
+exit=137
+first_picture_s=3
+end_s=93

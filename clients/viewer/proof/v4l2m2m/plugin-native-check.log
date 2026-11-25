@@ -1,0 +1,44 @@
+got build log for '/nix/store/6xyhsq2aiag7nv0va2y36i9qvh1hh6fj-korri-viewer-native-check' from 'daemon'
+https://korri-os.github.io/nix-cache/4iyzklgfhxpkr5c0cp0sv8k7dwpjlcls.narinfo
+https://korri-os.github.io/nix-cache/c055ydb1jbiwssw5ai0a3vh04zqka06n.narinfo
+https://korri-os.github.io/nix-cache/qbi9s7xmaf6pw4cdmpmysypcwgw73cw1.narinfo
+https://cache.nixos.org/4iyzklgfhxpkr5c0cp0sv8k7dwpjlcls.narinfo
+https://cache.nixos.org/c055ydb1jbiwssw5ai0a3vh04zqka06n.narinfo
+https://cache.nixos.org/qbi9s7xmaf6pw4cdmpmysypcwgw73cw1.narinfo
+https://korri-os.github.io/nix-cache/6xyhsq2aiag7nv0va2y36i9qvh1hh6fj.narinfo
+https://cache.nixos.org/6xyhsq2aiag7nv0va2y36i9qvh1hh6fj.narinfo
+[0;39mtrue[0m
+[0;39mtrue[0m
+User=korri
+Type=exec
+Group=korri
+ExecStartPre=+/nix/store/m2ar7c5ylhgg8vp7dfdx9bhjfvki5xdg-coreutils-9.12/bin/install -d -m 0700 -o korri -g korri /home/korri/.config/moonlight
+ExecStart=/nix/store/m2ar7c5ylhgg8vp7dfdx9bhjfvki5xdg-coreutils-9.12/bin/sleep infinity
+korri-viewer 0.1.0 (GPL-3.0-or-later)
+RUST CRATES IN THE BINARY (aarch64-unknown-linux-gnu)
+korri-viewer-source/BUILDING.txt
+korri-viewer-source/licenses/NOTICES.txt
+korri-viewer-source/korri/clients/viewer/default.nix
+korri-viewer-source/korri/clients/viewer/notices.nix
+korri-viewer-source/korri/clients/viewer/Cargo.lock
+korri-viewer-source/korri/clients/viewer/LICENSE
+korri-viewer-source/korri/clients/viewer/src/main.rs
+korri-viewer-source/korri/contracts/viewer/src/lib.rs
+korri-viewer-source/moonlight-common-c/src/Limelight.h
+korri-viewer-source/moonlight-common-c/CMakeLists.txt
+korri-viewer-source/korri/clients/viewer/vendor/README.md
+korri-viewer-source/korri/clients/viewer/vendor/nightjar/protocol/client/Cargo.toml
+--offline in korri/clients/viewer with
+korri-viewer-source/korri/clients/viewer/ffmpeg/0001-v4l2-request.patch
+[0m[1mbun test [0m[2mv1.4.2 (744846f84)[0m
+[0m
+settings-check/viewer/settings.test.ts:
+[0m[32m✓[0m [0mKorri viewer settings[2m >[0m[1m declare the viewer's own runner, program and setup unit[0m [0m[2m[[1m38.58ms[0m[2m][0m
+[0m[32m✓[0m [0mKorri viewer settings[2m >[0m[1m describe Moonlight's schema and revision[0m [0m[2m[[1m55.91ms[0m[2m][0m
+[0m[32m✓[0m [0mKorri viewer settings[2m >[0m[1m validate and render as Moonlight does, value for value[0m [0m[2m[[1m19.71ms[0m[2m][0m
+[0m[32m✓[0m [0mKorri viewer settings[2m >[0m[1m answer only for the viewer's runner[0m [0m[2m[2.22ms[0m[2m][0m
+
+[0m[32m 4 pass[0m
+[0m[2m 0 fail[0m
+ 50 expect() calls
+Ran 4 tests across 1 file. [0m[2m[[1m201.00ms[0m[2m][0m

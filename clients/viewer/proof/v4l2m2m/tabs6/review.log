@@ -1,0 +1,18 @@
+Build locally, then review and approve a signed archive on a device
+
+Usage: korri plugins sideload [OPTIONS] [dir]
+
+Arguments:
+  [dir]  [default: .]
+
+Options:
+      --json                          Print unchanged RPC responses as JSON
+      --self-contained                Include shared packages for installation without network access
+      --upload <ID>                   Review or install this existing upload without building or sending it again
+      --yes                           Confirm destructive actions; never grants plugin permissions
+      --device <NAME_OR_KEY>          Device performing the operation, not a streaming route
+      --platform <NIX_SYSTEM_OR_ANY>  Target platform, or any for a source-only plugin; peers do not report platforms yet
+      --approval <REVIEWED_DIGEST>    
+      --socket <PATH>                 Local korrid person socket
+  -h, --help                          Print help
+[{"_tag":"system.plugins.archive.inspect","outcome":{"_tag":"Ok","payload":{"publisher":{"namespace":"@korri","state":"Bound","fingerprint":"korri-plugins-1 qlK5 Mgb3 dYhF 76WC"},"id":"@korri:viewer","title":"Korri viewer","approval":"d89823b5226a203a95650745e70303b1d2ea852e8a0ec1db531ea1229d65636b","warning":"NATIVE AUTHORITY REQUEST: approval is limited to this exact plugin build. unit korri-viewer-setup: privileged directives [User=korri, Group=korri, ExecStartPre=+/nix/store/m2ar7c5ylhgg8vp7dfdx9bhjfvki5xdg-coreutils-9.12/bin/install -d -m 0700 -o korri -g korri /home/korri/.config/moonlight, UMask=0077, ProtectHome=read-only, ReadWritePaths=/home/korri/.config, RestrictAddressFamilies=AF_UNIX]; PRIVILEGED HELPER: + commands bypass the service sandbox and run with root authority. capabilities [none]; devices [none].","ports":{"allowedTCPPorts":[],"allowedUDPPorts":[]},"nativeUnits":["korri-viewer-setup"],"brings":[]}}}]

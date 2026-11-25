@@ -1,0 +1,3 @@
+{"device": "tabs6", "sha256": "623c4dbd7de9fac824cb5dd9fa13a2ececfa0f3c269b90314f1bac89a13534f2", "size": 43211264, "uploadId": "b5052cb37bcbd1d7e64c580c863625b225bdc71b1d75a3b76f9625d1cf001892"}
+Staged 43211264 bytes. No approval or installation performed.
+ssh -p 2222 root@tabs6.local korri --json --device tabs6 plugins sideload --upload b5052cb37bcbd1d7e64c580c863625b225bdc71b1d75a3b76f9625d1cf001892

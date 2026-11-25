@@ -1,0 +1,166 @@
+== UTC ==
+2026-11-24T19:59:23+00:00
+== system ==
+/nix/store/xrzhf1pdq0vxgxn0wxa6dq8hg7nq4q4v-nixos-system-op6-26.11.20260923.4975466
+== thermal zones (millidegrees C) ==
+/sys/class/thermal/thermal_zone0 aoss0-thermal 31200 
+/sys/class/thermal/thermal_zone1 cpu0-thermal 32800 
+/sys/class/thermal/thermal_zone10 cpu7-thermal 31200 
+/sys/class/thermal/thermal_zone11 gpu-top-thermal 29200 
+/sys/class/thermal/thermal_zone12 gpu-bottom-thermal 29500 
+/sys/class/thermal/thermal_zone13 aoss1-thermal 31200 
+/sys/class/thermal/thermal_zone14 q6-modem-thermal 29800 
+/sys/class/thermal/thermal_zone15 mem-thermal 30800 
+/sys/class/thermal/thermal_zone16 wlan-thermal 30800 
+/sys/class/thermal/thermal_zone17 q6-hvx-thermal 29800 
+/sys/class/thermal/thermal_zone18 camera-thermal 30800 
+/sys/class/thermal/thermal_zone19 video-thermal 30200 
+/sys/class/thermal/thermal_zone2 cpu1-thermal 31800 
+/sys/class/thermal/thermal_zone20 modem-thermal 29800 
+/sys/class/thermal/thermal_zone21 pm8998-thermal 29603 
+/sys/class/thermal/thermal_zone22 bq27411-0 26000 
+/sys/class/thermal/thermal_zone3 cpu2-thermal 32500 
+/sys/class/thermal/thermal_zone4 cpu3-thermal 32800 
+/sys/class/thermal/thermal_zone5 cluster0-thermal 32800 
+/sys/class/thermal/thermal_zone6 cluster1-thermal 33500 
+/sys/class/thermal/thermal_zone7 cpu4-thermal 32500 
+/sys/class/thermal/thermal_zone8 cpu5-thermal 32100 
+/sys/class/thermal/thermal_zone9 cpu6-thermal 32100 
+== decoder nodes ==
+/sys/class/video4linux/video0 msm_vfe0_video0
+/sys/class/video4linux/video1 msm_vfe0_video1
+/sys/class/video4linux/video10 msm_vfe2_video2
+/sys/class/video4linux/video11 msm_vfe2_video3
+/sys/class/video4linux/video12 qcom-venus-encoder
+/sys/class/video4linux/video13 qcom-venus-decoder
+/sys/class/video4linux/video2 msm_vfe0_video2
+/sys/class/video4linux/video3 msm_vfe0_video3
+/sys/class/video4linux/video4 msm_vfe1_video0
+/sys/class/video4linux/video5 msm_vfe1_video1
+/sys/class/video4linux/video6 msm_vfe1_video2
+/sys/class/video4linux/video7 msm_vfe1_video3
+/sys/class/video4linux/video8 msm_vfe2_video0
+/sys/class/video4linux/video9 msm_vfe2_video1
+== running services ==
+active
+active
+== CLI ==
+Control Korri on this device
+
+Usage: korri [OPTIONS] [COMMAND]
+
+Commands:
+  version          Show the installed CLI version without contacting korrid
+  completion       Generate shell completion without contacting korrid
+  status           Show live Korri state
+  devices          List and name verified devices of this owner
+  library          Manage library folders, games and attention
+  play             Ask korrid to launch a library game; acceptance is not gameplay readiness
+  leave            Leave the exact observed live session without ending it
+  resume           Resume the exact observed live session
+  end              End a live session or resolve an ended failed or blocked host session
+  launch-settings  Show effective launch values and edit authorized settings
+  get              Download a library game, or find and acquire it from a provider
+  downloads        Inspect game artifacts and provider jobs without mixing their IDs
+  controllers      Configure Korri controller seats
+  plugins          Review and manage plugins without bypassing host policy
+  wifi             Manage this device's Wi-Fi through korrid
+  saves            Read and select this person's save snapshots on this device
+  identity         Manage this device's person key and person name
+  join             Join a new device to this person's devices with a 10-digit code
+  setup            Start or rerun setup using the shell's network, settings and completion calls; keep the current identity unless explicitly switched
+  help             Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                  Print unchanged RPC responses as JSON
+      --yes                   Confirm destructive actions; never grants plugin permissions
+      --device <NAME_OR_KEY>  Device performing the operation, not a streaming route
+      --socket <PATH>         Local korrid person socket
+  -h, --help                  Print help
+  -V, --version               Print version
+Review and manage plugins without bypassing host policy
+
+Usage: korri plugins [OPTIONS] <COMMAND>
+
+Commands:
+  list          List installed plugins, or the catalog at an exact repository URL
+  review        Inspect publisher policy, native units, ports and dependencies before approval
+  install       Install disabled using the exact reviewed approval digest; --yes never grants permissions
+  update        Move an installed plugin to another release from the repository it came from; it keeps its on/off state
+  on            Enable an already-approved plugin; the host rechecks its approval
+  off           Disable an installed plugin
+  repositories  Manage catalog sources; removing a source retains its installed plugins
+  publishers    List this device's bound and trusted publishers
+  trust         Trust a publisher on this device with its full Nix public key
+  revoke        Revoke a publisher pin; its plugins can no longer start
+  credential    Show, set or clear the secret a plugin uses, such as an API key; never show its value
+  new           Start a plugin with its own TypeScript contract; no daemon needed
+  build         Build locally with Nix and print the outputs; no daemon needed
+  publish       Build and sign a repository folder; does not upload it
+  sideload      Build locally, then review and approve a signed archive on a device
+  help          Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                  Print unchanged RPC responses as JSON
+      --yes                   Confirm destructive actions; never grants plugin permissions
+      --device <NAME_OR_KEY>  Device performing the operation, not a streaming route
+      --socket <PATH>         Local korrid person socket
+  -h, --help                  Print help
+List installed plugins, or the catalog at an exact repository URL
+
+Usage: korri plugins list [OPTIONS] [SOURCE_URL]
+
+Arguments:
+  [SOURCE_URL]  
+
+Options:
+      --json                  Print unchanged RPC responses as JSON
+      --yes                   Confirm destructive actions; never grants plugin permissions
+      --device <NAME_OR_KEY>  Device performing the operation, not a streaming route
+      --socket <PATH>         Local korrid person socket
+  -h, --help                  Print help
+== installed plugins ==
+{"_tag":"system.plugins.repositories","outcome":{"_tag":"Ok","payload":{"official":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","userAdded":["https://github.com/korri-os/plugins/releases/download/build-a2e9fbe57689-velvet-art/catalog.json","https://github.com/korri-os/plugins/releases/download/build-dab3e5ee8a32-steam-engine-6/catalog.json","https://github.com/korri-os/plugins/releases/download/build-0695df1fecda-steam-engine-9/catalog.json"],"repositoryInstalls":[{"id":"@korri:beetle-ngp","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:beetle-pce-fast","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:beetle-wswan","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:fake08","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:fbneo","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:gambatte","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:gamescope","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:genesis-plus-gx","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:gw","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:handy","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:homebrewhub","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:mgba","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:moonlight","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:nestopia","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:pcsx-rearmed","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:pico8","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:picodrive","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:prosystem","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:retroarch","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:retrobrews","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:snes9x","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:solarus","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:ssh","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:starter-pack","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":false},{"id":"@korri:steam","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-0695df1fecda-steam-engine-9/catalog.json","releaseVersion":"build-0695df1fecda-steam-engine-9","enabled":true},{"id":"@korri:stella","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true},{"id":"@korri:zquest-classic","sourceUrl":"https://github.com/korri-os/plugins/releases/download/build-a7448c0a8ea2-viewer-rust-audio/catalog.json","releaseVersion":"build-a7448c0a8ea2-viewer-rust-audio","enabled":true}],"otherInstalls":[{"id":"@korri:fex","title":"FEX","enabled":true},{"id":"@korri:proton","title":"Proton","enabled":true}]}}}
+== session status ==
+bash: line 27: jq: command not found
+
+thread 'main' (3851) panicked at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/io/stdio.rs:1166:9:
+failed printing to stdout: Broken pipe (os error 32)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+== existing receipt directories ==
+/var/lib/korri-plugin-host/korri-plugin-11378d4830c98e717605c494bb58bf4bfcd5e49e790780be77813d9fd59fa19a/selection.json
+/var/lib/korri-plugin-host/korri-plugin-1795826a15fdd93d1e3faea2a59a6a5bab8319fa05ca195d92e3fa39ced791e2/selection.json
+/var/lib/korri-plugin-host/korri-plugin-182c19e467aabba9728c3de955f7fa4abb08c2b94d194d9853683089b4a59259/selection.json
+/var/lib/korri-plugin-host/korri-plugin-186b22949ee1eb207b16cd9f8a7eb5a734b04c911346fddafaaa176e9d680279/selection.json
+/var/lib/korri-plugin-host/korri-plugin-191ce9cf1c3fdbaaa30811125ee214da2e1b31db6f2213997019dd89643fb34e/selection.json
+/var/lib/korri-plugin-host/korri-plugin-26a632d52815d138da4918a5f59ab3810c5604a8e8ff620657bbe6c70e73168d/selection.json
+/var/lib/korri-plugin-host/korri-plugin-3b3a41970c4fcebfb538e4af666ffd3d51f138c247c5871d878e7b5aa0df5b22/selection.json
+/var/lib/korri-plugin-host/korri-plugin-479f677ec3c4c485d6dd9e17f40904b5f834ccc0dab44ef269c655b0bcb3cc5b/selection.json
+/var/lib/korri-plugin-host/korri-plugin-4ce5297595c830f01bb115a2e3fbd370207b7de4301636b55251cce391b911d2/selection.json
+/var/lib/korri-plugin-host/korri-plugin-5609d27276d06475e934a3ab0ac8e8ff361861b8c094773e29c5dce9adf11c85/selection.json
+/var/lib/korri-plugin-host/korri-plugin-58c0bb501afddd23356b8445d00805e57c18deee9d1eadf8fc4b06c53b74f809/selection.json
+/var/lib/korri-plugin-host/korri-plugin-5e94ead1d5d15daa4db6f745d6eec1e7083df702c74c228defc6e4319086d903/selection.json
+/var/lib/korri-plugin-host/korri-plugin-5fda77533f709eee057137e8d93f78da03bd4838295d5f334e31a1a73ada4c4a/selection.json
+/var/lib/korri-plugin-host/korri-plugin-74f8b9373f75f7d5c9ed8d5a0febb735dc334e639e6d8969c2318da894692ae0/selection.json
+/var/lib/korri-plugin-host/korri-plugin-85ec34baca48bcbeb3612e854c7cac50e41de915ebef2aece16b4580d0230956/selection.json
+/var/lib/korri-plugin-host/korri-plugin-89167f191fb9c6433f0bf6450298adc8dec8227f5318fe8457531bf2b4ce4043/selection.json
+/var/lib/korri-plugin-host/korri-plugin-b0c4d061fceb448374ed954697357aa54dd5d763da0957eef359adc6dee3d6de/selection.json
+/var/lib/korri-plugin-host/korri-plugin-b82b61fb34daa0849e28608254b8f767e08e11c16fda7aad1b48278916c1d447/selection.json
+/var/lib/korri-plugin-host/korri-plugin-bb74fd03bf97d3b10e2aae97e0d84d36e8f033d81265114719d8c6c868d17c6a/selection.json
+/var/lib/korri-plugin-host/korri-plugin-c7c84fe62887843c97431b110e2309ff939a4c4249752747a7ef20d262faa58a/selection.json
+/var/lib/korri-plugin-host/korri-plugin-c9382bb9fc86a8eae649e5c408272f4a16eb3903fb68b7edca8bca811599f7ee/selection.json
+/var/lib/korri-plugin-host/korri-plugin-d3bd5b1ef0c51771ea6b5e3c60635bb595b9a46dbbade349e60beeed877ca8a4/selection.json
+/var/lib/korri-plugin-host/korri-plugin-e8bc529bbb9a0ffc1bf05dc3fc9036285ad3cbc2131548ebc4d8a4b17cb02a2e/selection.json
+/var/lib/korri-plugin-host/korri-plugin-f407cf1b9edeab7da96cc83df457a8b141f5e442ce403ed5a61909e6871fe171/selection.json
+/var/lib/korri-plugin-host/korri-plugin-f6670e1f775be3731e836b777db590a15d935c20bce991bbeb2f4316a7ff47c3/selection.json
+/var/lib/korri-plugin-host/korri-plugin-ffcd11d83e4022547c07118f4d921b71ff4d056f8f2433290f91b136833ce679/selection.json
+/var/lib/korri-plugin-host/korri-plugin-bf8a2e7ae8b462321f88a44a74ed79b6b5e2edaedaf2c69beb5db1833dc59d94/selection.json
+/var/lib/korri-plugin-host/korri-plugin-f4b88e9a79c2dcaf9b136829590bcc72b5fe1bf1bd62836d3218927400df738d/selection.json
+/var/lib/korri-plugin-host/korri-plugin-23115467c957d591834e001e3bf49396555fff118952ec4694bd79b3f7c4b29d/selection.json
+== Nix device policy ==
+builders = 
+fallback = false
+max-jobs = 0
+require-sigs = true
+substituters = https://cache.nixos.org/ https://korri-os.github.io/nix-cache/
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= korri-cache-fuji-1:E8MOww6FoNRlVavEll8JPc2XHYC4HhZnrhqQcd64OtQ= korri-cache-zao-1:thKjQnMnPl8AqTuZWJTn+ej9BORTPqzleGue4ZfJ2u4= korri-cache-ci-1:iH8gsPMtGrreeuXt2kt6M2ca+y4u/dO+T2km6AUuI8c= korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=

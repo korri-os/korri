@@ -1,0 +1,93 @@
+start: Start at 8381228.590 ms
+start: http serverinfo answered at 8381238.363 ms (connected 1.6 ms, first byte 5.2 ms, total 5.3 ms)
+start: https serverinfo answered at 8381257.563 ms (connected 1.8 ms, TLS done 15.3 ms, first byte 18.8 ms, total 19.1 ms)
+start: paired at 8381257.647 ms
+start: https applist answered at 8381273.391 ms (connected 1.4 ms, TLS done 11.9 ms, first byte 15.4 ms, total 15.7 ms)
+start: picture and input ready at 8381273.509 ms
+start: https launch answered at 8381844.935 ms (connected 1.5 ms, TLS done 12.7 ms, first byte 570.7 ms, total 571.0 ms)
+Platform V4L2 M2M + SDL NV12
+RTSP port: 54506
+Initializing platform...start: core platform init begins at 8381845.232 ms
+start: core platform init done at 8381845.322 ms
+done
+Resolving host name...start: core name resolution begins at 8381845.442 ms
+start: core name resolution done at 8381849.252 ms
+done
+Initializing audio stream...start: core audio stream init begins at 8381849.402 ms
+start: core audio stream init done at 8381850.352 ms
+done
+Starting RTSP handshake...start: core RTSP handshake begins at 8381850.484 ms
+Reference frame invalidation is not supported by this host
+start: RTSP DESCRIBE answered at 8381859.976 ms
+Audio port: 54496
+start: RTSP SETUP audio answered at 8381864.522 ms
+Video port: 54494
+start: RTSP SETUP video answered at 8381869.599 ms
+Control port: 54495
+start: RTSP SETUP control answered at 8381874.221 ms
+start: core RTSP handshake done at 8381888.837 ms
+done
+Initializing control stream...start: core control stream init begins at 8381889.039 ms
+start: core control stream init done at 8381889.131 ms
+done
+Initializing video stream...start: core video stream init begins at 8381889.304 ms
+start: core video stream init done at 8381889.849 ms
+done
+Initializing input stream...start: core input stream init begins at 8381890.024 ms
+start: core input stream init done at 8381890.112 ms
+done
+Starting control stream...start: core control stream start begins at 8381890.283 ms
+start: core control stream start done at 8381894.491 ms
+done
+Starting video stream...start: core video stream start begins at 8381894.670 ms
+v4l2m2m: setup: attached AV_HWDEVICE_TYPE_DRM render node
+[h264_v4l2m2m @ 0xbbe6d98f90f0] Using device /dev/video0
+[h264_v4l2m2m @ 0xbbe6d98f90f0] driver 'iris_driver' on card 'Iris Decoder' in mplane mode
+[h264_v4l2m2m @ 0xbbe6d98f90f0] requesting formats: output=H264/none capture=NV12/drm_prime
+v4l2m2m: setup: stream=2560x1600 display[0]_bounds=2560x1600@0,0 displays=1
+v4l2m2m: display thread: SDL renderer output=2560x1600 display=0 driver=x11
+v4l2m2m: setup: decoder=h264_v4l2m2m presenter=sdl-nv12 2560x1600
+start: core video stream start done at 8382790.506 ms
+done
+Starting audio stream...start: core audio stream start begins at 8382790.731 ms
+Received first video packet after 0 ms
+start: first video packet at 8382827.396 ms
+Leaving speculative RFI mode after OOS video data at frame 1
+v4l2m2m: submit: first frame from decoder format=nv12 (DRM_PRIME=no)
+v4l2m2m: draw_frame: #1 size=2560x1600 fmt=nv12 linesize=[2560,2560,0,0]
+start: core audio stream start done at 8383065.942 ms
+done
+Starting input stream...start: core input stream start begins at 8383066.093 ms
+start: core input stream start done at 8383066.472 ms
+done
+v4l2m2m: presentation(SDL): video=2560x1600 output=2560x1600 dst=0,0 2560x1600 display=0
+v4l2m2m: SDL renderer: created NV12 texture 2560x1600
+v4l2m2m: draw_frame: #2 size=2560x1600 fmt=nv12 linesize=[2560,2560,0,0]
+v4l2m2m: draw_frame: #3 size=2560x1600 fmt=nv12 linesize=[2560,2560,0,0]
+v4l2m2m: window event: type=5 data=1280,1600 display=0
+v4l2m2m: window event: type=6 data=1280,1600 display=0
+v4l2m2m: presentation(SDL): video=2560x1600 output=1280x1600 dst=0,400 1280x800 display=0
+Received first audio packet after 300 ms
+start: first audio packet at 8383386.735 ms
+Initial audio resync period: 500 milliseconds
+Unrecoverable frame 440: 17+0=17 received < 96 needed
+Network dropped 7 frames (frames 440 to 446)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Unrecoverable frame 2770: 17+0=17 received < 96 needed
+Network dropped 8 frames (frames 2770 to 2777)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Unrecoverable frame 5104: 17+0=17 received < 96 needed
+Network dropped 8 frames (frames 5104 to 5111)
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
