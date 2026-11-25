@@ -73,6 +73,14 @@ in
       testProgram = ../tests/inputplumber-reattach-vm.py;
       captureProof = true;
     };
+    inputplumber-udev-startup-vm = import ./inputplumber-adoption-vm-test.nix {
+      module = korriInputModule;
+      inherit pkgs inputdPackage inputplumberKorri;
+      testProgram = ../tests/inputplumber-udev-startup-vm.py;
+      captureProof = true;
+      udevHold = true;
+      name = "korri-inputplumber-udev-startup";
+    };
     inputplumber-device-paths-vm = import ./inputplumber-device-paths-vm-test.nix {
       module = korriInputModule;
       inherit pkgs inputdPackage inputplumberKorri;

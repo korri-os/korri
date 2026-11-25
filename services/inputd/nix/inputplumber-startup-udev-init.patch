@@ -1,0 +1,175 @@
+Subject: [PATCH] input: wait for udev initialization in startup discovery
+
+Startup discovery added every hidraw and evdev device the udev enumerator
+returned at once. A node can exist before udevd finishes its rules, e.g.
+when a USB device re-enumerates while the daemon starts. Such a device has
+only its kernel uevent properties, and UdevDevice caches that snapshot, so
+configs that match udev properties (ID_INPUT_JOYSTICK, ID_PATH) never match
+it. No later event corrects it: the devnode watcher only sees creates.
+
+Add initialized devices at once as before. Re-probe the rest by syspath
+until udev initializes them, then add them once with fresh properties. Drop
+a device that is removed while waiting. Bound the wait: past the deadline a
+device is added as is, which is what upstream did immediately.
+
+Observed on a Galaxy Tab S6: a Razer Kishi V2 re-enumerated 0.5 s before
+InputPlumber started; its udev database was written 1.9 s after the scan,
+the cached properties held 5 keys and no composite was created.
+Regression coverage uses real USB gadget, delayed udev rules and DBus in
+Korri's inputplumber-udev-startup VM test.
+
+diff --git a/src/input/manager.rs b/src/input/manager.rs
+index 2e847d7..3fefc17 100644
+--- a/src/input/manager.rs
++++ b/src/input/manager.rs
+@@ -59,6 +59,8 @@ use crate::watcher::WatchEvent;
+ const DEV_PATH: &str = "/dev";
+ const INPUT_PATH: &str = "/dev/input";
+ const BUFFER_SIZE: usize = 20480;
++/// Upper bound for startup discovery to wait for udev to initialize a device.
++const STARTUP_UDEV_WAIT: Duration = Duration::from_secs(10);
+ const VIRT_DEVICE_WHITELIST: &[&str] = &[
+     "Sunshine PS5 (virtual) pad",
+     "Sunshine X-Box One (virtual) pad",
+@@ -1625,12 +1627,19 @@ impl Manager {
+     async fn discover_all_devices(
+         cmd_tx: &mpsc::Sender<ManagerCommand>,
+     ) -> Result<(), Box<dyn Error>> {
+-        let hidraw_devices = udev::discover_devices("hidraw")?;
+-        let hidraw_devices = hidraw_devices.into_iter().map(|dev| dev.into()).collect();
+-        Manager::discover_devices(cmd_tx, hidraw_devices).await?;
+-        let event_devices = udev::discover_devices("input")?;
+-        let event_devices = event_devices.into_iter().map(|dev| dev.into()).collect();
+-        Manager::discover_devices(cmd_tx, event_devices).await?;
++        // A hidraw or evdev node can exist before udevd has finished its rules,
++        // e.g. when a USB device re-enumerates while this daemon starts. Until
++        // udev initializes it, the device has only its kernel uevent properties
++        // (no ID_INPUT_JOYSTICK, ID_PATH, ...). The devnode watcher waits for
++        // initialization; startup discovery must too, or property matchers never
++        // see the device and no later event corrects the cached snapshot.
++        let mut pending = Vec::new();
++        for subsystem in ["hidraw", "input"] {
++            let (ready, waiting) = split_initialized(udev::discover_devices(subsystem)?);
++            Manager::discover_devices(cmd_tx, ready.into_iter().map(|dev| dev.into()).collect())
++                .await?;
++            pending.extend(waiting);
++        }
+         let iio_devices = udev::discover_devices("iio")?;
+         let iio_devices = iio_devices.into_iter().map(|dev| dev.into()).collect();
+         Manager::discover_devices(cmd_tx, iio_devices).await?;
+@@ -1640,6 +1649,43 @@ impl Manager {
+         let tty_devices = udev::discover_devices("tty")?;
+         let tty_devices = tty_devices.into_iter().map(|dev| dev.into()).collect();
+         Manager::discover_devices(cmd_tx, tty_devices).await?;
++        Manager::discover_pending_devices(cmd_tx, pending).await?;
++
++        Ok(())
++    }
++
++    /// Add devices that were not yet initialized by udev at startup, each once
++    /// and with properties re-read after initialization. A device removed while
++    /// waiting is dropped. The wait is bounded: past the deadline a device is
++    /// added with whatever udev has by then, which is what upstream did at once.
++    async fn discover_pending_devices(
++        cmd_tx: &mpsc::Sender<ManagerCommand>,
++        mut pending: Vec<PathBuf>,
++    ) -> Result<(), Box<dyn Error>> {
++        let deadline = tokio::time::Instant::now() + STARTUP_UDEV_WAIT;
++        while !pending.is_empty() {
++            let timed_out = tokio::time::Instant::now() >= deadline;
++            let (ready, waiting) = sort_pending(pending, |syspath| {
++                match ::udev::Device::from_syspath(syspath) {
++                    Err(_) => {
++                        log::debug!("Device removed before udev initialized it: {syspath:?}");
++                        PendingProbe::Gone
++                    }
++                    Ok(device) if device.is_initialized() => PendingProbe::Ready(device),
++                    Ok(device) if timed_out => {
++                        log::warn!("Device not initialized by udev after {STARTUP_UDEV_WAIT:?}; adding it as is: {syspath:?}");
++                        PendingProbe::Ready(device)
++                    }
++                    Ok(_) => PendingProbe::Pending,
++                }
++            });
++            pending = waiting;
++            Manager::discover_devices(cmd_tx, ready.into_iter().map(|dev| dev.into()).collect())
++                .await?;
++            if !pending.is_empty() {
++                tokio::time::sleep(Duration::from_millis(50)).await;
++            }
++        }
+ 
+         Ok(())
+     }
+@@ -1792,3 +1838,71 @@ impl Manager {
+         });
+     }
+ }
++
++/// Startup discovery: devices udev has initialized, and the syspaths of those
++/// it has not.
++fn split_initialized(devices: Vec<::udev::Device>) -> (Vec<::udev::Device>, Vec<PathBuf>) {
++    let mut ready = Vec::new();
++    let mut pending = Vec::new();
++    for device in devices {
++        if device.is_initialized() {
++            ready.push(device);
++        } else {
++            log::debug!("Waiting for udev to initialize {:?}", device.syspath());
++            pending.push(device.syspath().to_path_buf());
++        }
++    }
++    (ready, pending)
++}
++
++enum PendingProbe<D> {
++    Gone,
++    Pending,
++    Ready(D),
++}
++
++/// Probe each pending device once: ready ones are returned for adding, gone
++/// ones are dropped, the rest stay pending in order.
++fn sort_pending<K, D>(pending: Vec<K>, mut probe: impl FnMut(&K) -> PendingProbe<D>) -> (Vec<D>, Vec<K>) {
++    let mut ready = Vec::new();
++    let mut waiting = Vec::new();
++    for key in pending {
++        match probe(&key) {
++            PendingProbe::Gone => {}
++            PendingProbe::Pending => waiting.push(key),
++            PendingProbe::Ready(device) => ready.push(device),
++        }
++    }
++    (ready, waiting)
++}
++
++#[cfg(test)]
++mod startup_discovery_tests {
++    use super::{sort_pending, PendingProbe};
++
++    #[test]
++    fn pending_devices_are_added_once_dropped_when_gone_and_kept_in_order() {
++        let mut probes = Vec::new();
++        let (ready, waiting) = sort_pending(vec!["event6", "event7", "event11", "hidraw0"], |key| {
++            probes.push(*key);
++            match *key {
++                "event6" => PendingProbe::Ready("event6 initialized"),
++                "event7" => PendingProbe::Gone,
++                _ => PendingProbe::Pending,
++            }
++        });
++        assert_eq!(probes, ["event6", "event7", "event11", "hidraw0"]);
++        assert_eq!(ready, ["event6 initialized"]);
++        assert_eq!(waiting, ["event11", "hidraw0"]);
++
++        // A later round probes only what is still pending; nothing is re-added.
++        let mut probes = Vec::new();
++        let (ready, waiting) = sort_pending(waiting, |key| {
++            probes.push(*key);
++            PendingProbe::Ready(*key)
++        });
++        assert_eq!(probes, ["event11", "hidraw0"]);
++        assert_eq!(ready, ["event11", "hidraw0"]);
++        assert!(waiting.is_empty());
++    }
++}

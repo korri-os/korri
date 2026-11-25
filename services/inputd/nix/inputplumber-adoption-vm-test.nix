@@ -6,9 +6,20 @@
   inputplumberKorri,
   testProgram ? ../tests/inputplumber-adoption-vm.py,
   captureProof ? false,
+  # Guest-only udev rule that holds or delays the USB gamepad's event node,
+  # so InputPlumber can see it before udev initializes it.
+  udevHold ? false,
+  name ? null,
 }:
 let
   proofName = "korri-inputplumber-adoption";
+  udevHoldProgram = pkgs.writeShellScript "korri-udev-hold" ''
+    for _ in $(${pkgs.coreutils}/bin/seq 300); do
+      test -e /run/korri-udev-hold || break
+      ${pkgs.coreutils}/bin/sleep 0.1
+    done
+    test ! -e /run/korri-udev-delay || ${pkgs.coreutils}/bin/sleep "$(${pkgs.coreutils}/bin/cat /run/korri-udev-delay)"
+  '';
   python = pkgs.python3.withPackages (ps: [
     ps.dbus-next
     ps.evdev
@@ -37,7 +48,13 @@ let
   };
 in
 pkgs.testers.runNixOSTest {
-  name = if captureProof then "korri-inputplumber-reattach" else proofName;
+  name =
+    if name != null then
+      name
+    else if captureProof then
+      "korri-inputplumber-reattach"
+    else
+      proofName;
   nodes.machine = { lib, ... }: {
     imports = [ module ];
     networking.hostName = proofName;
@@ -94,8 +111,16 @@ pkgs.testers.runNixOSTest {
     systemd.services.korri-inputd.wantedBy = lib.mkForce [ ];
     systemd.services.adoption-profile = {
       wantedBy = [ "multi-user.target" ];
-      requires = [ "inputplumber.service" ];
-      after = [ "inputplumber.service" ];
+      # The driver's bounded system-bus connect must not race dbus startup
+      # on a loaded builder (TimedOut at boot, 2026-11-25).
+      requires = [
+        "inputplumber.service"
+        "dbus.service"
+      ];
+      after = [
+        "inputplumber.service"
+        "dbus.service"
+      ];
       serviceConfig = {
         User = "korri-inputd";
         Group = "korri-control";
@@ -107,9 +132,13 @@ pkgs.testers.runNixOSTest {
     # Keep their kernel USB IDs/version intact (especially 360 0101 vs 0001).
     # This also admits our output fixtures, so an ignored result proves the
     # explicit exclusion, not InputPlumber's general virtual-device heuristic.
-    services.udev.extraRules = pkgs.lib.optionalString (!captureProof) ''
-      SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_BUS}="bluetooth"
-    '';
+    services.udev.extraRules =
+      pkgs.lib.optionalString (!captureProof) ''
+        SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_BUS}="bluetooth"
+      ''
+      + pkgs.lib.optionalString udevHold ''
+        SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0712", PROGRAM="${udevHoldProgram}"
+      '';
   };
   testScript = ''
     machine.start()
@@ -117,7 +146,7 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("inputplumber.service")
     machine.wait_for_unit("adoption-profile.service")
     try:
-        print(machine.succeed("${python}/bin/python3 ${testProgram} ${profile} ${../tests/inputplumber-adoption-vm.py}", timeout=240))
+        print(machine.succeed("${python}/bin/python3 ${testProgram} ${profile} ${../tests/inputplumber-adoption-vm.py} ${../tests/inputplumber-reattach-vm.py}", timeout=240))
         machine.succeed("systemctl is-active --quiet inputplumber.service adoption-profile.service")
     finally:
         print(machine.succeed("journalctl -u inputplumber -u adoption-profile -u systemd-udevd --no-pager"))

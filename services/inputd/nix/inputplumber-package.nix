@@ -14,6 +14,7 @@ let
     ./inputplumber-ignore-before-reconnect.patch
     ./inputplumber-lazy-attributes.patch
     ./inputplumber-source-teardown.patch
+    ./inputplumber-startup-udev-init.patch
   ];
 in
 assert inputplumber.pname == "inputplumber";
@@ -37,6 +38,9 @@ inputplumber.overrideAttrs (previous: {
   inherit patches;
   # Retire each source task before reusing its slot; late completion messages
   # must not clear a replacement source that now owns the same eventN.
+  # Startup discovery waits for udev to initialize a device before caching
+  # its properties; a Kishi re-enumerating during a restart otherwise never
+  # matched its property-based config (Tab S6, 2026-11-25).
   # Run the upstream unit suite and the patches' unit regressions on builds.
   # Reconnect exclusions need kernel/udev/DBus and run in the adoption VM.
   doCheck = true;
