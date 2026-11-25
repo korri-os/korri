@@ -21,6 +21,7 @@ let
       pkgs.i2c-tools
       pkgs.gnugrep
       pkgs.util-linux
+      pkgs.kmod
       typecStatus
       config.systemd.package
     ];
@@ -58,6 +59,27 @@ in
         ProtectHome = true;
         NoNewPrivileges = true;
         ReadOnlyPaths = [ "/sys" ];
+      };
+    };
+
+    # The read-only s2mm005 policy is a module, loaded after the journal is on
+    # disk, boot boost-off and the gadget lifeline. dwc3 stays peripheral until
+    # then. Blacklisting stops the udev alias autoload during coldplug; an
+    # explicit modprobe still loads it. Two counted trials of the built-in
+    # driver fell back with no journal (typec-kernel.md).
+    boot.blacklistedKernelModules = lib.mkIf (!config.tabs6.console.enable) [ "s2mm005" ];
+    systemd.services.tabs6-typec-kernel-policy = lib.mkIf (!config.tabs6.console.enable) {
+      description = "Tab S6 read-only USB-C data-role policy (kernel module)";
+      wantedBy = [ "multi-user.target" ];
+      after = [
+        "systemd-journal-flush.service"
+        "tabs6-usb-role-boot-vbus.service"
+        "${cfg.gadgetUnit}.service"
+      ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${pkgs.kmod}/bin/modprobe s2mm005";
       };
     };
 

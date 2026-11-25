@@ -137,13 +137,45 @@ SM5705 registers can survive warm reboot. The product has no user-space
 `boot-role` writer; the driver owns boot data role. The console retains its
 old manual boot-role service. Nothing here changes charge-current maintenance.
 
-## Open risk: one unexplained trial fallback (2026-11-24)
+## Late module load (2026-11-24)
 
-The first counted trial of this kernel fell back to LAST KNOWN GOOD. That boot
-left no journal entries and no pstore record (only EFI pstore is registered;
-no ramoops region is configured). Its cause is unknown. The next counted trial
-of the same kernel image booted, enumerated the Kishi as host while charging,
-and was blessed. Do not treat the fallback as explained. If it recurs, capture
+The driver is a module (`CONFIG_TYPEC_S2MM005_READ_ONLY=m`). It is
+blacklisted from udev alias autoload, and `tabs6-typec-kernel-policy.service`
+loads it with `modprobe` after `systemd-journal-flush`,
+`tabs6-usb-role-boot-vbus` and the gadget unit. This restores the old daemon's
+ordering. dwc3 stays peripheral (DT default) until the load, so host arrives
+roughly 6–12 s later at boot. Probe requests device as soon as it has the role
+switch, before reading any fact, so every later probe failure leaves device.
+Probe start, probe end and the first poll's result are logged, so a hang
+inside the driver leaves its last line in the persistent journal.
+
+Manual `host` refuses until that unit is active (otherwise a late probe would
+take over the override). `device` rebinds the driver, or loads the module
+again if it was removed.
+
+Reason: the built-in driver probed at 4.85–5.47 s. Two counted trials fell
+back with no journal at all, so they died before the journal flush
+(5.1–5.8 s on good boots), after systemd armed the qcom_wdt watchdog (about
+4.9 s, 30 s timeout; with panic timeout 0, only the watchdog can reset a hung
+kernel into LAST KNOWN GOOD). The ESP files were byte-identical to the store
+and systemd-boot had chosen the trial entry. The driver is a plausible but
+unproven cause.
+
+I2C concurrency was checked in code: `tabs6-usb-role boot-vbus` and
+`tabs6-charge` use `i2cget`/`i2cset` without `-f` (`I2C_SLAVE`). No Linux
+driver claims 0x49 or 0x25, and their SMBus calls take the adapter lock in
+`i2c_smbus_xfer`. The driver's `i2c_transfer` takes the same lock. GENI GPI DMA
+and FIFO transfers both run inside the locked `master_xfer`. Nothing bypasses
+the lock in Linux. Firmware in another execution environment using SE4 would
+be outside Linux locking; this was not checked.
+
+## Open risk: unexplained trial fallbacks (2026-11-24)
+
+Two counted trials of the built-in driver fell back to LAST KNOWN GOOD (first
+mzjc, then s19cnbas). Neither left journal entries or a pstore record (only
+EFI pstore is registered; no ramoops region is configured). Two other trials
+(mzjc again, lagbqp) booted and were blessed. The cause is unknown; see "Late
+module load" for the evidence and the mitigation. Do not treat it as explained. If it recurs, capture
 the screen and consider a ramoops region or a late-bound module for diagnosis.
 
 ## Verification

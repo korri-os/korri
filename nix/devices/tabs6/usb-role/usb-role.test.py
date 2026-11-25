@@ -47,6 +47,9 @@ echo "$4 $(( $5 ))" >> "$TABS6_TEST_REGS/writes"
 """
 SYSTEMCTL = """#!/usr/bin/env bash
 echo "$*" >> "$TABS6_TEST_REGS/systemctl"
+if [ "$*" = "is-active --quiet tabs6-typec-kernel-policy.service" ]; then
+    [ ! -e "$TABS6_TEST_REGS/policy-not-loaded" ] || exit 3
+fi
 case "$*" in
 "stop --no-block usb-gadget.service"|"stop usb-gadget.service")
     echo failed > "$TABS6_TEST_REGS/gadget-state" ;;
@@ -83,6 +86,10 @@ case "$*" in
 esac
 """
 
+MODPROBE = """#!/usr/bin/env bash
+echo "$*" >> "$TABS6_TEST_REGS/modprobe"
+"""
+
 CNTL, CHGCNTL6, FLEDCNTL6 = "0x0c", "0x14", "0x20"
 
 class UsbRole(unittest.TestCase):
@@ -98,6 +105,7 @@ class UsbRole(unittest.TestCase):
             ("i2cset", I2CSET),
             ("systemctl", SYSTEMCTL),
             ("i2ctransfer", I2CTRANSFER),
+            ("modprobe", MODPROBE),
         ):
             p = self.bin / name
             p.write_text(text.replace("#!/usr/bin/env bash", f"#!{shutil.which('bash')}"))
@@ -438,6 +446,35 @@ class UsbRole(unittest.TestCase):
         self.assertFalse(worker.is_alive())
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue((client / "driver").exists())
+        self.assertIn("start tabs6-typec-role-watch.service", self.systemctl())
+
+    def kernel_client(self, bound=True, driver_loaded=True):
+        driver = self.sys / "bus/i2c/drivers/s2mm005-read-only"
+        client = self.sys / "bus/i2c/devices/6-0033"
+        (client / "of_node").mkdir(parents=True)
+        (client / "of_node/compatible").write_bytes(b"samsung,s2mm005-read-only\0")
+        if driver_loaded:
+            driver.mkdir(parents=True)
+        if bound:
+            (client / "driver").symlink_to(driver, target_is_directory=True)
+        return client
+
+    def test_manual_override_refused_until_the_late_kernel_module_is_loaded(self):
+        self.kernel_client(bound=False, driver_loaded=False)
+        (self.regs / "policy-not-loaded").touch()
+        for command in ("host", "device"):
+            r = self.run_role(command)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("not loaded yet", r.stderr)
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.role(), "device")
+        self.assertNotIn("stop tabs6-typec-role-watch.service", self.systemctl())
+
+    def test_device_loads_the_kernel_module_when_it_was_removed(self):
+        self.kernel_client(bound=False, driver_loaded=False)
+        r = self.run_role("device")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((self.regs / "modprobe").read_text().split(), ["s2mm005"])
         self.assertIn("start tabs6-typec-role-watch.service", self.systemctl())
 
     def test_host_gadget_cleanup_never_writes_role_or_chip_registers(self):

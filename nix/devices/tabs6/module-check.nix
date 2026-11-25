@@ -147,7 +147,15 @@ assert !(console.systemd.services ? tabs6-typec-role-watch);
 assert lib.hasInfix "tabs6-typec-role-watch"
   c.systemd.services.tabs6-typec-role-watch.serviceConfig.ExecStart;
 assert c.systemd.services.tabs6-typec-role-watch.serviceConfig.ReadOnlyPaths == [ "/sys" ];
-assert lib.elem "CONFIG_TYPEC_S2MM005_READ_ONLY=y" resolvedProductConfig;
+assert lib.elem "CONFIG_TYPEC_S2MM005_READ_ONLY=m" resolvedProductConfig;
+assert lib.elem "s2mm005" c.boot.blacklistedKernelModules;
+assert lib.all (u: lib.elem u c.systemd.services.tabs6-typec-kernel-policy.after) [
+  "systemd-journal-flush.service"
+  "tabs6-usb-role-boot-vbus.service"
+  "usb-gadget.service"
+];
+assert lib.hasSuffix "modprobe s2mm005" c.systemd.services.tabs6-typec-kernel-policy.serviceConfig.ExecStart;
+assert !(console.systemd.services ? tabs6-typec-kernel-policy);
 assert lib.elem "tabs6-usb-gadget.service" console.systemd.services.tabs6-usb-role-boot.before;
 # Display and input facts.
 assert c.services.korriLinuxHost.compositor.backend == "drm";

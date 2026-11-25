@@ -49,10 +49,12 @@ MDSS enabled with the ANA38401 panel under DSI0, and `wlan_mem` at
 
 `drivers/s2mm005.c` is a read-only I2C client on se15/0x33. It registers a
 standard Type-C port and owns dwc3's data role through the USB role-switch API.
-`usb-typec-wire-s2mm005.patch`, `CONFIG_TYPEC_S2MM005_READ_ONLY=y` in
+`usb-typec-wire-s2mm005.patch`, `CONFIG_TYPEC_S2MM005_READ_ONLY=m` in
 `korri.config`, and `dts/sm8150-samsung-gts6lwifi-typec.dtsi` wire it into the
 product. The console source, DT and kernel configuration stay unchanged.
 
+The module is loaded late in boot by `tabs6-typec-kernel-policy.service`
+(after the journal flush, boot boost-off and the gadget), not by udev.
 The driver polls every 100 ms without requesting or acknowledging IRQ123.
 Three fresh sink-ready/attached/not-source/DFP + MUIC VBUS=01 + CNTL mode 5
 samples enable host. Any other sample or error revokes at once.

@@ -270,6 +270,10 @@ kernel_yield() {
 	local client
 	client=$(kernel_client) || return 1
 	[ -n "$client" ] || return 0
+	# The driver is a module loaded late in boot. A manual override before
+	# that load would be taken over by the probe; refuse until it is done.
+	systemctl is-active --quiet tabs6-typec-kernel-policy.service ||
+		die "kernel USB-C policy is not loaded yet; retry after boot"
 	# Stop only the workaround, not policy. Driver remove synchronously cancels
 	# sampling and requests DEVICE before it releases the role switch.
 	systemctl stop tabs6-typec-role-watch.service || return 1
@@ -284,7 +288,11 @@ kernel_resume() {
 	client=$(kernel_client) || return 1
 	[ -n "$client" ] || return 0
 	if [ ! -e "$client/driver" ]; then
-		echo "${client##*/}" >"$SYSFS/bus/i2c/drivers/s2mm005-read-only/bind" || return 1
+		if [ -e "$SYSFS/bus/i2c/drivers/s2mm005-read-only/bind" ]; then
+			echo "${client##*/}" >"$SYSFS/bus/i2c/drivers/s2mm005-read-only/bind" || return 1
+		else
+			modprobe s2mm005 || return 1
+		fi
 		log "kernel policy rebound; qualification starts from zero"
 	fi
 	systemctl start tabs6-typec-role-watch.service

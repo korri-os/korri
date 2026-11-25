@@ -207,6 +207,8 @@ let
           venus="$(fdtget "$dtb" /__symbols__ venus)"
           want venus "$(fdtget "$dtb" "$venus" compatible)" "qcom,sm8150-iris"
           want venus_mem.reg "$(fdtget -t x "$dtb" "$(fdtget "$dtb" /__symbols__ venus_mem)" reg)" "0 97800000 0 500000"
+          [ -e "$out/lib/modules/${version}/kernel/drivers/usb/typec/s2mm005.ko" ] \
+            || { echo "s2mm005.ko not built"; exit 1; }
           [ -e "$out/lib/modules/${version}/kernel/drivers/media/platform/qcom/iris/qcom-iris.ko" ] \
             || { echo "qcom-iris.ko not built"; exit 1; }
           want sdhc_2.status "$(fdtget "$dtb" "$(fdtget "$dtb" /__symbols__ sdhc_2)" status)" "okay"

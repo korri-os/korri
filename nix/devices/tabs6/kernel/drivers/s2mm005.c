@@ -14,6 +14,11 @@
 #include "s2mm005-policy.h"
 
 #define S2MM005_POLL_MS 100
+/* dwc3 reports the new role only after its drd work tears down the old one
+ * (about 200 ms for host to device). Treat a longer mismatch as an outside
+ * write to the role file.
+ */
+#define S2MM005_MISMATCH_POLLS 10
 
 struct s2mm005 {
 	struct i2c_client *client;
@@ -23,6 +28,8 @@ struct s2mm005 {
 	struct typec_partner *partner;
 	struct delayed_work poll;
 	unsigned int consecutive;
+	unsigned int mismatch;
+	bool first_poll_logged;
 	enum usb_role requested;
 };
 
@@ -70,14 +77,20 @@ static int s2mm005_role(struct s2mm005 *s, enum usb_role role)
 {
 	int ret;
 
-	/* Compare with the switch too: the role file stays writable, and an
-	 * outside write must not leave the cached decision unenforced.
-	 */
-	if (s->requested == role && usb_role_switch_get_role(s->role_sw) == role)
-		return 0;
-	if (s->requested == role)
+	if (s->requested == role) {
+		if (usb_role_switch_get_role(s->role_sw) == role) {
+			s->mismatch = 0;
+			return 0;
+		}
+		/* The role file stays writable (dwc3 allows user space control).
+		 * Undo an outside write instead of trusting the cached decision.
+		 */
+		if (++s->mismatch < S2MM005_MISMATCH_POLLS)
+			return 0;
 		dev_warn_ratelimited(&s->client->dev, "role changed outside policy; %s again\n",
 				     usb_role_string(role));
+	}
+	s->mismatch = 0;
 	ret = usb_role_switch_set_role(s->role_sw, role);
 	if (ret) {
 		dev_err_ratelimited(&s->client->dev, "role %s failed: %d\n",
@@ -122,8 +135,23 @@ static void s2mm005_poll(struct work_struct *work)
 {
 	struct s2mm005 *s = container_of(to_delayed_work(work), struct s2mm005, poll);
 	struct s2mm005_sample sample;
-	int ret = s2mm005_sample(s, &sample);
-	bool host = s2mm005_sink_host(&s->consecutive, ret ? NULL : &sample);
+	bool first = !s->first_poll_logged;
+	int ret;
+	bool host;
+
+	if (first)
+		dev_info(&s->client->dev, "first poll: reading\n");
+	ret = s2mm005_sample(s, &sample);
+	host = s2mm005_sink_host(&s->consecutive, ret ? NULL : &sample);
+	if (first) {
+		s->first_poll_logged = true;
+		if (ret)
+			dev_info(&s->client->dev, "first poll: read error %d\n", ret);
+		else
+			dev_info(&s->client->dev,
+				 "first poll: state %u flags 0x%02x vbus 0x%02x cntl 0x%02x\n",
+				 sample.state, sample.flags, sample.muic_vbus, sample.cntl);
+	}
 
 	if (ret)
 		dev_err_ratelimited(&s->client->dev, "status read failed: %d; device\n", ret);
@@ -153,6 +181,7 @@ static int s2mm005_probe(struct i2c_client *client)
 	struct s2mm005 *s;
 	int ret;
 
+	dev_info(dev, "probe start\n");
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C))
 		return -EOPNOTSUPP;
 	s = devm_kzalloc(dev, sizeof(*s), GFP_KERNEL);
@@ -166,6 +195,12 @@ static int s2mm005_probe(struct i2c_client *client)
 		return dev_err_probe(dev, PTR_ERR(s->role_sw), "USB role switch\n");
 	if (!s->role_sw)
 		return dev_err_probe(dev, -ENODEV, "missing USB role switch connection\n");
+	/* Fail closed: device before any fact is read, so every later probe
+	 * failure leaves the gadget lifeline selected.
+	 */
+	ret = usb_role_switch_set_role(s->role_sw, USB_ROLE_DEVICE);
+	if (ret)
+		goto put_role;
 
 	node = of_parse_phandle(dev->of_node, "samsung,sm5705-i2c", 0);
 	if (!node) {
