@@ -170,14 +170,22 @@ snapshot. Every poll gets new facts, and no observer log grants permission.
 automatic role. The old observer is not started; its diagnostic CLI is usable
 only while the controller is unbound. `tabs6-typec-role-watch` reads **only**
 `/sys/class/usb_role/*/role` every 50 ms. On device-to-host it stops the
-gadget; on host-to-device it restarts it (`tabs6-usb-role gadget-start`). It
-never writes a role or any chip register, and it does not restart input
-providers. The earlier provider restart (InputPlumber and inputd on every
-detach) was removed on 2026-11-25: InputPlumber's source-teardown fix
-(`services/inputd/tests/inputplumber-reattach.md`, VM-proven) handles the
-EBUSY re-add. The separate failure "source re-adds but shell input does not
-return" (case B) is unverified; a replug that does not restore shell input is
-evidence of it. Check shell input, not enumeration alone.
+gadget. On host-to-device (charger unplug, boost revoke, driver unbind) it
+runs `tabs6-usb-role detached`: restart the gadget, wait for the host
+controller to tear down, then restart InputPlumber and inputd. It never writes
+a role or any chip register.
+
+**Case B is reproduced (2026-11-25), so the provider restart stays.** It was
+removed earlier the same day after one good replug. On battery, repeated USB
+detach/re-add (boost cycling and runtime module swaps) each logged InputPlumber
+"Found missing input device, adding source device evdev://event9 to existing
+composite device". inputd re-applied the profile (rejected → ready) after some
+re-adds (1386, 1402, 1434, 1466, 1482, 1530, 1546 s) and after others did
+nothing (1417, 1449, 1497, 1513, 1561, 1575, 1733 s); after the last ones the
+D-pad stayed dead although the composite still listed the source, targets,
+profile and InterceptMode 0. Restarting both providers restored input. The
+InputPlumber EBUSY re-add fix (`services/inputd/tests/inputplumber-reattach.md`)
+does not cover this; the cause in inputd's reconciliation is open.
 
 The driver logs each change of the qualifying facts (`facts: state … flags …
 vbus … cntl … (qualified n/3)`, rate limited) and `qualified 3/3`, so the time

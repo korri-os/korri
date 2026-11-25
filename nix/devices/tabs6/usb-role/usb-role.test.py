@@ -47,6 +47,9 @@ echo "$4 $(( $5 ))" >> "$TABS6_TEST_REGS/writes"
 """
 SYSTEMCTL = """#!/usr/bin/env bash
 echo "$*" >> "$TABS6_TEST_REGS/systemctl"
+if [ "$*" = "restart inputplumber.service korri-inputd.service" ]; then
+    [ ! -e "$TABS6_TEST_REGS/provider-failure" ] || exit 1
+fi
 if [ "$*" = "is-active --quiet tabs6-typec-kernel-policy.service" ]; then
     [ ! -e "$TABS6_TEST_REGS/policy-not-loaded" ] || exit 3
 fi
@@ -322,25 +325,33 @@ class UsbRole(unittest.TestCase):
         self.assertEqual(self.writes(), [])
         self.assertEqual((self.regs / "gadget-state").read_text().strip(), "inactive")
 
-    def test_detach_restarts_only_the_gadget_never_input_providers(self):
+    def test_detach_restarts_gadget_and_providers_after_teardown(self):
         self.set_role("device")
-        self.reg(CNTL, 5)
-        r = self.run_role("gadget-start")
+        r = self.run_role("detached")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.systemctl(), ["restart --no-block usb-gadget.service"])
+        self.assertEqual(self.systemctl(), ["restart --no-block usb-gadget.service",
+                                            "restart inputplumber.service korri-inputd.service"])
         self.assertEqual(self.writes(), [])
         self.assertEqual(self.role(), "device")
 
-    def test_real_role_watcher_cycles_the_gadget_and_never_restarts_providers(self):
+    def test_detach_keeps_providers_while_host_devices_remain(self):
+        (self.sys / "bus/usb/devices/1-1").mkdir()
+        self.set_role("device")
+        r = self.run_role("detached")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("restart inputplumber.service korri-inputd.service", self.systemctl())
+        self.assertEqual(self.writes(), [])
+
+    def test_real_role_watcher_runs_detach_actions_on_every_host_to_device(self):
         helper = self.bin / "tabs6-usb-role"
         helper.write_text(f'#!{shutil.which("bash")}\nexec bash {SCRIPT} "$@"\n')
         helper.chmod(0o755)
         self.set_role("host")
-        self.reg(CNTL, 5)
         stop = ["stop usb-gadget.service", "reset-failed usb-gadget.service"]
-        start = ["restart --no-block usb-gadget.service"]
+        detach = ["restart --no-block usb-gadget.service",
+                  "restart inputplumber.service korri-inputd.service"]
         def wait_for(expected):
-            deadline = time.monotonic() + 2
+            deadline = time.monotonic() + 3
             while self.systemctl() != expected:
                 self.assertIsNone(proc.poll(), (self.tmp / "watch.log").read_text())
                 self.assertLess(time.monotonic(), deadline, self.systemctl())
@@ -356,16 +367,13 @@ class UsbRole(unittest.TestCase):
                 role_path.unlink()
                 time.sleep(0.15)
                 self.assertIsNone(proc.poll())
-                # host -> device -> host -> device: gadget only, in order.
+                # host -> device -> host -> device (e.g. boost revoke, re-enable)
                 self.set_role("device")
-                wait_for(stop + start)
+                wait_for(stop + detach)
                 self.set_role("host")
-                wait_for(stop + start + stop)
+                wait_for(stop + detach + stop)
                 self.set_role("device")
-                wait_for(stop + start + stop + start)
-                time.sleep(0.15)
-                self.assertFalse(any("inputplumber" in c or "korri-inputd" in c
-                                     for c in self.systemctl()), self.systemctl())
+                wait_for(stop + detach + stop + detach)
                 self.assertEqual(self.role(), "device")
                 self.assertEqual(self.writes(), [])
             finally:

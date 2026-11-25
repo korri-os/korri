@@ -68,11 +68,11 @@ exact callback order. In the automatic-host boot, source re-add succeeded and
 continued reading, but shell navigation did not return. No EBUSY was logged
 in that second failure. Do not describe it as a proven instance of the first.
 
-The tablet's provider-restart workaround was removed on 2026-11-25, after the
-kernel took over the data role (`nix/devices/tabs6/usb-role/typec-kernel.md`).
-The role watcher now restarts only the USB gadget on detach, and its tests
-assert that neither input provider is restarted.
+The tablet's provider-restart workaround was removed on 2026-11-25 and
+restored the same day: the separate automatic-host failure (source re-added
+into the surviving composite, no inputd profile event, dead input, no EBUSY)
+reproduced on battery after repeated USB detach/re-add. Evidence and the open
+question are in `nix/devices/tabs6/usb-role/typec-kernel.md`. The role watcher
+restarts the gadget and both providers on every kernel host-to-device change.
 
-No test here proves that the separate automatic-host shell-navigation failure
-is fixed. A tablet replug that re-adds the source but does not restore shell
-navigation is evidence of that failure.
+No test here proves that failure is fixed.
