@@ -84,6 +84,14 @@ pub(super) const PLACEMENT_ENV: &str = "KORRI_LIVE_PLACEMENT";
 
 pub(crate) const RUNNER_ID_ENV: &str = "KORRI_LIVE_RUNNER_ID";
 
+/// A game starts only after its launch's audio socket exists. A hook may run
+/// outside that lifetime, so its socket bind must not block the unit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AudioSocket {
+    Required,
+    IfPresent,
+}
+
 /// Mount-driving launch facts are resolved once from the game unit's baseline.
 /// Process environment changes never grant a hook a different sandbox.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1646,7 +1654,7 @@ impl SystemdLaunchUnitBackend {
             // bounds only game termination, not after-hooks or save capture.
             "--property=TimeoutStopSec=30s".into(),
         ];
-        arguments.extend(self.sandbox_properties(launch_id, sandbox)?);
+        arguments.extend(self.sandbox_properties(launch_id, sandbox, AudioSocket::Required)?);
         arguments.extend(Self::process_environment(environment, sandbox.modifiers));
         arguments.push("--".into());
         arguments.extend(configured_command.iter().cloned());
@@ -1659,6 +1667,7 @@ impl SystemdLaunchUnitBackend {
         &self,
         launch_id: &str,
         sandbox: &LaunchSandbox,
+        audio_socket: AudioSocket,
     ) -> Result<Vec<String>, LaunchUnitError> {
         let modifiers = sandbox.modifiers;
         // An unwrapped game draws through the compositor's Xwayland display.
@@ -1677,8 +1686,12 @@ impl SystemdLaunchUnitBackend {
         if sandbox.pulse_audio {
             // Only this launch's Pulse socket is visible. The helper's own
             // runtime directory stays hidden at its original path.
+            let optional = match audio_socket {
+                AudioSocket::Required => "",
+                AudioSocket::IfPresent => "-",
+            };
             read_only_binds.push_str(&format!(
-                " /run/korri-game-audio-{launch_id}/native:/run/korri-game-audio/native"
+                " {optional}/run/korri-game-audio-{launch_id}/native:/run/korri-game-audio/native"
             ));
             hidden_audio.push_str(&format!(" -/run/korri-game-audio-{launch_id}"));
             // ALSA-only clients reach the same socket through the standard
@@ -1968,7 +1981,9 @@ impl SystemdLaunchUnitBackend {
             format!("--property=RuntimeMaxSec={}us", timeout.as_micros()),
             "--property=TimeoutStopSec=5s".into(),
         ];
-        arguments.extend(self.sandbox_properties(launch_id, sandbox)?);
+        // Before-hooks run before the launch's audio unit exists and
+        // after-hooks after it stopped: no socket then, and no audio.
+        arguments.extend(self.sandbox_properties(launch_id, sandbox, AudioSocket::IfPresent)?);
         // The game's prepared plan sets these values inside plugin-launch,
         // after the transport defaults. The shell hook has no such wrapper.
         arguments.extend(
@@ -3677,6 +3692,93 @@ mod tests {
                 "{paths}"
             );
         }
+        // A hook may run while no audio unit exists, so its socket is optional;
+        // the game's stays mandatory.
+        let binds = hook
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--property=BindReadOnlyPaths="))
+            .unwrap();
+        assert!(binds.split_whitespace().any(|bind| bind
+            == format!("-/run/korri-game-audio-{LAUNCH_ID}/native:/run/korri-game-audio/native")));
+        let game = backend
+            .launch_arguments(LAUNCH_ID, &["/games/retroarch".into()], &environment)
+            .unwrap();
+        let binds = game
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--property=BindReadOnlyPaths="))
+            .unwrap();
+        assert!(binds.split_whitespace().any(|bind| bind
+            == format!("/run/korri-game-audio-{LAUNCH_ID}/native:/run/korri-game-audio/native")));
+    }
+
+    /// Real systemd on a device: KORRI_REAL_HOOK_AUDIO_CHECK=1, run as root with
+    /// korrid's service environment. A before-hook runs before the launch's
+    /// audio unit exists, a live hook while it runs, an after-hook after it
+    /// stopped. Each unit must start and exit 0 with sound devices denied.
+    #[test]
+    #[ignore = "needs root, systemd and the configured game audio helper"]
+    fn real_hook_units_start_before_during_and_after_the_launch_audio_unit() {
+        if std::env::var_os("KORRI_REAL_HOOK_AUDIO_CHECK").is_none() {
+            return;
+        }
+        let backend = SystemdLaunchUnitBackend::for_current_process();
+        let launch = format!("{:032x}", std::process::id() as u128 * 7919 + 0x510);
+        let environment = BTreeMap::from([(
+            "PULSE_SERVER".into(),
+            "unix:/run/korri-game-audio/native".into(),
+        )]);
+        let command = ["/bin/true".to_owned()];
+        let sandbox = LaunchSandbox::new(&command, &environment);
+        assert!(sandbox.pulse_audio);
+        let hook = |step: usize, script: &str| {
+            let arguments = backend
+                .hook_arguments_in_sandbox(
+                    &launch,
+                    step,
+                    &command,
+                    script,
+                    Duration::from_secs(20),
+                    &BTreeMap::new(),
+                    &sandbox,
+                )
+                .unwrap();
+            let output = std::process::Command::new(&backend.systemd_run)
+                .args(&arguments)
+                .output()
+                .unwrap();
+            eprintln!(
+                "REAL_HOOK step={step} status={:?} stderr={}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            );
+            output.status.success()
+        };
+        let no_devices = "[ ! -r /dev/snd ] && [ ! -x /dev/snd ]";
+        let helper_hidden = format!("[ ! -r /run/korri-game-audio-{launch} ]");
+        assert!(
+            !Path::new(&format!("/run/korri-game-audio-{launch}")).exists(),
+            "before-hook must run without the launch audio unit"
+        );
+        assert!(
+            hook(0, &format!("{no_devices} && {helper_hidden}")),
+            "before-hook"
+        );
+        backend.prepare_audio(&launch).unwrap();
+        let live = hook(
+            1,
+            &format!("{no_devices} && {helper_hidden} && [ -S /run/korri-game-audio/native ]"),
+        );
+        backend.audio_verb(&launch, "stop").unwrap();
+        assert!(live, "hook during the audio lifetime sees only the socket");
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while Path::new(&format!("/run/korri-game-audio-{launch}")).exists() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "audio unit did not stop"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(hook(2, no_devices), "after-hook");
     }
 
     #[test]
