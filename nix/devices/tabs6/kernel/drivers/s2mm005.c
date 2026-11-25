@@ -121,8 +121,9 @@ static int sm5705_update(struct s2mm005 *s, u8 reg, u8 mask, u8 val)
 	return (now & mask) == (val & mask) ? 0 : -EIO;
 }
 
+/* *what names the read that failed, for the log; no read is repeated. */
 static int s2mm005_sample(struct s2mm005 *s, struct s2mm005_sample *sample,
-			  bool with_gauge)
+			  bool with_gauge, const char **what)
 {
 	u8 dummy_reg[] = { 0x00, 0x08 }, func_reg[] = { 0x00, 0x20 };
 	u8 vbus_reg = 0x15, devt_reg = 0x0a, chg_reg = SM5705_STATUS1;
@@ -134,26 +135,31 @@ static int s2mm005_sample(struct s2mm005 *s, struct s2mm005_sample *sample,
 	/* Match the observer's ordinary dummy read, not a flash/boot command. */
 	ret = s2mm005_read(s->client->adapter, s->client->addr,
 			   dummy_reg, sizeof(dummy_reg), &dummy, 1);
+	*what = "s2mm005 0x0008";
 	if (ret)
 		return ret;
 	ret = s2mm005_read(s->client->adapter, s->client->addr,
 			   func_reg, sizeof(func_reg), func, sizeof(func));
+	*what = "s2mm005 FUNC_STATE 0x0020";
 	if (ret)
 		return ret;
 	sample->state = func[0];
 	sample->flags = func[3];
 	ret = s2mm005_read(s->sm5705, SM5705_MUIC_ADDR, &vbus_reg, 1,
 			   &sample->muic_vbus, 1);
+	*what = "MUIC VBUS 0x15";
 	if (ret)
 		return ret;
 	ret = s2mm005_read(s->sm5705, SM5705_MUIC_ADDR, &devt_reg, 1,
 			   sample->devt, sizeof(sample->devt));
+	*what = "MUIC DEVT1-3 0x0a";
 	if (ret)
 		return ret;
 	/* STATUS1..4 are status, not read-to-clear interrupt latches (INT1-4
 	 * at 0x00-0x03 are never read). CNTL follows at 0x0c.
 	 */
 	ret = s2mm005_read(s->sm5705, SM5705_CHG_ADDR, &chg_reg, 1, chg, sizeof(chg));
+	*what = "SM5705 STATUS1-CNTL 0x08";
 	if (ret)
 		return ret;
 	sample->status1 = chg[0];
@@ -163,6 +169,7 @@ static int s2mm005_sample(struct s2mm005 *s, struct s2mm005_sample *sample,
 	if (with_gauge) {
 		ret = power_supply_get_property(s->gauge, POWER_SUPPLY_PROP_STATUS,
 						&status);
+		*what = "gauge status";
 		if (ret)
 			return ret;
 	}
@@ -176,6 +183,7 @@ static int s2mm005_sample(struct s2mm005 *s, struct s2mm005_sample *sample,
 static int s2mm005_boost_on(struct s2mm005 *s)
 {
 	struct s2mm005_sample fresh;
+	const char *what = NULL;
 	int ret;
 
 	ret = sm5705_update(s, SM5705_FLEDCNTL6, SM5705_BSTOUT_MASK, SM5705_BSTOUT_5100MV);
@@ -185,9 +193,11 @@ static int s2mm005_boost_on(struct s2mm005 *s)
 	if (ret)
 		return ret;
 	/* Configuration is not permission. */
-	ret = s2mm005_sample(s, &fresh, true);
-	if (ret)
+	ret = s2mm005_sample(s, &fresh, true, &what);
+	if (ret) {
+		dev_err(&s->client->dev, "pre-enable read failed: %s: %d\n", what, ret);
 		return ret;
+	}
 	if (!s2mm005_may_source(&fresh))
 		return -EAGAIN;
 	return sm5705_update(s, SM5705_CNTL, SM5705_MODE_MASK, S2MM005_MODE_USB_OTG);
@@ -327,13 +337,15 @@ static void s2mm005_poll(struct work_struct *work)
 	struct s2mm005_sample sample;
 	bool boosting = s2mm005_boosting(&s->policy);
 	bool was_host = s->requested == USB_ROLE_HOST;
+	const char *what = NULL;
 	int ret;
 
 	if (!s->first_poll_logged)
 		dev_info(&s->client->dev, "first poll: reading\n");
-	ret = s2mm005_sample(s, &sample, !boosting);
+	ret = s2mm005_sample(s, &sample, !boosting, &what);
 	if (ret)
-		dev_err_ratelimited(&s->client->dev, "status read failed: %d\n", ret);
+		dev_err_ratelimited(&s->client->dev, "status read failed: %s: %d\n",
+				    what, ret);
 	else
 		s2mm005_log_facts(s, &sample);
 	if (!s->first_poll_logged) {
