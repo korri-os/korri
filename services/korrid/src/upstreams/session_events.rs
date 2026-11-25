@@ -172,9 +172,9 @@ impl UpstreamRegistry {
     }
 }
 
-/// A deadline replaces only the absent holder fact. It cannot invent a local
-/// picture or turn a failed/ended/replaced exact launch into a reveal. The
-/// holder's existing Frozen/FocusFailed background policy still applies.
+/// The deadline bypasses both picture conditions, not exact-launch liveness
+/// or reveal authority. The holder's existing Frozen/FocusFailed background
+/// policy still applies.
 fn may_reveal(
     status: &Result<UpstreamSessionStatus, UpstreamError>,
     launch: &str,
@@ -183,7 +183,7 @@ fn may_reveal(
 ) -> bool {
     matches!(status, Ok(UpstreamSessionStatus::SessionStatus { active: Some(active) })
         if active.launch_id == launch && active.phase.as_deref() == Some("running")
-        && first_frame && (expired || active.initial_handoff == Some(crate::InitialHandoff::Observed)))
+        && (expired || (first_frame && active.initial_handoff == Some(crate::InitialHandoff::Observed))))
 }
 
 async fn run(
@@ -203,14 +203,17 @@ async fn run(
     let mut expired = false;
     let mut started = false;
     let mut state = Observation::default();
+    let publish = |state: &Observation| {
+        observation.send_replace(state.clone());
+        changes.send_replace(());
+    };
     loop {
         tokio::select! {
             biased;
             result = &mut ready, if !started => {
                 if result.is_err() {
                     state.status = Some(Err(viewer_error("ViewerStartFailed", "Viewer start ended before connection")));
-                    observation.send_replace(state);
-                    changes.send_replace(());
+                    publish(&state);
                     return;
                 }
                 started = true;
@@ -225,6 +228,10 @@ async fn run(
                 };
                 eprintln!("korrid: SessionEventArrived {{ launch_id: {launch}, at_ms: {:?}, initial_handoff: {handoff:?}, phase: {phase:?}, failure: {failure:?} }}", crate::linux_viewer::monotonic_ms());
                 state.status = Some(status);
+                // A status reader may hold transition authority while awaiting
+                // this first observation. Publish before trying to take it.
+                // `revealed` stays false until serialized focus succeeds.
+                publish(&state);
             }
             _ = intent.changed() => {},
             _ = async { if let Some(frame) = &mut frame { let _ = frame.changed().await; } else { std::future::pending::<()>().await; } }, if !state.revealed && authority.enabled(&launch) => {}
@@ -234,7 +241,10 @@ async fn run(
             continue;
         }
         let live = matches!(&state.status, Some(Ok(UpstreamSessionStatus::SessionStatus { active: Some(active) })) if active.launch_id == launch);
-        if live && started && !state.revealed {
+        if !live {
+            return;
+        }
+        if started && !state.revealed {
             let _transition = authority.transition.lock().await;
             if authority.enabled(&launch) {
                 if frame.is_none() {
@@ -242,7 +252,9 @@ async fn run(
                         Ok(receiver) => frame = Some(receiver),
                         Err(error) => {
                             state.status =
-                                Some(Err(viewer_error("ViewerUnavailable", error.to_string())))
+                                Some(Err(viewer_error("ViewerUnavailable", error.to_string())));
+                            publish(&state);
+                            return;
                         }
                     }
                 }
@@ -252,6 +264,8 @@ async fn run(
                         "ViewerStopped",
                         "Viewer stopped before its first frame",
                     )));
+                    publish(&state);
+                    return;
                 }
                 if may_reveal(
                     state.status.as_ref().expect("status"),
@@ -263,21 +277,18 @@ async fn run(
                     match viewer.resume_and_focus(&launch).await {
                         Ok(()) => {
                             state.revealed = true;
+                            publish(&state);
                             eprintln!("korrid: StreamRevealed {{ launch_id: {launch}, at_ms: {:?}, time_limit: {expired} }}", crate::linux_viewer::monotonic_ms());
                         }
                         Err(error) => {
                             state.status =
                                 Some(Err(viewer_error("ViewerUnavailable", error.to_string())));
+                            publish(&state);
+                            return;
                         }
                     }
                 }
             }
-        }
-        let terminal = !matches!(&state.status, Some(Ok(UpstreamSessionStatus::SessionStatus { active: Some(active) })) if active.launch_id == launch);
-        observation.send_replace(state.clone());
-        changes.send_replace(());
-        if terminal {
-            return;
         }
     }
 }
@@ -357,6 +368,67 @@ mod tests {
             .filter(|call| call.action == LinuxViewerAction::ResumeAndFocus)
             .count()
     }
+    #[tokio::test(start_paused = true)]
+    async fn initial_status_unblocks_a_reader_holding_reveal_authority() {
+        let (viewer, send, mut observed, task, authority) = watch_viewer(false);
+        let mut registry = UpstreamRegistry::new(Vec::new()).with_linux_viewer(viewer.clone());
+        registry.selected_remote_session = authority.selection.clone();
+        registry.remote_prepare_mutation = authority.transition.clone();
+        *registry.session_events.lock().unwrap() = Some(Events {
+            launch: LAUNCH.into(),
+            observation: observed.clone(),
+            task: task.abort_handle(),
+        });
+        let registry = Arc::new(registry);
+        // Start completes before the holder's first status. The real status
+        // API then takes the same transition lock the producer uses for focus.
+        tokio::task::yield_now().await;
+        let reader = registry.clone();
+        let status_call = tokio::spawn(async move { reader.session_status().await });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while authority.transition.try_lock().is_ok() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("status request holds the transition lock");
+        send.send(status(crate::InitialHandoff::Observed))
+            .await
+            .unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(1), status_call)
+            .await
+            .expect("first observation must not wait for reveal authority")
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(result, UpstreamSessionStatus::SessionStatus { active: Some(active) }
+            if active.initial_handoff == Some(crate::InitialHandoff::Waiting))
+        );
+        assert_eq!(reveals(&viewer), 0);
+
+        // Both pictures can be ready while focus is still serialized. The
+        // surface projection must remain Waiting until that effect completes.
+        let transition = authority.transition.lock().await;
+        viewer.set_first_frame(true);
+        let selected = registry.selected().unwrap();
+        let pending = registry.pushed_status(&selected).await.unwrap().unwrap();
+        assert!(
+            matches!(pending, UpstreamSessionStatus::SessionStatus { active: Some(active) }
+            if active.initial_handoff == Some(crate::InitialHandoff::Waiting))
+        );
+        assert_eq!(reveals(&viewer), 0);
+        drop(transition);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !observed.borrow().revealed {
+                observed.changed().await.unwrap();
+            }
+        })
+        .await
+        .expect("reveal proceeds after the reader releases authority");
+        assert_eq!(reveals(&viewer), 1);
+        task.abort();
+    }
+
     #[tokio::test]
     async fn holder_first_waits_for_the_presenter_and_reveals_only_once() {
         let (viewer, send, mut observed, task, _) = watch_viewer(false);
@@ -392,7 +464,7 @@ mod tests {
         task.abort();
     }
     #[tokio::test(start_paused = true)]
-    async fn thirty_seconds_replaces_only_the_missing_holder_frame() {
+    async fn thirty_seconds_releases_when_only_the_holder_picture_is_missing() {
         let (viewer, send, mut observed, task, _) = watch_viewer(true);
         send.send(status(crate::InitialHandoff::Waiting))
             .await
@@ -460,7 +532,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn the_deadline_still_waits_for_a_local_picture() {
+    async fn the_deadline_reveals_without_either_picture() {
         let (viewer, send, mut observed, task, _) = watch_viewer(false);
         send.send(status(crate::InitialHandoff::Waiting))
             .await
@@ -468,10 +540,25 @@ mod tests {
         observed.changed().await.unwrap();
         tokio::time::advance(Duration::from_secs(30)).await;
         observed.changed().await.unwrap();
-        assert_eq!(reveals(&viewer), 0);
-        viewer.set_first_frame(true);
-        observed.changed().await.unwrap();
+        assert!(observed.borrow().revealed);
         assert_eq!(reveals(&viewer), 1);
+        task.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancel_wins_over_expiry_without_either_picture() {
+        let (viewer, send, mut observed, task, authority) = watch_viewer(false);
+        send.send(status(crate::InitialHandoff::Waiting))
+            .await
+            .unwrap();
+        observed.changed().await.unwrap();
+        let transition = authority.transition.lock().await;
+        *authority.selection.lock().unwrap() = None;
+        tokio::time::advance(Duration::from_secs(30)).await;
+        drop(transition);
+        tokio::task::yield_now().await;
+        assert_eq!(reveals(&viewer), 0);
+        assert!(!observed.borrow().revealed);
         task.abort();
     }
 
@@ -493,8 +580,8 @@ mod tests {
             }
             assert!(!may_reveal(&backgrounded, LAUNCH, true, true));
         }
-        assert!(!may_reveal(
-            &status(crate::InitialHandoff::Observed),
+        assert!(may_reveal(
+            &status(crate::InitialHandoff::Waiting),
             LAUNCH,
             false,
             true

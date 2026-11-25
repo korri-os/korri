@@ -82,4 +82,7 @@ The Linux lifecycle treaty adds `FirstFrame`. The presenter sends it from
 the same successful presentation that records `start: first frame shown`.
 `Start` no longer focuses a viewer. The viewer device keeps the surface's
 starting state until both facts hold and compositor focus is confirmed.
-Android keeps its existing reveal path.
+At 30 s it waives both picture conditions, but still requires the exact live
+launch and current user intent. Holder observations publish before taking
+focus authority, so a status reader cannot block the producer while waiting
+for its first observation. Android keeps its existing reveal path.
