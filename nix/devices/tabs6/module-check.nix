@@ -62,6 +62,7 @@ let
       "tabs6-bt-addr"
       "tabs6-ufs-write-through"
       "tabs6-grow-root"
+      "tabs6-usb-role-boot"
       "tabs6-usb-role-boot-vbus"
     ]
     # rmtfs keeps every modem EFS write in RAM: modemst1/2 and fsg stay unwritten.
@@ -141,7 +142,7 @@ assert lib.all (
 assert c.systemd.services.usb-gadget.environment.KORRI_USB_GADGET_NAME == "tabs6";
 assert c.systemd.network.networks."10-usb-gadget".address == [ "10.42.7.1/24" ];
 assert c.tabs6.usbRole.gadgetUnit == "usb-gadget";
-assert !(c.systemd.services ? tabs6-usb-role-boot);
+assert lib.elem "usb-gadget.service" c.systemd.services.tabs6-usb-role-boot.before;
 assert c.systemd.services ? tabs6-typec-role-watch;
 assert !(console.systemd.services ? tabs6-typec-role-watch);
 assert lib.hasInfix "tabs6-typec-role-watch"

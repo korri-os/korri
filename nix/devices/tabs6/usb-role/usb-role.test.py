@@ -477,6 +477,22 @@ class UsbRole(unittest.TestCase):
         self.assertEqual((self.regs / "modprobe").read_text().split(), ["s2mm005"])
         self.assertIn("start tabs6-typec-role-watch.service", self.systemctl())
 
+    def test_boot_role_writes_device_before_the_module_and_never_after(self):
+        self.kernel_client(bound=False, driver_loaded=False)
+        self.set_role("host")
+        r = self.run_role("boot-role")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.role(), "device")
+        driver = self.sys / "bus/i2c/drivers/s2mm005-read-only"
+        driver.mkdir(parents=True)
+        (self.sys / "bus/i2c/devices/6-0033/driver").symlink_to(driver, target_is_directory=True)
+        self.set_role("host")
+        r = self.run_role("boot-role")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("kernel owns", r.stderr)
+        self.assertEqual(self.role(), "host")
+        self.assertEqual(self.writes(), [])
+
     def test_host_gadget_cleanup_never_writes_role_or_chip_registers(self):
         self.set_role("host")
         self.assertEqual(self.run_role("gadget-stop").returncode, 0)

@@ -132,10 +132,14 @@ device it restarts the gadget. This keeps the shared product gadget unchanged;
 only the Tab S6 edge knows about its role switch. No role or chip write is part
 of either gadget lifecycle action.
 
+`tabs6-usb-role-boot` (sysinit, as on main) still writes `device` before the
+gadget binds. It runs about 10 s before the module loads and refuses once the
+driver is bound, so it never competes with the kernel owner. Removing it was
+the only early-boot userspace difference in the builds whose counted trials
+fell back (see "Open risk"); it was restored for that reason.
+
 The existing boot `boot-vbus` service still requests verified boost-off because
-SM5705 registers can survive warm reboot. The product has no user-space
-`boot-role` writer; the driver owns boot data role. The console retains its
-old manual boot-role service. Nothing here changes charge-current maintenance.
+SM5705 registers can survive warm reboot. The boot-role writer runs on both systems. Nothing here changes charge-current maintenance.
 
 ## Late module load (2026-11-24)
 
@@ -169,7 +173,24 @@ and FIFO transfers both run inside the locked `master_xfer`. Nothing bypasses
 the lock in Linux. Firmware in another execution environment using SE4 would
 be outside Linux locking; this was not checked.
 
-## Open risk: unexplained trial fallbacks (2026-11-24)
+## Open risk: unexplained trial fallbacks (2026-11-24/25)
+
+Bisect, all counted trials with deploy-over-ssh (ESP write, then reboot):
+
+| Kernel / DT | Userspace | Result |
+| --- | --- | --- |
+| mine (graph or phandle link) | mine | 6 of 12 fell back |
+| LKG kernel and DTB, byte-identical | mine (no boot-role unit, no observer) | 1 of 2 fell back |
+| LKG kernel and DTB | main | 0 of 4 |
+
+LKG itself also failed one boot (boot `daa4c84c`, 2026-11-25 02:54, journal
+ends at 7.95 s during zram setup, no clean shutdown), directly after a failed
+trial's watchdog reset. So a background early reset exists on this tablet.
+Failed boots leave no journal (or one cut off within seconds) and no pstore
+record; the qcom_wdt watchdog (armed at about 4.9 s, 30 s) resets them into
+LAST KNOWN GOOD.
+
+Earlier notes:
 
 Two counted trials of the built-in driver fell back to LAST KNOWN GOOD (first
 mzjc, then s19cnbas). Neither left journal entries or a pstore record (only

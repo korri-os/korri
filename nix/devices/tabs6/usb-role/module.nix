@@ -83,7 +83,7 @@ in
       };
     };
 
-    systemd.services.tabs6-usb-role-boot = lib.mkIf config.tabs6.console.enable {
+    systemd.services.tabs6-usb-role-boot = {
       description = "Tab S6 USB-C role: gadget at boot";
       wantedBy = [ "sysinit.target" ];
       before = [

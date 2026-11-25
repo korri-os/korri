@@ -331,7 +331,10 @@ gadget-stop)
 	fi
 	;;
 boot-role)
-	[ -z "$(kernel_client)" ] || die "kernel owns boot data role"
+	# Runs at sysinit, before the late module loads. Never write once the
+	# kernel driver is bound: from then on it owns the role.
+	client=$(kernel_client) || exit 1
+	[ -z "$client" ] || [ ! -e "$client/driver" ] || die "kernel owns boot data role"
 	boot_role
 	;;
 boot-vbus) boot_vbus ;;
