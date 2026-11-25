@@ -208,33 +208,75 @@ pub(crate) fn client_shape(
     Ok(PluginDisplay { width, height })
 }
 
+// Sway's mode fields, unlike the launch treaty. refresh is in mHz.
+#[derive(Deserialize)]
+struct SwayMode {
+    width: u32,
+    height: u32,
+    #[serde(default)]
+    refresh: u32,
+}
+
+#[derive(Deserialize)]
+struct SwayOutput {
+    name: String,
+    current_mode: Option<SwayMode>,
+    #[serde(default)]
+    modes: Vec<SwayMode>,
+}
+
+fn sway_output(
+    control: &dyn super::compositor_focus::CompositorControl,
+    name: &str,
+) -> Result<Option<SwayOutput>, String> {
+    let outputs: Vec<SwayOutput> = serde_json::from_str(&control.outputs()?)
+        .map_err(|e| format!("invalid Sway outputs: {e}"))?;
+    Ok(outputs.into_iter().find(|o| o.name == name))
+}
+
 fn output_size(
     control: &dyn super::compositor_focus::CompositorControl,
     name: &str,
 ) -> Result<crate::launcher::plugin_launch::PluginDisplay, String> {
     use crate::launcher::plugin_launch::PluginDisplay;
-    // current_mode has refresh and other Sway fields, unlike the launch treaty.
-    #[derive(Deserialize)]
-    struct Mode {
-        width: u32,
-        height: u32,
-    }
-    #[derive(Deserialize)]
-    struct SwayOutput {
-        name: String,
-        current_mode: Option<Mode>,
-    }
-    let outputs: Vec<SwayOutput> = serde_json::from_str(&control.outputs()?)
-        .map_err(|e| format!("invalid Sway outputs: {e}"))?;
-    outputs
-        .into_iter()
-        .find(|o| o.name == name)
+    sway_output(control, name)?
         .and_then(|o| o.current_mode)
         .map(|m| PluginDisplay {
             width: m.width,
             height: m.height,
         })
         .ok_or_else(|| format!("output {name} has no current mode"))
+}
+
+/// The output's own mode for this size, at the refresh nearest the configured
+/// one, as a Sway mode value. A custom mode builds its own CVT timing, which
+/// some sinks refuse even for a size they list (aka's dummy plug at 4K60).
+/// Sway can accept a plain `mode` for an unlisted size without changing
+/// anything, so only a listed mode qualifies.
+fn listed_mode(
+    output: &SwayOutput,
+    size: &crate::launcher::plugin_launch::PluginDisplay,
+    refresh: &str,
+) -> Option<String> {
+    let wanted = refresh
+        .strip_suffix("Hz")
+        .unwrap_or(refresh)
+        .parse::<f64>()
+        .ok()?
+        * 1000.0;
+    let mode = output
+        .modes
+        .iter()
+        .filter(|m| m.width == size.width && m.height == size.height && m.refresh > 0)
+        .min_by(|a, b| {
+            (f64::from(a.refresh) - wanted)
+                .abs()
+                .total_cmp(&(f64::from(b.refresh) - wanted).abs())
+        })?;
+    // Sway matches a listed mode by rounding the rate to mHz, so print it exactly.
+    let rate = format!("{}.{:03}", mode.refresh / 1000, mode.refresh % 1000);
+    let rate = rate.trim_end_matches('0').trim_end_matches('.');
+    Some(format!("{}x{}@{rate}Hz", mode.width, mode.height))
 }
 
 /// None means this placement is outside client shaping. Errors are launch warnings.
@@ -258,18 +300,26 @@ pub(crate) fn apply_client_shape(
     let size = client_shape(viewer)?;
     let refresh = configured_refresh(main)?;
     let control = control.ok_or("compositor unavailable for viewer display")?;
-    let result = (|| {
-        control.command(&format!(
-            "output {} mode --custom {}x{}@{}",
-            main.name, size.width, size.height, refresh
-        ))?;
+    let set = |mode: &str| -> Result<(), String> {
+        control.command(&format!("output {} mode {mode}", main.name))?;
         if output_size(control, &main.name)? != size {
             return Err("compositor did not confirm viewer display size".into());
         }
         Ok(())
+    };
+    let result = (|| {
+        let listed = sway_output(control, &main.name)?
+            .and_then(|output| listed_mode(&output, &size, refresh));
+        let custom = format!("--custom {}x{}@{}", size.width, size.height, refresh);
+        match listed {
+            None => set(&custom),
+            Some(listed) => set(&listed).or_else(|first| {
+                set(&custom).map_err(|reason| format!("listed mode {listed}: {first}; {reason}"))
+            }),
+        }
     })();
     if let Err(reason) = result {
-        // A refused/mismatched custom mode may have changed the output. Restore
+        // A refused/mismatched mode may have changed the output. Restore
         // the configured mode before composing the configured-size launch.
         return match control.command(&configured_mode_command(main)) {
             Ok(()) => Err(reason),
@@ -983,8 +1033,103 @@ mod tests {
         let events = std::fs::read_to_string(dir.path().join("events")).unwrap();
         assert_eq!(
             events,
-            "output DSI-2 mode --custom 2176x1808@120Hz\nget_outputs\n"
+            "get_outputs\noutput DSI-2 mode --custom 2176x1808@120Hz\nget_outputs\n"
         );
+    }
+
+    // aka's HDMI dummy plug lists 4K at several rates and refuses a custom 4K60.
+    const LISTED_4K: &str = r#"[{"width":3840,"height":2160,"refresh":30000},{"width":3840,"height":2160,"refresh":59940},{"width":3840,"height":2160,"refresh":60000},{"width":1920,"height":1080,"refresh":60000}]"#;
+
+    fn shape_4k(
+        dir: &std::path::Path,
+        configured: &str,
+        current: (u32, u32),
+        viewer: (u32, u32),
+    ) -> (
+        Result<Option<crate::launcher::plugin_launch::PluginDisplay>, String>,
+        Placement,
+    ) {
+        use crate::launcher::plugin_launch::PluginDisplay;
+        let control = sway_program(dir, r#"[{"success":true}]"#);
+        std::fs::write(
+            dir.join("outputs"),
+            format!(
+                r#"[{{"name":"DSI-2","current_mode":{{"width":{},"height":{},"refresh":60000}},"modes":{LISTED_4K}}}]"#,
+                current.0, current.1
+            ),
+        )
+        .unwrap();
+        let mut ds = unwatched_main();
+        ds[0].mode = configured.into();
+        let mut p = choose(None, &runner(), &ds).unwrap();
+        let result = apply_client_shape(
+            Some(&control),
+            &ds,
+            &mut p,
+            Some(&PluginDisplay {
+                width: viewer.0,
+                height: viewer.1,
+            }),
+        );
+        (result, p)
+    }
+
+    #[test]
+    fn listed_mode_is_chosen_without_custom_at_the_nearest_refresh() {
+        for (configured, sent) in [
+            ("1920x1080@60Hz", "3840x2160@60Hz"),
+            ("1920x1080@120Hz", "3840x2160@60Hz"),
+            ("1920x1080@59.94Hz", "3840x2160@59.94Hz"),
+            ("1920x1080@24", "3840x2160@30Hz"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let (result, p) = shape_4k(dir.path(), configured, (3840, 2160), (3840, 2160));
+            let size = result.unwrap().unwrap();
+            assert_eq!((size.width, size.height), (3840, 2160));
+            assert_eq!((p.width, p.height), (3840, 2160));
+            let events = std::fs::read_to_string(dir.path().join("events")).unwrap();
+            assert_eq!(
+                events,
+                format!("get_outputs\noutput DSI-2 mode {sent}\nget_outputs\n")
+            );
+        }
+    }
+
+    #[test]
+    fn unlisted_size_still_uses_a_custom_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let (result, p) = shape_4k(dir.path(), "1920x1080@60Hz", (2560, 1440), (2560, 1440));
+        result.unwrap().unwrap();
+        assert_eq!((p.width, p.height), (2560, 1440));
+        let events = std::fs::read_to_string(dir.path().join("events")).unwrap();
+        assert_eq!(
+            events,
+            "get_outputs\noutput DSI-2 mode --custom 2560x1440@60Hz\nget_outputs\n"
+        );
+    }
+
+    #[test]
+    fn refused_or_unconfirmed_listed_mode_falls_back_to_custom_then_restores() {
+        for refusal in [true, false] {
+            let dir = tempfile::tempdir().unwrap();
+            if refusal {
+                std::fs::write(dir.path().join("reject"), "mode 3840x2160@60Hz").unwrap();
+            }
+            let (result, p) = shape_4k(dir.path(), "1920x1080@60Hz", (1920, 1080), (3840, 2160));
+            let warning = result.unwrap_err();
+            assert!(
+                warning.starts_with("listed mode 3840x2160@60Hz: "),
+                "{warning}"
+            );
+            assert_eq!(warning.contains("refused"), refusal, "{warning}");
+            assert!(warning.ends_with("compositor did not confirm viewer display size"));
+            assert_eq!((p.width, p.height), (1920, 1080));
+            let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
+            assert_eq!(
+                batches,
+                "output DSI-2 mode 3840x2160@60Hz\noutput DSI-2 mode --custom 3840x2160@60Hz\noutput DSI-2 mode 1920x1080@60Hz\n"
+            );
+        }
     }
 
     #[test]
