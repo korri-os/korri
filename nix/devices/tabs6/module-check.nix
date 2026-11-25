@@ -157,11 +157,11 @@ assert c.services.korriLinuxHost.compositor.localInput.enable;
 # faults in CCU. Do not apply this workaround to the compositor or games.
 assert (c.systemd.services.korri-shell.environment.FD_MESA_DEBUG or null) == "sysmem";
 assert !(c.systemd.services.korri-compositor.environment ? FD_MESA_DEBUG);
-# Volume keys run the product's inputd volume commands from compositor bindings.
-assert lib.hasInfix "XF86AudioRaiseVolume exec /nix/store/"
-  c.services.korriLinuxHost.compositor.extraConfig;
-assert lib.hasInfix "XF86AudioLowerVolume exec /nix/store/"
-  c.services.korriLinuxHost.compositor.extraConfig;
+# Volume keys belong to inputd, so controller Guide can modify them.
+assert !(lib.hasInfix "XF86AudioRaiseVolume" c.services.korriLinuxHost.compositor.extraConfig);
+assert !(lib.hasInfix "XF86AudioLowerVolume" c.services.korriLinuxHost.compositor.extraConfig);
+assert !c.services.korriLinuxInput.inputd.allowBroadRawInput;
+assert lib.hasInfix "grant system-keys" c.services.udev.extraRules;
 assert c.services.korriLinuxInput.provider.enable;
 assert c.services.korriLinuxInput.inputd.enable;
 assert lib.elem "tabs6-bt-pair" (map lib.getName c.environment.systemPackages);

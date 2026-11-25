@@ -2,7 +2,7 @@ use std::{
     ffi::{CString, OsStr},
     fs,
     os::{
-        fd::RawFd,
+        fd::{FromRawFd, IntoRawFd, OwnedFd, RawFd},
         unix::ffi::OsStrExt,
         unix::fs::{FileTypeExt, MetadataExt},
     },
@@ -11,7 +11,10 @@ use std::{
 };
 
 use evdev::raw_stream::RawDevice;
-use korri_inputd::devices::XB360_TARGET_NAME;
+use korri_inputd::{
+    devices::XB360_TARGET_NAME,
+    system_keys::{eligible_keys, is_uinput},
+};
 const TARGET_KEYS: [u16; 15] = [
     0x130, 0x131, 0x133, 0x134, 0x136, 0x137, 0x13a, 0x13b, 0x13c, 0x13d, 0x13e, 0x2c0, 0x2c1,
     0x2c2, 0x2c3,
@@ -29,6 +32,7 @@ struct Facts {
     vendor: u16,
     product: u16,
     version: u16,
+    key_events: bool,
     keys: Vec<u16>,
     abs: Vec<u16>,
     force_feedback: bool,
@@ -37,10 +41,14 @@ struct Facts {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TargetKind {
     Source,
+    SystemKeys,
 }
 
 impl Facts {
     fn kind(&self) -> Option<TargetKind> {
+        if self.character && !self.virtual_sysfs && self.key_events && eligible_keys(&self.keys) {
+            return Some(TargetKind::SystemKeys);
+        }
         if !self.character
             || !self.virtual_sysfs
             || !self.empty_uniq
@@ -154,13 +162,14 @@ fn run(mut args: Vec<std::ffi::OsString>) -> Result<(), String> {
             }
             Ok(())
         }
-        _ => Err("usage: {grant source UID DEVICE|reapply INPUTD_UID|revoke}".into()),
+        _ => Err("usage: {grant {source|system-keys} UID DEVICE|reapply INPUTD_UID|revoke}".into()),
     }
 }
 
 fn target_kind(value: &OsStr) -> Result<TargetKind, String> {
     match value.to_str() {
         Some("source") => Ok(TargetKind::Source),
+        Some("system-keys") => Ok(TargetKind::SystemKeys),
         _ => Err("target kind is invalid".into()),
     }
 }
@@ -248,9 +257,9 @@ fn open_and_validate(requested: &Path, sys_root: &Path) -> Result<HeldTarget, St
     if fd < 0 {
         return Err("target could not be opened safely".into());
     }
+    let owned = unsafe { OwnedFd::from_raw_fd(fd) };
     let mut stat: libc::stat = unsafe { std::mem::zeroed() };
     if unsafe { libc::fstat(fd, &mut stat) } != 0 {
-        unsafe { libc::close(fd) };
         return Err("target metadata is unavailable".into());
     }
     let binding = Binding {
@@ -262,13 +271,15 @@ fn open_and_validate(requested: &Path, sys_root: &Path) -> Result<HeldTarget, St
     let minor = libc::minor(stat.st_rdev);
     let sysfs_link = sys_root.join("dev/char").join(format!("{major}:{minor}"));
     let sysfs = fs::canonicalize(&sysfs_link).map_err(|_| "target sysfs binding is unavailable")?;
-    let virtual_root = fs::canonicalize(sys_root.join("devices/virtual/input")).map_err(generic)?;
+    if !sysfs.starts_with(sys_root.join("devices")) {
+        return Err("target sysfs binding is outside devices".into());
+    }
     let procfd = format!("/proc/self/fd/{fd}");
     let device = RawDevice::open(&procfd).map_err(|_| "target evdev facts are unavailable")?;
     let id = device.input_id();
     let facts = Facts {
         character: (stat.st_mode & libc::S_IFMT) == libc::S_IFCHR,
-        virtual_sysfs: sysfs.starts_with(&virtual_root),
+        virtual_sysfs: is_uinput(sys_root, &sysfs),
         physical_path: device.physical_path().unwrap_or("").to_owned(),
         empty_uniq: device.unique_name().unwrap_or("").is_empty(),
         name: device.name().unwrap_or("").to_owned(),
@@ -276,6 +287,7 @@ fn open_and_validate(requested: &Path, sys_root: &Path) -> Result<HeldTarget, St
         vendor: id.vendor(),
         product: id.product(),
         version: id.version(),
+        key_events: device.supported_events().contains(evdev::EventType::KEY),
         keys: device
             .supported_keys()
             .map(|v| v.iter().map(|k| k.0).collect())
@@ -289,11 +301,10 @@ fn open_and_validate(requested: &Path, sys_root: &Path) -> Result<HeldTarget, St
             .contains(evdev::EventType::FORCEFEEDBACK),
     };
     let Some(kind) = facts.kind() else {
-        unsafe { libc::close(fd) };
         return Err("target is not an exact Korri input route device".into());
     };
     Ok(HeldTarget {
-        fd,
+        fd: owned.into_raw_fd(),
         requested: requested.to_owned(),
         binding,
         sysfs,
@@ -348,9 +359,30 @@ mod tests {
             vendor: 0x045e,
             product: 0x028e,
             version: 1,
+            key_events: true,
             keys: TARGET_KEYS.to_vec(),
             abs: TARGET_ABS.to_vec(),
             force_feedback: true,
+        }
+    }
+    #[test]
+    fn system_key_grants_exclude_typing_and_uinput_but_allow_media_nodes() {
+        for keys in [vec![115], vec![114], vec![113, 114, 115, 164, 165]] {
+            let mut facts = valid();
+            facts.virtual_sysfs = false;
+            facts.keys = keys;
+            assert_eq!(facts.kind(), Some(TargetKind::SystemKeys));
+            facts.virtual_sysfs = true;
+            assert_eq!(facts.kind(), None);
+            facts.virtual_sysfs = false;
+            facts.keys.push(16); // KEY_Q
+            assert_eq!(facts.kind(), None);
+            facts.keys = vec![115];
+            facts.key_events = false;
+            assert_eq!(facts.kind(), None);
+            facts.key_events = true;
+            facts.character = false;
+            assert_eq!(facts.kind(), None);
         }
     }
     #[test]

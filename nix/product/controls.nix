@@ -2,8 +2,9 @@
 # brightness, controller activity keeping the screen awake, and display idle. Moved unchanged from the RP Mini V2
 # (portal.nix, 2daf0930c) so no device can ship without them.
 #
-# A device supplies only hardware facts: its InputPlumber data decides whether
-# volume keys reach inputd, and compositor.displays names its displays.
+# A device supplies only hardware facts: compositor.displays names its displays.
+# inputd reads physical system volume keys directly, or through InputPlumber
+# when its composite captures them; Home on any local controller modifies them.
 {
   config,
   lib,
@@ -89,7 +90,7 @@ let
   };
 in
 {
-  # InputPlumber routes volume keys to inputd's direct actions. Run wpctl as
+  # inputd routes system volume keys to the product actions. Run wpctl as
   # the runtime user against that user's PipeWire graph; no compositor key
   # bindings are needed.
   services.korriLinuxInput.inputd.actions = {

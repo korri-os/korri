@@ -134,8 +134,24 @@ impl Policies {
         let source_name = match source {
             InputSource::Evdev => EVDEV_SOURCE,
             InputSource::Remote => "remote:authenticated-mirror",
+            InputSource::SystemKeys => "system-keys",
             InputSource::AuthenticatedDbus => DBUS_SOURCE,
         };
+        self.handle_named(source, source_name, input, _now_ms)
+    }
+
+    pub(crate) fn clear_source(&mut self, source: &str) {
+        self.non_destructive.clear_source(source);
+        self.destructive.clear_source(source);
+    }
+
+    pub(crate) fn handle_named(
+        &mut self,
+        source: InputSource,
+        source_name: &str,
+        input: SemanticInput,
+        _now_ms: u64,
+    ) -> Vec<RuntimeAction> {
         let mut actions = handle_policy(&mut self.non_destructive, source_name, input)
             .into_iter()
             .map(|id| {
@@ -193,6 +209,7 @@ fn handle_policy(policy: &mut ShortcutPolicy, source: &str, input: SemanticInput
 pub(crate) enum InputSource {
     Evdev,
     Remote,
+    SystemKeys,
     AuthenticatedDbus,
 }
 

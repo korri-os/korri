@@ -25,7 +25,7 @@ assert upstreamWlroots.version == "0.20.2";
   # Sway runs every `exec` command through execlp("sh", "sh", "-c", …), a
   # PATH lookup. korri-compositor.service's PATH has no shell, so the
   # compositor's own wrapper adds one: without it an `exec` binding (the Tab
-  # S6 power and volume keys) fails with "execve failed".
+  # S6 power key) fails with "execve failed".
   extraSessionCommands = ''
     export PATH="$PATH:${pkgs.lib.makeBinPath [ pkgs.bash ]}"
   '';

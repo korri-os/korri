@@ -112,7 +112,6 @@ struct CapturedSource {
     opened: OpenedCapture,
     state: GamepadState,
     published: GamepadState,
-    policies: Policies,
     armed: bool,
 }
 struct RemoteShortcutSource {
@@ -125,6 +124,7 @@ pub struct CaptureRuntime {
     state: RuntimeState,
     owner: Option<String>,
     sources: BTreeMap<String, CapturedSource>,
+    policies: Policies,
     remote: BTreeMap<(String, String, u8), RemoteShortcutSource>,
     updates: VecDeque<SeatRequest>,
     routes: ActionRoutes,
@@ -145,6 +145,7 @@ impl CaptureRuntime {
             },
             owner: None,
             sources: BTreeMap::new(),
+            policies: Policies::new(routes),
             remote: BTreeMap::new(),
             updates: VecDeque::new(),
             routes,
@@ -228,6 +229,7 @@ impl CaptureRuntime {
     }
     fn remove(&mut self, id: &str) {
         if self.sources.remove(id).is_some() {
+            self.policies.clear_source(id);
             self.settled = None;
             self.queue(SeatRequest::PhysicalDisconnected {
                 device_id: id.to_owned(),
@@ -355,7 +357,6 @@ impl CaptureRuntime {
                     opened,
                     state,
                     published: state,
-                    policies: Policies::new(self.routes),
                     armed: state.is_neutral_for_rearm(),
                 },
             );
@@ -447,13 +448,15 @@ impl CaptureRuntime {
                     && matches!(event.code(), 0x116 | 0x133)
                 {
                     if let Some(input) = map_evdev(1, event.code(), event.value()) {
-                        actions = source.policies.handle(InputSource::Evdev, input, 0);
+                        actions = self
+                            .policies
+                            .handle_named(InputSource::Evdev, &id, input, 0);
                     }
                 }
                 if event.event_type().0 == 0 && event.code() == 0 {
                     if !source.armed && source.state.is_neutral_for_rearm() {
                         source.armed = true;
-                        source.policies.reset();
+                        self.policies.clear_source(&id);
                     }
                     let state = source.state;
                     if state != source.published {
@@ -516,10 +519,34 @@ impl CaptureRuntime {
         if !source.armed {
             return Vec::new();
         }
-        source
-            .policies
-            .handle(InputSource::AuthenticatedDbus, input, 0)
+        self.policies.handle_named(
+            InputSource::AuthenticatedDbus,
+            &source.identity.device_id,
+            input,
+            0,
+        )
     }
+    pub fn clear_system_key_source(&mut self, id: &str) {
+        self.policies.clear_source(id);
+    }
+
+    pub fn handle_system_key(
+        &mut self,
+        id: &str,
+        event_type: u16,
+        code: u16,
+        value: i32,
+    ) -> Vec<RuntimeAction> {
+        if event_type == 1 && matches!(code, 114 | 115) {
+            if let Some(input) = map_evdev(event_type, code, value) {
+                return self
+                    .policies
+                    .handle_named(InputSource::SystemKeys, id, input, 0);
+            }
+        }
+        Vec::new()
+    }
+
     pub fn handle_remote_event(&mut self, event: RemoteEvent) -> Vec<RuntimeAction> {
         match event {
             RemoteEvent::Connected { source } => {

@@ -11,7 +11,7 @@
 //! their axes do not overlap. It cannot own a controller or reconnect identity.
 //! The RG353M contributes all four axes; an X/Y-only split is also supported.
 //!
-//! Inputd runs unprivileged and must not open raw `/dev/input` nodes. It reads
+//! Controller discovery runs unprivileged and does not open raw gamepad nodes. It reads
 //! the world-readable sysfs capability bitmaps instead:
 //! `<sysfs>/class/input/eventN/device/capabilities/{key,abs}`.
 //!
@@ -164,7 +164,7 @@ impl SysfsSourceClassifier {
 }
 
 /// Returns the words least significant first, or `None` when malformed.
-fn parse_bitmap(content: &str) -> Option<Vec<u64>> {
+pub(crate) fn parse_bitmap(content: &str) -> Option<Vec<u64>> {
     let mut words = content
         .split_whitespace()
         .map(|word| {
@@ -182,7 +182,7 @@ fn parse_bitmap(content: &str) -> Option<Vec<u64>> {
     Some(words)
 }
 
-fn bitmap_has(words: &[u64], bit: usize) -> bool {
+pub(crate) fn bitmap_has(words: &[u64], bit: usize) -> bool {
     words
         .get(bit / BITS_PER_WORD)
         .is_some_and(|word| word & (1_u64 << (bit % BITS_PER_WORD)) != 0)

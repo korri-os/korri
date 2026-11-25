@@ -352,12 +352,14 @@ in
       };
       environment.systemPackages = [ cfg.inputd.package ];
       # The helper repeats each complete identity and capability match before
-      # changing an ACL. Only inputd reads normalized InputPlumber sources.
+      # changing an ACL. inputd reads normalized InputPlumber sources and
+      # physical volume-only/media nodes, never typing keyboards.
       # Shell navigation uses authenticated native delivery, never device ACLs.
       services.udev.extraRules = ''
         ${lib.optionalString (!cfg.provider.enable)
           ''KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="${inputdUser}", GROUP="${uinputGroup}", MODE="0660", OPTIONS+="static_node=uinput"''
         }
+        SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_KEY}=="1", RUN+="${lib.getExe virtualTargetAcl} grant system-keys ${toString cfg.inputd.uid} $env{DEVNAME}"
         SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Microsoft X-Box 360 pad", ATTRS{id/bustype}=="0003", ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0001", OWNER="root", GROUP="root", MODE="0600", RUN+="${lib.getExe virtualTargetAcl} grant source ${toString cfg.inputd.uid} $env{DEVNAME}"
       '';
       services.dbus.packages = [ providerDbusPolicy ];

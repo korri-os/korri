@@ -267,6 +267,8 @@ assert builtins.elem "korri-input-source-guard.service" inputdService.after;
 assert lib.hasInfix "Microsoft X-Box 360 pad" inputdOnlyRules;
 assert lib.hasInfix "korri-virtual-target-acl" inputdOnlyRules;
 assert lib.hasInfix " grant source 977 $env{DEVNAME}" inputdOnlyRules;
+assert lib.hasInfix ''ENV{ID_INPUT_KEY}=="1"'' inputdOnlyRules;
+assert lib.hasInfix " grant system-keys 977 $env{DEVNAME}" inputdOnlyRules;
 assert !(lib.hasInfix " grant game " inputdOnlyRules);
 assert !(lib.hasInfix " grant portal " inputdOnlyRules);
 assert !(lib.hasInfix "korri/inputd/game" inputdOnlyRules);

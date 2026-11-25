@@ -73,6 +73,7 @@ async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
         runtime.enable_activity();
     }
     let mut provider = EvdevProvider::default();
+    let mut system_keys = korri_inputd::system_keys::SystemKeys::default();
     let mut producer: Option<PrivateInputChannel> = None;
     let mut remote_baseline = true;
     let mut heartbeat = tokio::time::interval(Duration::from_millis(200));
@@ -120,7 +121,19 @@ async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
                     &services,
                 );
             }
+            event = system_keys.next_event(), if services.physical_input => {
+                use korri_inputd::system_keys::SystemKeyEvent;
+                match event {
+                    SystemKeyEvent::Key { id, code, value } => {
+                        dispatch_actions(runtime.handle_system_key(&id, 1, code, value), &services);
+                    }
+                    SystemKeyEvent::Lost { id } => runtime.clear_system_key_source(&id),
+                }
+            }
             _ = reconcile.tick(), if services.physical_input => {
+                for id in system_keys.reconcile(std::path::Path::new("/sys"), std::path::Path::new("/dev/input")) {
+                    runtime.clear_system_key_source(&id);
+                }
                 if producer.is_none() {
                     if let Some(client) = &services.korrid {
                         match client.input_channel().await {

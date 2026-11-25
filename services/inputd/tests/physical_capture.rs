@@ -325,7 +325,7 @@ async fn renumbered_target_reconnects_with_same_raw_identity_and_open_fd_is_stil
 }
 
 #[tokio::test]
-async fn shortcut_policies_are_source_scoped_and_wrong_dbus_paths_have_no_authority() {
+async fn local_shortcuts_share_state_but_wrong_dbus_paths_have_no_authority() {
     let ids = identities();
     let mut provider = Provider::default();
     let _one = provider.add(&ids[0], GamepadState::neutral());
@@ -335,16 +335,14 @@ async fn shortcut_policies_are_source_scoped_and_wrong_dbus_paths_have_no_author
     assert!(dbus(&mut runtime, ":1.99", 0, "ui_volume_up", 1.0).is_empty());
     assert!(dbus(&mut runtime, ":1.42", 9, "ui_volume_up", 1.0).is_empty());
     assert!(dbus(&mut runtime, ":1.42", 0, "ui_guide", 1.0).is_empty());
-    assert!(
-        dbus(&mut runtime, ":1.42", 1, "ui_right", 1.0).is_empty(),
-        "controllers cannot combine a chord"
+    assert_eq!(
+        dbus(&mut runtime, ":1.42", 1, "ui_right", 1.0)[0].id,
+        ActionId::WorkspaceNext
     );
     let volume = dbus(&mut runtime, ":1.42", 1, "ui_volume_up", 1.0);
-    assert_eq!(volume[0].id, ActionId::VolumeUp);
-    // The full same-source chord works on either controller, regardless of the
-    // game/portal route (which this capture runtime no longer owns).
-    let matched = dbus(&mut runtime, ":1.42", 0, "ui_right", 1.0);
-    assert!(!matched.is_empty());
+    assert_eq!(volume[0].id, ActionId::BrightnessUp);
+    // An already-active shared chord does not fire again from another source.
+    assert!(dbus(&mut runtime, ":1.42", 0, "ui_right", 1.0).is_empty());
 }
 
 #[tokio::test]
@@ -746,4 +744,129 @@ async fn source_loss_owner_change_and_transport_loss_unsettle_the_topology() {
             "case {case} must force a full pass"
         );
     }
+}
+
+#[tokio::test]
+async fn local_controllers_share_brightness_chords_and_consume_home_tap() {
+    for (capability, expected) in [
+        ("ui_volume_up", ActionId::BrightnessUp),
+        ("ui_volume_down", ActionId::BrightnessDown),
+    ] {
+        let ids = identities();
+        let mut provider = Provider::default();
+        let _one = provider.add(&ids[0], GamepadState::neutral());
+        let _two = provider.add(&ids[1], GamepadState::neutral());
+        let mut runtime = runtime();
+        runtime.reconcile_sources(&mut provider, ids).unwrap();
+        assert!(dbus(&mut runtime, ":1.42", 0, "ui_guide", 1.0).is_empty());
+        let actions = dbus(&mut runtime, ":1.42", 1, capability, 1.0);
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].id, expected);
+        dbus(&mut runtime, ":1.42", 1, capability, 0.0);
+        assert!(dbus(&mut runtime, ":1.42", 0, "ui_guide", 0.0).is_empty());
+    }
+}
+
+#[tokio::test]
+async fn system_keys_work_without_controllers_and_share_home_with_any_controller() {
+    for (code, volume, brightness) in [
+        (115, ActionId::VolumeUp, ActionId::BrightnessUp),
+        (114, ActionId::VolumeDown, ActionId::BrightnessDown),
+    ] {
+        let mut runtime = CaptureRuntime::with_action_routes(ActionRoutes::default());
+        assert_eq!(
+            runtime.handle_system_key("system-keys:gpio", 1, code, 1)[0].id,
+            volume
+        );
+        runtime.handle_system_key("system-keys:gpio", 1, code, 0);
+        let ids = identities();
+        let mut provider = Provider::default();
+        let _one = provider.add(&ids[0], GamepadState::neutral());
+        runtime.set_dbus_owner(Some(":1.42"));
+        runtime
+            .reconcile_sources(&mut provider, vec![ids[0].clone()])
+            .unwrap();
+        dbus(&mut runtime, ":1.42", 0, "ui_guide", 1.0);
+        let actions = runtime.handle_system_key("system-keys:gpio", 1, code, 1);
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].id, brightness);
+        runtime.handle_system_key("system-keys:gpio", 1, code, 0);
+        assert!(dbus(&mut runtime, ":1.42", 0, "ui_guide", 0.0).is_empty());
+        dbus(&mut runtime, ":1.42", 0, "ui_guide", 1.0);
+        assert_eq!(
+            dbus(&mut runtime, ":1.42", 0, "ui_guide", 0.0)[0].id,
+            ActionId::SystemPanel
+        );
+        dbus(&mut runtime, ":1.42", 0, "ui_guide", 1.0);
+        runtime.reconcile_sources(&mut provider, vec![]).unwrap();
+        assert_eq!(
+            runtime.handle_system_key("system-keys:gpio", 1, code, 1)[0].id,
+            volume
+        );
+    }
+}
+
+#[tokio::test]
+async fn removing_or_rearming_one_source_does_not_reset_other_sources() {
+    let ids = identities();
+    let mut provider = Provider::default();
+    let _one = provider.add(&ids[0], GamepadState::neutral());
+    let _two = provider.add(&ids[1], GamepadState::neutral());
+    let mut runtime = runtime();
+    runtime
+        .reconcile_sources(&mut provider, ids.clone())
+        .unwrap();
+    dbus(&mut runtime, ":1.42", 0, "ui_guide", 1.0);
+    runtime
+        .reconcile_sources(&mut provider, vec![ids[0].clone()])
+        .unwrap();
+    assert_eq!(
+        runtime.handle_system_key("system-keys:gpio", 1, 114, 1)[0].id,
+        ActionId::BrightnessDown
+    );
+    runtime.clear_system_key_source("system-keys:gpio");
+    assert!(dbus(&mut runtime, ":1.42", 0, "ui_guide", 0.0).is_empty());
+    dbus(&mut runtime, ":1.42", 0, "ui_guide", 1.0);
+    runtime.reconcile_sources(&mut provider, vec![]).unwrap();
+    let tx = provider.add(
+        &ids[0],
+        GamepadState {
+            buttons: 0x400,
+            ..GamepadState::neutral()
+        },
+    );
+    runtime
+        .reconcile_sources(&mut provider, vec![ids[0].clone()])
+        .unwrap();
+    assert!(dbus(&mut runtime, ":1.42", 0, "ui_guide", 1.0).is_empty());
+    event(&mut runtime, &tx, 1, 0x13c, 0).await;
+    event(&mut runtime, &tx, 0, 0, 0).await;
+    assert!(dbus(&mut runtime, ":1.42", 0, "ui_guide", 0.0).is_empty());
+    assert_eq!(
+        runtime.handle_system_key("system-keys:gpio", 1, 114, 1)[0].id,
+        ActionId::VolumeDown
+    );
+}
+
+#[test]
+fn remote_home_never_modifies_local_system_keys() {
+    let mut runtime = CaptureRuntime::with_action_routes(ActionRoutes::default());
+    runtime.handle_remote_event(RemoteEvent::Connected { source: remote(0) });
+    runtime.handle_remote_event(RemoteEvent::State {
+        source: remote(0x400),
+    });
+    assert_eq!(
+        runtime.handle_system_key("system-keys:gpio", 1, 114, 1)[0].id,
+        ActionId::VolumeDown
+    );
+    assert!(runtime
+        .handle_system_key("system-keys:gpio", 1, 115, 2)
+        .is_empty());
+    assert!(runtime
+        .handle_system_key("system-keys:gpio", 1, 16, 1)
+        .is_empty());
+    assert_eq!(
+        runtime.handle_remote_event(RemoteEvent::State { source: remote(0) })[0].id,
+        ActionId::SystemPanel
+    );
 }
