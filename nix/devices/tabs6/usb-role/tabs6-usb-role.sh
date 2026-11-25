@@ -183,27 +183,12 @@ to_device() {
 	return "$failed"
 }
 
-# No role or chip writes. Triggered only by the read-only role watcher.
-# Wait for the kernel's host-controller teardown before retiring providers.
-detached() {
-	local ready=0
-	for _ in $(seq 1 30); do
-		if [ "$(role)" = device ] && [ "$(usb_devices)" = 0 ]; then
-			ready=1
-			break
-		fi
-		sleep 0.1
-	done
-	[ "$ready" = 1 ] || { log "host controller teardown not verified"; return 1; }
-	if [ -n "$GADGET_UNIT" ]; then
-		systemctl restart --no-block "$GADGET_UNIT" || return 1
-	fi
-	if timeout --signal=KILL 10s systemctl restart inputplumber.service korri-inputd.service; then
-		log "Kishi input providers restarted after kernel detach (no role/chip writes)"
-	else
-		log "Kishi input provider teardown failed"
-		return 1
-	fi
+# No role or chip writes. Triggered only by the read-only role watcher when
+# the kernel returns the port to device: rebind the gadget lifeline. Input
+# providers are not restarted; InputPlumber's source teardown fix (see
+# services/inputd/tests/inputplumber-reattach.md) handles the re-add.
+gadget_start() {
+	[ -z "$GADGET_UNIT" ] || systemctl restart --no-block "$GADGET_UNIT"
 }
 
 # Every boot starts as the gadget with the boost off. The role switch
@@ -319,7 +304,7 @@ device)
 	kernel_yield || die "could not release kernel role owner"
 	to_device && kernel_resume
 	;;
-detached) detached ;;
+gadget-start) gadget_start ;;
 gadget-stop)
 	# Host can qualify before systemd starts the gadget. Cancel its late-UDC
 	# wait without changing the shared product gadget or the kernel's role.
@@ -339,7 +324,7 @@ boot-role)
 	;;
 boot-vbus) boot_vbus ;;
 *)
-	echo "usage: tabs6-usb-role [status|host|device|detached|gadget-stop|boot-role|boot-vbus]" >&2
+	echo "usage: tabs6-usb-role [status|host|device|gadget-start|gadget-stop|boot-role|boot-vbus]" >&2
 	exit 2
 	;;
 esac

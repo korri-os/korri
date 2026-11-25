@@ -1,5 +1,5 @@
 # The product kernel owns the data role. User space only maintains boot
-# boost-off and the temporary provider restart workaround after kernel detach.
+# boost-off and stops/restarts the gadget around the kernel's role changes.
 # The console retains its operator-only host/device path. See typec-phase-b.md.
 #
 # Korri's product USB gadget (nix/product/usb-gadget.nix) owns the gadget
@@ -47,7 +47,7 @@ in
     # No I2C status daemon: the s2mm005 client now owns address 0x33.
     # This process only reads the selected role and runs the detach workaround.
     systemd.services.tabs6-typec-role-watch = lib.mkIf (!config.tabs6.console.enable) {
-      description = "Tab S6 kernel USB role detach input workaround";
+      description = "Tab S6 gadget follows the kernel USB data role";
       wantedBy = [ "multi-user.target" ];
       after = [ "systemd-modules-load.service" ];
       environment.TABS6_USB_ROLE_HELPER = lib.getExe usbRole;

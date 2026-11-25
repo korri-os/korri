@@ -56,10 +56,6 @@ case "$*" in
 "reset-failed usb-gadget.service")
     echo inactive > "$TABS6_TEST_REGS/gadget-state" ;;
 esac
-if [ "$*" = "restart inputplumber.service korri-inputd.service" ]; then
-    printf 'provider-restart role=%s cntl=%s\n' "$(cat "$TABS6_SYSFS"/class/usb_role/*/role)" "$(cat "$TABS6_TEST_REGS/0x0c")" >> "$TABS6_TEST_REGS/order"
-    [ ! -e "$TABS6_TEST_REGS/provider-failure" ] || exit 1
-fi
 """
 
 I2CTRANSFER = """#!/usr/bin/env bash
@@ -501,50 +497,52 @@ class UsbRole(unittest.TestCase):
         self.assertEqual(self.writes(), [])
         self.assertEqual((self.regs / "gadget-state").read_text().strip(), "inactive")
 
-    def test_detach_workaround_only_restarts_after_kernel_teardown(self):
+    def test_detach_restarts_only_the_gadget_never_input_providers(self):
         self.set_role("device")
         self.reg(CNTL, 5)
-        r = self.run_role("detached")
+        r = self.run_role("gadget-start")
         self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.systemctl(), ["restart --no-block usb-gadget.service"])
         self.assertEqual(self.writes(), [])
         self.assertEqual(self.role(), "device")
-        self.assertIn("restart inputplumber.service korri-inputd.service", self.systemctl())
-        (self.sys / "bus/usb/devices/1-1").mkdir()
-        before = self.systemctl()
-        r = self.run_role("detached")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertEqual(self.systemctl(), before)
-        self.assertEqual(self.writes(), [])
 
-    def test_real_role_watcher_restarts_on_host_to_device_without_role_or_chip_writes(self):
+    def test_real_role_watcher_cycles_the_gadget_and_never_restarts_providers(self):
         helper = self.bin / "tabs6-usb-role"
         helper.write_text(f'#!{shutil.which("bash")}\nexec bash {SCRIPT} "$@"\n')
         helper.chmod(0o755)
         self.set_role("host")
         self.reg(CNTL, 5)
+        stop = ["stop usb-gadget.service", "reset-failed usb-gadget.service"]
+        start = ["restart --no-block usb-gadget.service"]
+        def wait_for(expected):
+            deadline = time.monotonic() + 2
+            while self.systemctl() != expected:
+                self.assertIsNone(proc.poll(), (self.tmp / "watch.log").read_text())
+                self.assertLess(time.monotonic(), deadline, self.systemctl())
+                time.sleep(0.01)
         with (self.tmp / "watch.log").open("w") as log:
             proc = subprocess.Popen([os.environ["TABS6_TEST_WATCH"]],
                                     env=self.env(TABS6_USB_ROLE_HELPER=helper),
                                     stdout=log, stderr=subprocess.STDOUT)
             try:
-                time.sleep(0.15)
-                self.assertIsNone(proc.poll())
-                self.assertEqual(self.systemctl(), ["stop usb-gadget.service", "reset-failed usb-gadget.service"])
+                wait_for(stop)
                 # A transient unreadable role must not erase the last host.
                 role_path = self.sys / "class/usb_role/a600000.usb-role-switch/role"
                 role_path.unlink()
                 time.sleep(0.15)
                 self.assertIsNone(proc.poll())
+                # host -> device -> host -> device: gadget only, in order.
                 self.set_role("device")
-                deadline = time.monotonic() + 2
-                while "restart inputplumber.service korri-inputd.service" not in self.systemctl():
-                    self.assertIsNone(proc.poll(), (self.tmp / "watch.log").read_text())
-                    self.assertLess(time.monotonic(), deadline)
-                    time.sleep(0.01)
+                wait_for(stop + start)
+                self.set_role("host")
+                wait_for(stop + start + stop)
+                self.set_role("device")
+                wait_for(stop + start + stop + start)
+                time.sleep(0.15)
+                self.assertFalse(any("inputplumber" in c or "korri-inputd" in c
+                                     for c in self.systemctl()), self.systemctl())
                 self.assertEqual(self.role(), "device")
                 self.assertEqual(self.writes(), [])
-                time.sleep(0.15)
-                self.assertEqual(self.systemctl().count("restart inputplumber.service korri-inputd.service"), 1)
             finally:
                 proc.terminate()
                 proc.wait(timeout=5)

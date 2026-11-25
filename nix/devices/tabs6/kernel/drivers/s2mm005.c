@@ -7,6 +7,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 #include <linux/usb/role.h>
 #include <linux/usb/typec.h>
 #include <linux/workqueue.h>
@@ -30,6 +31,8 @@ struct s2mm005 {
 	unsigned int consecutive;
 	unsigned int mismatch;
 	bool first_poll_logged;
+	struct s2mm005_sample last;
+	bool last_valid;
 	enum usb_role requested;
 };
 
@@ -143,6 +146,21 @@ static void s2mm005_poll(struct work_struct *work)
 		dev_info(&s->client->dev, "first poll: reading\n");
 	ret = s2mm005_sample(s, &sample);
 	host = s2mm005_sink_host(&s->consecutive, ret ? NULL : &sample);
+	/* Timeline for replug latency: every change of the qualifying facts and
+	 * the moment qualification completes. Rate limited; no effect on policy.
+	 */
+	if (!ret && (!s->last_valid || memcmp(&s->last, &sample, sizeof(sample)))) {
+		dev_info_ratelimited(&s->client->dev,
+				     "facts: state %u flags 0x%02x vbus 0x%02x cntl 0x%02x (qualified %u/3)\n",
+				     sample.state, sample.flags, sample.muic_vbus,
+				     sample.cntl, s->consecutive);
+		s->last = sample;
+		s->last_valid = true;
+	} else if (ret) {
+		s->last_valid = false;
+	}
+	if (host && s->requested != USB_ROLE_HOST)
+		dev_info(&s->client->dev, "qualified 3/3\n");
 	if (first) {
 		s->first_poll_logged = true;
 		if (ret)
