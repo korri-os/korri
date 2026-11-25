@@ -1,6 +1,5 @@
 //! Read-only role observer. The kernel owns every automatic role decision.
-//! It stops the gadget in host role; on return to device it restarts the
-//! gadget and the input providers (case B workaround).
+//! This only stops the gadget in host role and restarts it on return to device.
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -51,14 +50,14 @@ fn run() -> Result<(), String> {
             Ok(role) => role,
             Err(error) => {
                 // Preserve the last observed host across transient read errors,
-                // so the next device reading still runs the detach actions.
+                // so the next device reading still restarts the gadget.
                 eprintln!("tabs6-typec-role-watch: role read failed: {error}");
                 continue;
             }
         };
         if previous == "host" && current == "device" {
-            println!("kernel host -> device; restarting the gadget and input providers");
-            apply(&helper, "detached")?;
+            println!("kernel host -> device; restarting the gadget");
+            apply(&helper, "gadget-start")?;
         } else if previous == "device" && current == "host" {
             apply(&helper, "gadget-stop")?;
         }

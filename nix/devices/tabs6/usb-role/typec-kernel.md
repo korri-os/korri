@@ -178,22 +178,34 @@ snapshot. Every poll gets new facts, and no observer log grants permission.
 automatic role. The old observer is not started; its diagnostic CLI is usable
 only while the controller is unbound. `tabs6-typec-role-watch` reads **only**
 `/sys/class/usb_role/*/role` every 50 ms. On device-to-host it stops the
-gadget. On host-to-device (charger unplug, boost revoke, driver unbind) it
-runs `tabs6-usb-role detached`: restart the gadget, wait for the host
-controller to tear down, then restart InputPlumber and inputd. It never writes
-a role or any chip register.
+gadget; on host-to-device it restarts it (`tabs6-usb-role gadget-start`). It
+never writes a role or any chip register, and it does not restart input
+providers.
 
-**Case B is reproduced (2026-11-25), so the provider restart stays.** It was
-removed earlier the same day after one good replug. On battery, repeated USB
-detach/re-add (boost cycling and runtime module swaps) each logged InputPlumber
-"Found missing input device, adding source device evdev://event9 to existing
+The provider restart (InputPlumber and inputd on every kernel detach) was
+removed twice on 2026-11-25. The second removal is an owner decision after it
+caused a worse failure. At 226.90 s a single poll read returned -EIO, the
+driver revoked boost and the restart began. The kernel re-enabled boost at
+230.10 s and the Kishi re-enumerated at 230.47 s, while InputPlumber was still
+stopping. The new InputPlumber started at 230.92 s, and its startup scan cached
+event6 before udevd had written its database (written at 232.82 s): 5
+properties, no `ID_INPUT_JOYSTICK` or `ID_PATH`. The Kishi config never
+matched, so there was no composite and no input until the next replug.
+`inputplumber-startup-udev-init.patch` makes startup discovery wait for udev
+(VM check `inputplumber-udev-startup-vm`).
+
+Case B stays reproduced and open. On battery, repeated USB detach/re-add
+(boost cycling and runtime module swaps) each logged InputPlumber "Found
+missing input device, adding source device evdev://event9 to existing
 composite device". inputd re-applied the profile (rejected → ready) after some
 re-adds (1386, 1402, 1434, 1466, 1482, 1530, 1546 s) and after others did
 nothing (1417, 1449, 1497, 1513, 1561, 1575, 1733 s); after the last ones the
 D-pad stayed dead although the composite still listed the source, targets,
 profile and InterceptMode 0. Restarting both providers restored input. The
 InputPlumber EBUSY re-add fix (`services/inputd/tests/inputplumber-reattach.md`)
-does not cover this; the cause in inputd's reconciliation is open.
+does not cover this; the cause in inputd's reconciliation is open. A replug
+that does not restore shell input is evidence of it. Check shell input, not
+enumeration alone.
 
 The driver logs each change of the qualifying facts (`facts: state … flags …
 vbus … cntl … (qualified n/3)`, rate limited) and `qualified 3/3`, so the time

@@ -2,8 +2,7 @@
 # boost (s2mm005 policy, typec-kernel.md); this script never enables boost.
 #
 #   tabs6-usb-role [status]   role, VBUS, attached USB devices
-#   tabs6-usb-role gadget-stop  gadget stop when the kernel selects host
-#   tabs6-usb-role detached     gadget restart and input provider restart on device
+#   tabs6-usb-role gadget-*   gadget stop/start around kernel role changes
 #   tabs6-usb-role boot-role  device role at sysinit, before the late module
 #   tabs6-usb-role boot-vbus  boost off at boot (SM5705 keeps registers across
 #                             a warm reboot)
@@ -116,28 +115,11 @@ vbus_off() {
 }
 
 # No role or chip writes. Triggered only by the read-only role watcher when
-# the kernel returns the port to device (charger unplug, boost revoke, driver
-# unbind). Rebinds the gadget lifeline and, once the host controller is torn
-# down, restarts InputPlumber and inputd: a source re-added into a surviving
-# composite can leave input dead (case B, reproduced 2026-11-25; see
-# typec-kernel.md). Workaround until that is fixed and proven.
-detached() {
-	local ready=0
+# the kernel returns the port to device: rebind the gadget lifeline. Input
+# providers are not restarted; InputPlumber's source teardown fix (see
+# services/inputd/tests/inputplumber-reattach.md) handles the re-add.
+gadget_start() {
 	[ -z "$GADGET_UNIT" ] || systemctl restart --no-block "$GADGET_UNIT"
-	for _ in $(seq 1 30); do
-		if [ "$(role)" = device ] && [ "$(usb_devices)" = 0 ]; then
-			ready=1
-			break
-		fi
-		sleep 0.1
-	done
-	[ "$ready" = 1 ] || { log "host controller teardown not verified; providers kept"; return 1; }
-	if timeout --signal=KILL 10s systemctl restart inputplumber.service korri-inputd.service; then
-		log "input providers restarted after kernel detach (no role/chip writes)"
-	else
-		log "input provider restart failed"
-		return 1
-	fi
 }
 
 # Every boot starts as the gadget with the boost off. The role switch
@@ -209,7 +191,7 @@ esac
 
 case "${1:-status}" in
 status) status ;;
-detached) detached ;;
+gadget-start) gadget_start ;;
 gadget-stop)
 	# Host can qualify before systemd starts the gadget. Cancel its late-UDC
 	# wait without changing the shared product gadget or the kernel's role.
@@ -229,7 +211,7 @@ boot-role)
 	;;
 boot-vbus) boot_vbus ;;
 *)
-	echo "usage: tabs6-usb-role [status|detached|gadget-stop|boot-role|boot-vbus]" >&2
+	echo "usage: tabs6-usb-role [status|gadget-start|gadget-stop|boot-role|boot-vbus]" >&2
 	exit 2
 	;;
 esac
