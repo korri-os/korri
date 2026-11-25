@@ -128,7 +128,8 @@ async fn setup_ends_only_when_the_person_confirms_the_words() {
         .to_hex();
 
     let mut wrong = answers(&shown);
-    wrong[2] = "zoo".into();
+    // "zoo" is itself a recovery word; never let it be the right answer.
+    wrong[2] = if wrong[2] == "zoo" { "zone" } else { "zoo" }.into();
     let (outcome, bound) = device.confirm(wrong).await;
     assert!(!bound);
     assert_eq!(failure(outcome).code, "RecoveryWordsMismatch");

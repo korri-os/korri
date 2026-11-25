@@ -78,7 +78,9 @@ fn new_words_wait_until_confirmed_then_sign_and_are_erased() {
 
     let request = statement(&device, OwnerStatementStatus::Owned, 100);
     let mut wrong = right.clone();
-    wrong[1] = "zoo".into();
+    // "zoo" is a valid recovery word; about one run in 2048 asks for exactly
+    // it at this position, and the "wrong" answer was then right.
+    wrong[1] = if right[1] == "zoo" { "zone" } else { "zoo" }.into();
     let ConfirmedWords::Mismatch { message } =
         signer.confirm_words(&as_strs(&wrong), &request).unwrap()
     else {
@@ -294,7 +296,8 @@ async fn korrid_reaches_the_signer_over_its_socket() {
     let shown = client.make_words().await.unwrap();
     assert!(signer.holds_words());
     let mut wrong = answers(&shown);
-    wrong[0] = "zoo".into();
+    // "zoo" is itself a recovery word; never let it be the right answer.
+    wrong[0] = if wrong[0] == "zoo" { "zone" } else { "zoo" }.into();
     assert!(matches!(
         client.confirm_words(&wrong, request.clone()).await.unwrap(),
         ConfirmedWords::Mismatch { .. }

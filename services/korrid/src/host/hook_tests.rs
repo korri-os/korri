@@ -674,6 +674,9 @@ fn layer_changes_and_unsets_do_not_change_the_game_sandbox_for_hooks_or_restart(
                     .cloned()
                     .collect::<Vec<_>>()
             };
+            // The one intended difference: a hook may run outside the launch's
+            // audio lifetime, so its socket bind is optional.
+            let hook = super::systemd_unit::game_audio_socket_required(&hook);
             assert_eq!(properties(&game), properties(&hook));
             // A live hook must see the running game's processes. It keeps every
             // other part of the game's sandbox.
@@ -692,7 +695,10 @@ fn layer_changes_and_unsets_do_not_change_the_game_sandbox_for_hooks_or_restart(
             assert!(!live.contains(&private_pids));
             let mut expected = properties(&hook);
             expected.retain(|argument| argument != &private_pids);
-            assert_eq!(properties(&live), expected);
+            assert_eq!(
+                properties(&super::systemd_unit::game_audio_socket_required(&live)),
+                expected
+            );
             assert!(live.contains(&String::from("--pipe")));
         }
     }

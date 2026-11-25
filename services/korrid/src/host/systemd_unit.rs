@@ -92,6 +92,33 @@ enum AudioSocket {
     IfPresent,
 }
 
+/// Test view of hook arguments with the optional audio socket bind made
+/// mandatory, so the rest of a hook's sandbox can be compared with its game's.
+#[cfg(test)]
+pub(super) fn game_audio_socket_required(arguments: &[String]) -> Vec<String> {
+    arguments
+        .iter()
+        .map(
+            |argument| match argument.strip_prefix("--property=BindReadOnlyPaths=") {
+                Some(binds) => format!(
+                    "--property=BindReadOnlyPaths={}",
+                    binds
+                        .split(' ')
+                        .map(|bind| match bind.strip_prefix("-/run/korri-game-audio-") {
+                            Some(rest) if rest.contains("/native:") => {
+                                format!("/run/korri-game-audio-{rest}")
+                            }
+                            _ => bind.to_owned(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ),
+                None => argument.clone(),
+            },
+        )
+        .collect()
+}
+
 /// Mount-driving launch facts are resolved once from the game unit's baseline.
 /// Process environment changes never grant a hook a different sandbox.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -4323,7 +4350,11 @@ mod hook_unit_tests {
                     .cloned()
                     .collect::<Vec<_>>()
             };
-            assert_eq!(sandbox(&game), sandbox(&hook));
+            // The one intended difference: the hook's audio socket is optional.
+            assert!(hook
+                .iter()
+                .any(|arg| arg.contains(&format!(" -/run/korri-game-audio-{ID}/native:"))));
+            assert_eq!(sandbox(&game), sandbox(&game_audio_socket_required(&hook)));
             assert!(hook.contains(&"--uid=1000".into()));
             assert!(hook.contains(&"--gid=1000".into()));
             assert!(hook.contains(&format!("--unit=korri-hook-{ID}-0.service")));
