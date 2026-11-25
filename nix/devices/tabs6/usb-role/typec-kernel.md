@@ -21,7 +21,7 @@ Three consecutive fresh samples permit host only when **all** of these hold:
 | PD state 21 | `sample.state == 21` |
 | Attached, source=0, DFP=1 | `(sample.flags & 7) == 5` |
 | MUIC VBUS exactly 01 | `sample.muic_vbus == 1`, not just bit0 |
-| Gauge Charging | fresh `POWER_SUPPLY_PROP_STATUS == POWER_SUPPLY_STATUS_CHARGING` |
+| Gauge Charging or Full | fresh `POWER_SUPPLY_PROP_STATUS` is `CHARGING` or `FULL` (`s2mm005_gauge_sinking`) |
 | Charger CNTL mode 5 | `(sample.cntl & 7) == 5` |
 | Three fresh successful reads | saturating counter in `s2mm005-policy.h` |
 
@@ -40,6 +40,19 @@ interrupt status 0x0030 or the MUIC read-to-clear latches. IRQ123 is not request
 it can remain asserted without acknowledgement, so a polling safety path is
 required anyway. Polling costs periodic wakeups; 100 ms is a target interval,
 not a hard real-time deadline. A slow/failing I2C controller can delay a sample.
+
+### Why gauge Full counts (owner decision, 2026-11-24)
+
+At 100 % battery with the charger in, the gauge flipped Charging → Full →
+Charging about every 30 s (`sink-host-full-flap.txt`: +69 mA, MUIC VBUS 01,
+CNTL 0x05 throughout). A Charging-only rule revoked host for about 1.2 s each
+time, and the provider restart dropped input for about 6 s. `sm5705_fg` reports
+Full only when |current| < 50 mA and SOC ≥ 99. On battery alone the tablet
+drew about −0.5 A (`current_now` −536132 µA, measured at 98 %), far outside
+that band, so Full needs incoming power. Full counts for the sink-host data
+role only. The other six checks stay, and VBUS=01 + SNK_Ready remain the
+incoming-power proof. Discharging, Not charging, Unknown and read errors
+still revoke. Manual host and VBUS sourcing rules do not change.
 
 ## Register and resource grounding
 
@@ -123,8 +136,9 @@ the screen and consider a ramoops region or a late-bound module for diagnosis.
 ## Verification
 
 `tabs6-typec-policy` compiles the exact header included by the kernel driver.
-It replays all four real traces (Phase A, charging, sourcing flap and bounded
-shutdown), exhausts all PD states/flag
+It replays all five real traces (Phase A, charging, sourcing flap, bounded
+shutdown and the 100 % Full flap, which must hold host), exhausts every gauge
+status, checks that Full with any other failing interlock revokes, exhausts all PD states/flag
 bytes and MUIC/CNTL bytes, checks each revocation and error/reset, and keeps a
 detached Kishi in device for 600 samples (60 s at the target period).
 `tabs6-usb-role` retains the manual interlock/write-order/failure tests and adds

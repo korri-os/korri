@@ -55,7 +55,7 @@ product. The console source, DT and kernel configuration stay unchanged.
 
 The driver polls every 100 ms without requesting or acknowledging IRQ123.
 Three fresh sink-ready/attached/not-source/DFP + MUIC VBUS=01 + gauge Charging
-+ CNTL mode5 samples enable host. Any other sample or error revokes at once.
+or Full + CNTL mode5 samples enable host. Any other sample or error revokes at once.
 No chip register data writes, PD commands, VBUS or firmware access exist.
 The existing gauge supplies fresh STATUS through its OF reference; SM5705
 charger/MUIC reads use the i2c4 adapter phandle without reserving addresses.

@@ -1,0 +1,30 @@
+# 2026-11-24, kernel s2mm005-read-only on tabs6, charger in the Kishi pass-through,
+# battery 100 %, current about +69 mA. 100 ms read-only samples. The gauge flips
+# Charging -> Full -> Charging; MUIC VBUS and CNTL stay. "role" is what the
+# Charging-only policy selected. FUNC_STATE was not recorded by this sampler;
+# the kernel log shows no PD change, so the replay uses state 21/attached/DFP.
+uptime=2703.986392 role=host chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2704.086708 role=host chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2704.186879 role=host chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2704.287032 role=host chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2704.387198 role=host chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2704.487743 role=host chg_mode=05 muic_vbus=01 gauge="Full"
+uptime=2704.587884 role=host chg_mode=05 muic_vbus=01 gauge="Full"
+uptime=2704.688118 role=host chg_mode=05 muic_vbus=01 gauge="Full"
+uptime=2704.792133 role=device chg_mode=05 muic_vbus=01 gauge="Full"
+uptime=2704.892476 role=device chg_mode=05 muic_vbus=01 gauge="Full"
+uptime=2704.992592 role=device chg_mode=05 muic_vbus=01 gauge="Full"
+uptime=2705.092707 role=device chg_mode=05 muic_vbus=01 gauge="Full"
+uptime=2705.193248 role=device chg_mode=05 muic_vbus=01 gauge="Full"
+uptime=2705.294242 role=device chg_mode=05 muic_vbus=01 gauge="Full"
+uptime=2705.394419 role=device chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2705.494580 role=device chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2705.594747 role=device chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2705.697196 role=device chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2705.797358 role=host chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2705.897751 role=host chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2705.997919 role=host chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2706.098074 role=host chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2706.198553 role=host chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2706.299130 role=host chg_mode=05 muic_vbus=01 gauge="Charging"
+uptime=2706.399293 role=host chg_mode=05 muic_vbus=01 gauge="Charging"

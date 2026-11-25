@@ -75,7 +75,7 @@ static int s2mm005_sample(struct s2mm005 *s, struct s2mm005_sample *sample)
 	ret = power_supply_get_property(s->gauge, POWER_SUPPLY_PROP_STATUS, &status);
 	if (ret)
 		return ret;
-	sample->charging = status.intval == POWER_SUPPLY_STATUS_CHARGING;
+	sample->gauge_status = status.intval;
 	return 0;
 }
 
