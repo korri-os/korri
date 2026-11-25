@@ -2,7 +2,7 @@
 date: 2026-11-24
 topic: moonlight-removal
 artifact: scope
-status: implementation prepared; publication and ibuki cutover pending
+status: removed and published; product pin and ibuki cutover in progress
 ---
 
 # Dropping Moonlight Embedded: what goes, what stays
@@ -49,17 +49,33 @@ The carried input code still suppresses its quit chord when korrid owns the
 session. Its switch is now `KORRI_VIEWER_DISABLE_GAMEPAD_QUIT`; the certificate
 switch `KORRI_MOONLIGHT_SERVER_CERTIFICATE` stays unchanged.
 
-## Operational gate
+## Published release and operational gate
 
-Do not deploy the removal to ibuki with its old viewer treaty. Advance the
-plugins `korri` input to the landed removal commit, test and tag that exact
-plugins source, run `plugin-repository.yml` with the pinned SHA first, then
-publish its passed signed artifacts through `plugin-publish.yml`. Pin the
-resulting immutable catalog URL and SHA-256 in Korri before deployment.
+The matching plugins release is `build-1b865cbd5461-no-moonlight`, built from
+`1b865cbd546161464fb019ed3dc260c87102434a` against Core
+`a27386cb0d2efcd7bf2e20dc909f30b19ae0fee0`. Dry run `45481298144` passed all
+four jobs. Publication `45505023459` passed after two GitHub HTTP 504 failures;
+normal retries verified and kept matching draft assets, without replacement.
+Pages deployment `45508255945` passed on its second attempt after its uploaded
+artifact became visible to the API.
 
-The owner lands both branches and approves main pushes and publication.
-Until that sequence completes, no new catalog pin or successful ibuki streaming
-proof is claimed. No device decoder is added by this removal.
+The public immutable catalog and Pages catalog both have SHA-256
+`f18201cc234adb2a0c59b0120ff64bad999b104bce2b5f0d0dd8add7f6c2f7a0`
+(`sha256-8YIBzCNK2yoMWbASD/ZLrZmbEEvOK18NDdit1/bC96A=`). It contains
+34 plugin IDs and no `@korri:moonlight`; every other previous ID remains.
+The product pin uses these exact bytes. The Tailscale publisher output was
+renamed to `korri-plugin-tailscale`, without an alias; its plugin identity
+and store paths are unchanged.
+
+Do not deploy the removal to ibuki with its old viewer treaty. The owner lands
+the product pin, then ibuki receives the matching signed viewer, bundle and
+CLI. Its installed viewer's immutable old source requires the host's existing,
+approval-checked explicit repository source switch; no receipt rewrite,
+publisher trust change or signature bypass is used. The owner must approve
+the digest shown by `korri plugins review` before that switch.
+
+No successful ibuki stream is claimed by this pin preparation. No device
+decoder is added by this removal.
 
 ## Preparation evidence
 

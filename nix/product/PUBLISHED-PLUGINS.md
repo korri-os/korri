@@ -6,26 +6,31 @@ raw-cache fallback, receipt migration, or outside repository is in this lane.
 
 ## Published input
 
-- Plugins source: `e3343461a76eff0aa0e8ef7b8a8761d3c359918a`.
-- Immutable tag: `build-e3343461a76e-engine-default-2`.
-- Publication dry run: `45358023735` (2026-11-24);
-  live publication passed on its fourth attempt (GitHub answered the first
-  three with HTTP 504 while it listed releases).
-- Catalog: <https://github.com/korri-os/plugins/releases/download/build-e3343461a76e-engine-default-2/catalog.json>.
-- Actual catalog SHA-256: `489e6529e04ad0bcf2793eb8240e595cb44d469fc7dc969cd9a71e87ebf612fd`.
-- SRI: `sha256-SJ5lKeBK0LzyeT64JA5ZXLRNRp/H3Jac2aceh+v2Ev0=`.
-- 35 plugin IDs, 66 records. Homebrew Hub, PICO-8 and RetroBrews use `any`.
+- Plugins source: `1b865cbd546161464fb019ed3dc260c87102434a`.
+- Immutable tag: `build-1b865cbd5461-no-moonlight`.
+- Publication dry run: `45481298144`, all four jobs passed.
+- Live publication: `45505023459` passed; Pages deployment `45508255945`
+  passed on attempt 2. The first two publication attempts hit GitHub HTTP 504
+  responses. Normal retries verified and retained their existing draft assets.
+- Catalog: <https://github.com/korri-os/plugins/releases/download/build-1b865cbd5461-no-moonlight/catalog.json>.
+- Catalog SHA-256: `f18201cc234adb2a0c59b0120ff64bad999b104bce2b5f0d0dd8add7f6c2f7a0`.
+- SRI: `sha256-8YIBzCNK2yoMWbASD/ZLrZmbEEvOK18NDdit1/bC96A=`.
+- 34 plugin IDs, 64 records; 34 x86_64 and 33 aarch64 selections.
+  Homebrew Hub, PICO-8 and RetroBrews use `any`.
 - Bound key remains
   `korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=`.
 
-The selection of plugin IDs is the same as the previous pin,
-`build-eae4ae220f5d-tailscale-signin`. Against it, `@korri:steam` changed on
-both architectures (ADR 0083): the engine runner for `x86_64-linux` as well as
-`aarch64-linux`, no exact requirement on `@korri:fex` and `@korri:proton`, the
-Proton and FEX launch settings, a failed start reported as failed, and the
-libraries Proton's media files load. Gamescope keeps its store paths.
-The device selection changed with this pin: the Tab S6 and the OnePlus 6 now
-select Steam, FEX and Proton (`plugin-selection.nix`).
+ADR 0099 removes `@korri:moonlight` from this catalog. Every other plugin ID
+from `build-e3343461a76e-engine-default-2` remains. `@korri:viewer` is built
+against Core `a27386cb0d2efcd7bf2e20dc909f30b19ae0fee0`; its viewer treaty is
+`834af1f4a4f1f2beecf6a75bbe2d1ef69933a5c34d62ccca7b1cb1014c9c9cc9`.
+The Rust viewer is x86_64 only in this release. ARM image defaults no longer
+select a viewer; the accepted streaming loss is recorded in the removal brief.
+
+The publisher output is now `korri-plugin-tailscale`, matching Core's catalog
+selection. Its plugin ID, native identity and store paths do not change. The
+old output name has no alias. This repairs the mismatch exposed by the newer
+Core pin, without a selection workaround.
 
 These identify the actual live bytes. Publication verifies the dry-run artifact
 digests and requires its catalog byte for byte before uploading those artifacts.
@@ -108,10 +113,10 @@ same-release update as an upgrade.
 
 ## Existing devices and rollback
 
-This is a fresh-image cutover, not an operational migration. Do not rewrite or
+The catalog pin controls fresh images, not an operational migration. Do not rewrite or
 infer provenance from existing device receipts. Existing user data requires an
-explicit, separately agreed operational cutover before deployment. No device
-write or deployment is part of this change.
+explicit, separately agreed operational cutover before deployment. ibuki's matching viewer, bundle and CLI cutover is recorded separately in the
+Moonlight removal brief. No other device write is part of this pin.
 
 The plugins repository's existing raw signed-cache publication remains
 available to old devices. Neither preparation nor image recovery reads it.
