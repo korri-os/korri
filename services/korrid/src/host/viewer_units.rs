@@ -321,6 +321,42 @@ mod tests {
     }
 
     #[test]
+    fn linux_viewer_uses_shared_pulse_without_a_second_launch_audio_gate() {
+        let backend = SystemdLaunchUnitBackend::new(
+            "/nix/store/systemd/bin/systemd-run".into(),
+            "/nix/store/systemd/bin/systemctl".into(),
+            1001,
+            1002,
+        )
+        .unwrap()
+        .for_stream_viewer();
+        let launch = "0123456789abcdef0123456789abcdef";
+        let command = vec!["/nix/store/viewer/bin/korri-viewer".into()];
+        let environment = BTreeMap::from([(
+            "PULSE_SERVER".into(),
+            "unix:/run/korri-game-audio/native".into(),
+        )]);
+        let sandbox = LaunchSandbox::new(&command, &environment);
+        let args = backend
+            .viewer_arguments(launch, &command, &environment, &sandbox, None, None)
+            .unwrap();
+        let binds = args
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--property=BindReadOnlyPaths="))
+            .unwrap();
+        assert!(
+            binds
+                .split_whitespace()
+                .any(|bind| bind == "/run/user/1001/pulse:/run/korri-game-audio"),
+            "{binds}"
+        );
+        assert!(
+            !binds.contains(&format!("/run/korri-game-audio-{launch}/")),
+            "{binds}"
+        );
+    }
+
+    #[test]
     fn linux_viewer_pin_argument_is_an_absolute_native_credential_path() {
         let backend = SystemdLaunchUnitBackend::new(
             "/nix/store/systemd/bin/systemd-run".into(),
