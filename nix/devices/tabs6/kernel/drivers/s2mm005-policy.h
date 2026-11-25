@@ -36,7 +36,7 @@ struct s2mm005_sample {
 
 #define S2MM005_SOURCE_POLLS	2
 #define S2MM005_GRACE_MS	1500
-#define S2MM005_REDETECT_MS	1500
+#define S2MM005_REDETECT_MS	2500
 #define S2MM005_RETRY_MS	3000
 #define S2MM005_MAX_BACKOFF_MS	60000
 #define S2MM005_STABLE_MS	60000
@@ -167,7 +167,8 @@ static inline const char *s2mm005_revoke(struct s2mm005_policy *p,
 		return "MUIC charger/PC signature";
 	/* The chip re-detects even while we boost: state 0 for ~0.7 s after a
 	 * verified enable (phase-b-host-transition.txt) and again on its ~16 s
-	 * cycle (kishi-battery-boost-cycle.txt). A state-0 episode is tolerated
+	 * cycle (kishi-battery-boost-cycle.txt; measured 1.35-1.39 s with boost
+ * on, owner decision 2.5 s). A state-0 episode is tolerated
 	 * for at most S2MM005_REDETECT_MS from its first poll, never extended;
 	 * a source state ends it. Longer is a detach.
 	 */

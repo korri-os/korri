@@ -75,7 +75,7 @@ Revoke at once, every poll while boosting: read error; CNTL no longer mode 7
 (including the charger forcing mode 5 on incoming VBUS); OTGFAIL, VBUSOVP,
 VBUSLIMIT or wireless input; any MUIC charger/PC signature; and any state
 outside the source set: 17, 18, 20, 21, 29, 52 or unknown. State 0 is a
-detach after its 1.5 s episode (below).
+detach after its 2.5 s episode (below).
 
 `boost_telemetry` (module parameter, off by default, writable in
 `/sys/module/s2mm005/parameters/`) logs every poll while boosting: STATUS1–4,
@@ -87,13 +87,14 @@ while we source VBUS.
 enable the chip re-detects: state 0 for about 0.7 s (attached flickering),
 then 14 with attached 0 (`phase-b-host-transition.txt`, 95–794 ms). During
 the window only 0 and 14 are tolerated, only while CNTL reads 7; everything
-else above still revokes at once. The window never extends. **State-0 episodes, 1.5 s each (owner decision 2026-11-25).** Even while we
-boost, the chip keeps its ~16 s re-detection cycle and drops to state 0 for
-under a second before 14 returns (`kishi-battery-boost-cycle.txt`). While
-boosting, a state-0 episode is tolerated for at most 1.5 s from its first
-poll, never extended; a source state ends it; longer is a detach. Removing the
-Kishi on battery therefore leaves boost on for at most ~1.5 s into an open
-port. A start that is revoked in its window or still reads 0 when it ends is
+else above still revokes at once. The window never extends. **State-0 episodes, 2.5 s each (owner decision 2026-11-25).** Even while we
+boost, the chip keeps its ~16 s re-detection cycle and drops to state 0
+before 14 returns (`kishi-battery-boost-cycle.txt`). Measured with boost on:
+0.71 s right after enable, then 1.35–1.39 s per cycle (unpowered episodes were
+~0.85 s). While boosting, a state-0 episode is tolerated for at most 2.5 s
+from its first poll, never extended; a source state ends it; longer is a
+detach. Removing the Kishi on battery therefore leaves boost on for at most
+~2.5 s into an open port. A start that is revoked in its window or still reads 0 when it ends is
 a failed start: no
 re-enable until the chip shows a source state for two fresh polls, after a
 backoff of 3, 6, 12 … 60 s (reset by 60 s of stable boost). Any other revoke

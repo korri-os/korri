@@ -370,11 +370,14 @@ static void replay_boost_cycle(const char *path)
 	}
 	fclose(f);
 	assert(enabled && p.boost == S2MM005_BOOST_ON && cur.state == 0);
-	/* the trace ends on the cycle's first 0: hold it 0.85 s (as unpowered),
-	 * then 14 for 15 s, five more cycles, no revoke */
-	for (int cycle = 0; cycle < 6; cycle++) {
+	/* the trace ends on the cycle's first 0: the measured boosted episode
+	 * lengths (0.71, 1.35, 1.39, 1.35, 1.39 s), each followed by 15 s of 14,
+	 * then a 2.4 s episode: no revoke */
+	static const unsigned int episode_ms[] = { 710, 1350, 1390, 1350, 1390, 2400 };
+
+	for (unsigned int cycle = 0; cycle < 6; cycle++) {
 		cur.state = 0;
-		for (int i = 0; i < 42; i++) {
+		for (unsigned int i = 0; i * 20 < episode_ms[cycle]; i++) {
 			cur.flags = i & 1 ? 0x89 : 0x88;
 			assert(s2mm005_decide(&p, &cur, now += 20).action == S2MM005_NONE);
 		}
@@ -383,9 +386,9 @@ static void replay_boost_cycle(const char *path)
 		for (int i = 0; i < 750; i++)
 			assert(s2mm005_decide(&p, &cur, now += 20).action == S2MM005_NONE);
 	}
-	/* Kishi removed: 0 persists, revoke at 1.5 s */
+	/* Kishi removed: 0 persists, revoke at 2.5 s */
 	cur.state = 0;
-	for (int i = 0; i < 75; i++)
+	for (int i = 0; i < 125; i++)
 		assert(s2mm005_decide(&p, &cur, now += 20).action == S2MM005_NONE);
 	assert(s2mm005_decide(&p, &cur, now += 20).action == S2MM005_DISABLE);
 }
@@ -460,7 +463,7 @@ static void detach_and_window(void)
 	do
 		d = s2mm005_decide(&p, &s, now += 20);
 	while (d.action == S2MM005_NONE);
-	/* a state-0 episode is tolerated for 1.5 s, never longer */
+	/* a state-0 episode is tolerated for 2.5 s, never longer (2.6 s revokes) */
 	assert(d.action == S2MM005_DISABLE && !strcmp(d.why, "detach"));
 	assert(now - t0 >= S2MM005_REDETECT_MS && now - t0 < S2MM005_REDETECT_MS + 20);
 	s2mm005_disabled(&p);
@@ -484,9 +487,9 @@ static void detach_and_window(void)
 		do
 			d = s2mm005_decide(&p, &s, now += 20);
 		while (d.action == S2MM005_NONE);
-		/* never extended: the window, then the episode, both 1.5 s */
+		/* never extended: one episode from the first 0 poll */
 		assert(d.action == S2MM005_DISABLE);
-		assert(now - t0 >= S2MM005_GRACE_MS && now - t0 <= S2MM005_REDETECT_MS + 20);
+		assert(now - t0 >= S2MM005_REDETECT_MS && now - t0 <= S2MM005_REDETECT_MS + 20);
 		assert(p.backoff_ms);
 		s2mm005_disabled(&p);
 		t0 = now;
