@@ -45,31 +45,28 @@ DTB carries the gts6lwifi compatible, the simple-framebuffer at `0x9c400000`,
 MDSS enabled with the ANA38401 panel under DSI0, and `wlan_mem` at
 `0xc0000000`, and unless the panel module is built.
 
-## USB-C data-role owner (product only)
+## USB-C data-role and battery source owner (product only)
 
-`drivers/s2mm005.c` is a read-only I2C client on se15/0x33. It registers a
-standard Type-C port and owns dwc3's data role through the USB role-switch API.
+`drivers/s2mm005.c` is an I2C client on se15/0x33 that reads the s2mm005
+(strictly read-only), the SM5705 MUIC and charger status, and the gauge. It
+registers a standard Type-C port, owns dwc3's data role through the USB
+role-switch API, and powers non-PD sinks such as the Kishi from the battery.
+Its only writes are the stock SM5705 boost bits (CNTL mode, CHGCNTL6 OTG
+current, FLEDCNTL6 boost voltage), each verified by readback.
 `usb-typec-wire-s2mm005.patch`, `CONFIG_TYPEC_S2MM005_READ_ONLY=m` in
 `korri.config`, and `dts/sm8150-samsung-gts6lwifi-typec.dtsi` wire it into the
-product. The console source, DT and kernel configuration stay unchanged.
-
-The module is loaded late in boot by `tabs6-typec-kernel-policy.service`
+product. The module is loaded late in boot by `tabs6-typec-kernel-policy.service`
 (after the journal flush, boot boost-off and the gadget), not by udev.
-The driver polls every 100 ms without requesting or acknowledging IRQ123.
-Three fresh sink-ready/attached/not-source/DFP + MUIC VBUS=01 + CNTL mode 5
-samples enable host. Any other sample or error revokes at once.
-No chip register data writes, PD commands, VBUS or firmware access exist.
-It does not use the fuel gauge (see the linked doc). SM5705 charger/MUIC
-reads use the i2c4 adapter phandle without reserving addresses.
-The charge and boot boost-off services keep their existing access.
 
-See `../usb-role/typec-kernel.md` for register grounding, manual host unbind /
-device rebind, resource lifetimes, suspend, the user-space input restart
-workaround and hardware limits. The host check compiles the shipped policy:
+The pure policy is `drivers/s2mm005-policy.h`; the host check compiles it and
+replays the measured traces:
 
 ```sh
 nix build .#checks.x86_64-linux.tabs6-typec-policy --no-link
 ```
+
+See `../usb-role/typec-kernel.md` for the interlocks, the stock grounding,
+the grace window, timing and the remaining unknown.
 
 ## From NixOS
 

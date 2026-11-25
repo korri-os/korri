@@ -13,6 +13,7 @@
 		compatible = "samsung,s2mm005-read-only";
 		reg = <0x33>;
 		samsung,sm5705-i2c = <&i2c4>;
+		power-supplies = <&sm5705_fg>;
 		usb-role-switch = <&usb_1_dwc3>;
 	};
 };

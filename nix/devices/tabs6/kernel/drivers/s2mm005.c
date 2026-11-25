@@ -1,11 +1,21 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Galaxy Tab S6 read-only s2mm005 sink-host data-role policy.
- * Register grounding: usb-role/typec.md, Samsung kernel 37cf30da.
- * No chip initialization, interrupt acknowledgement, PD commands or VBUS writes.
+/* Galaxy Tab S6 USB-C policy: sink-host data role, and a battery-powered
+ * source for non-PD sinks (the Kishi) the way Samsung's kernel does it.
+ *
+ * The s2mm005 stays strictly read-only: register-address write plus
+ * repeated-START read, no mailbox commands, no interrupt clear, no firmware.
+ * SM5705 writes are limited to the stock boost registers (CNTL mode bits,
+ * CHGCNTL6 OTG current, FLEDCNTL6 boost voltage), read-modify-write of the
+ * bits Samsung's sm5705_charger_oper.c touches, each verified by readback.
+ * Grounding: usb-role/typec-kernel.md, Samsung kernel 37cf30da.
  */
+#include <linux/delay.h>
 #include <linux/i2c.h>
+#include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/power_supply.h>
+#include <linux/ratelimit.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/usb/role.h>
@@ -14,32 +24,54 @@
 
 #include "s2mm005-policy.h"
 
-#define S2MM005_POLL_MS 100
+#define S2MM005_POLL_MS		100
+#define S2MM005_BOOST_POLL_MS	20	/* while boost may be on */
 /* dwc3 reports the new role only after its drd work tears down the old one
  * (about 200 ms for host to device). Treat a longer mismatch as an outside
  * write to the role file.
  */
-#define S2MM005_MISMATCH_POLLS 10
+#define S2MM005_MISMATCH_MS	1000
+
+#define SM5705_CHG_ADDR		0x49
+#define SM5705_MUIC_ADDR	0x25
+#define SM5705_STATUS1		0x08	/* STATUS1..STATUS4, then CNTL at 0x0c */
+#define SM5705_CNTL		0x0c
+#define SM5705_CHGCNTL6		0x14
+#define SM5705_FLEDCNTL6	0x20
+#define SM5705_MODE_MASK	0x07
+#define SM5705_MODE_SUSPEND	0
+#define SM5705_OTGCUR_MASK	0x0c
+#define SM5705_OTGCUR_1500MA	(3 << 2)	/* stock USB_OTG table */
+#define SM5705_OTGCUR_500MA	(0 << 2)	/* stock CHG_ON table */
+#define SM5705_BSTOUT_MASK	0x0f
+#define SM5705_BSTOUT_5100MV	0x0b
+#define SM5705_BSTOUT_4500MV	0x05
+#define SM5705_OFF_TRIES	3
 
 struct s2mm005 {
 	struct i2c_client *client;
 	struct i2c_adapter *sm5705;
+	struct power_supply *gauge;
 	struct usb_role_switch *role_sw;
 	struct typec_port *port;
 	struct typec_partner *partner;
 	struct delayed_work poll;
-	unsigned int consecutive;
-	unsigned int mismatch;
+	struct s2mm005_policy policy;
+	unsigned long mismatch_since;
+	bool mismatch;
 	bool first_poll_logged;
 	struct s2mm005_sample last;
 	bool last_valid;
 	enum usb_role requested;
+	struct ratelimit_state facts_rs;
 };
 
-/* The only bus operation: register address followed by repeated-START read.
- * SM5705 addresses remain unclaimed so existing charge maintenance and the
- * boot boost-off service retain their unchanged, non-forced i2c-dev access.
- */
+static unsigned long s2mm005_now(void)
+{
+	return (unsigned long)jiffies64_to_msecs(get_jiffies_64());
+}
+
+/* Register address followed by a repeated-START read. */
 static int s2mm005_read(struct i2c_adapter *adap, u16 addr,
 		       u8 *reg, u16 reg_len, u8 *out, u16 len)
 {
@@ -52,12 +84,43 @@ static int s2mm005_read(struct i2c_adapter *adap, u16 addr,
 	return ret == ARRAY_SIZE(msgs) ? 0 : (ret < 0 ? ret : -EIO);
 }
 
-static int s2mm005_sample(struct s2mm005 *s, struct s2mm005_sample *sample)
+/* The only write path, SM5705 charger only, stock boost bits only. */
+static int sm5705_update(struct s2mm005 *s, u8 reg, u8 mask, u8 val)
 {
-	u8 dummy_reg[] = { 0x00, 0x08 }, func_reg[] = { 0x00, 0x20 };
-	u8 muic_reg = 0x15, cntl_reg = 0x0c, dummy, func[4];
+	u8 old, now, buf[2];
+	struct i2c_msg msg = { .addr = SM5705_CHG_ADDR, .len = 2, .buf = buf };
 	int ret;
 
+	if (!((reg == SM5705_CNTL && mask == SM5705_MODE_MASK) ||
+	      (reg == SM5705_CHGCNTL6 && mask == SM5705_OTGCUR_MASK) ||
+	      (reg == SM5705_FLEDCNTL6 && mask == SM5705_BSTOUT_MASK)))
+		return -EPERM;
+	ret = s2mm005_read(s->sm5705, SM5705_CHG_ADDR, &reg, 1, &old, 1);
+	if (ret)
+		return ret;
+	buf[0] = reg;
+	buf[1] = (old & ~mask) | (val & mask);
+	if (buf[1] != old) {
+		ret = i2c_transfer(s->sm5705, &msg, 1);
+		if (ret != 1)
+			return ret < 0 ? ret : -EIO;
+	}
+	ret = s2mm005_read(s->sm5705, SM5705_CHG_ADDR, &reg, 1, &now, 1);
+	if (ret)
+		return ret;
+	return (now & mask) == (val & mask) ? 0 : -EIO;
+}
+
+static int s2mm005_sample(struct s2mm005 *s, struct s2mm005_sample *sample,
+			  bool with_gauge)
+{
+	u8 dummy_reg[] = { 0x00, 0x08 }, func_reg[] = { 0x00, 0x20 };
+	u8 vbus_reg = 0x15, devt_reg = 0x0a, chg_reg = SM5705_STATUS1;
+	u8 dummy, func[4], chg[5];
+	union power_supply_propval status = { .intval = POWER_SUPPLY_STATUS_UNKNOWN };
+	int ret;
+
+	memset(sample, 0, sizeof(*sample));
 	/* Match the observer's ordinary dummy read, not a flash/boot command. */
 	ret = s2mm005_read(s->client->adapter, s->client->addr,
 			   dummy_reg, sizeof(dummy_reg), &dummy, 1);
@@ -69,11 +132,87 @@ static int s2mm005_sample(struct s2mm005 *s, struct s2mm005_sample *sample)
 		return ret;
 	sample->state = func[0];
 	sample->flags = func[3];
-	ret = s2mm005_read(s->sm5705, 0x25, &muic_reg, 1,
+	ret = s2mm005_read(s->sm5705, SM5705_MUIC_ADDR, &vbus_reg, 1,
 			   &sample->muic_vbus, 1);
 	if (ret)
 		return ret;
-	return s2mm005_read(s->sm5705, 0x49, &cntl_reg, 1, &sample->cntl, 1);
+	ret = s2mm005_read(s->sm5705, SM5705_MUIC_ADDR, &devt_reg, 1,
+			   sample->devt, sizeof(sample->devt));
+	if (ret)
+		return ret;
+	/* STATUS1..4 are status, not read-to-clear interrupt latches (INT1-4
+	 * at 0x00-0x03 are never read). CNTL follows at 0x0c.
+	 */
+	ret = s2mm005_read(s->sm5705, SM5705_CHG_ADDR, &chg_reg, 1, chg, sizeof(chg));
+	if (ret)
+		return ret;
+	sample->status1 = chg[0];
+	sample->status3 = chg[2];
+	sample->cntl = chg[4];
+	/* The gauge decides only enables; it cannot see our own boost. */
+	if (with_gauge) {
+		ret = power_supply_get_property(s->gauge, POWER_SUPPLY_PROP_STATUS,
+						&status);
+		if (ret)
+			return ret;
+	}
+	sample->gauge_status = status.intval;
+	return 0;
+}
+
+/* Boost on in the existing helper's order: configuration, a fresh interlock
+ * re-check, then CNTL mode 7, each verified.
+ */
+static int s2mm005_boost_on(struct s2mm005 *s)
+{
+	struct s2mm005_sample fresh;
+	int ret;
+
+	ret = sm5705_update(s, SM5705_FLEDCNTL6, SM5705_BSTOUT_MASK, SM5705_BSTOUT_5100MV);
+	if (ret)
+		return ret;
+	ret = sm5705_update(s, SM5705_CHGCNTL6, SM5705_OTGCUR_MASK, SM5705_OTGCUR_1500MA);
+	if (ret)
+		return ret;
+	/* Configuration is not permission. */
+	ret = s2mm005_sample(s, &fresh, true);
+	if (ret)
+		return ret;
+	if (!s2mm005_may_source(&fresh))
+		return -EAGAIN;
+	return sm5705_update(s, SM5705_CNTL, SM5705_MODE_MASK, S2MM005_MODE_USB_OTG);
+}
+
+/* Boost off: every 7 -> 5 transition passes through SUSPEND (mode 0) for
+ * 100 ms (stock does it only for gauge id < 5; we keep it always). Returns
+ * 0 only when CNTL reads mode 5.
+ */
+static int s2mm005_boost_off(struct s2mm005 *s)
+{
+	u8 reg = SM5705_CNTL, cntl;
+	int ret = -EIO, i;
+
+	for (i = 0; i < SM5705_OFF_TRIES; i++) {
+		ret = s2mm005_read(s->sm5705, SM5705_CHG_ADDR, &reg, 1, &cntl, 1);
+		if (!ret && (cntl & SM5705_MODE_MASK) != S2MM005_MODE_CHG_ON) {
+			ret = sm5705_update(s, SM5705_CNTL, SM5705_MODE_MASK,
+					    SM5705_MODE_SUSPEND);
+			if (!ret)
+				msleep(100);
+		}
+		if (!ret)
+			ret = sm5705_update(s, SM5705_CNTL, SM5705_MODE_MASK,
+					    S2MM005_MODE_CHG_ON);
+		if (!ret)
+			break;
+	}
+	if (ret)
+		return ret;
+	/* Back to the stock CHG_ON table; failures here do not source VBUS. */
+	if (sm5705_update(s, SM5705_FLEDCNTL6, SM5705_BSTOUT_MASK, SM5705_BSTOUT_4500MV) ||
+	    sm5705_update(s, SM5705_CHGCNTL6, SM5705_OTGCUR_MASK, SM5705_OTGCUR_500MA))
+		dev_warn(&s->client->dev, "boost settings not restored\n");
+	return 0;
 }
 
 static int s2mm005_role(struct s2mm005 *s, enum usb_role role)
@@ -82,18 +221,22 @@ static int s2mm005_role(struct s2mm005 *s, enum usb_role role)
 
 	if (s->requested == role) {
 		if (usb_role_switch_get_role(s->role_sw) == role) {
-			s->mismatch = 0;
+			s->mismatch = false;
 			return 0;
 		}
 		/* The role file stays writable (dwc3 allows user space control).
 		 * Undo an outside write instead of trusting the cached decision.
 		 */
-		if (++s->mismatch < S2MM005_MISMATCH_POLLS)
+		if (!s->mismatch) {
+			s->mismatch = true;
+			s->mismatch_since = s2mm005_now();
+		}
+		if (s2mm005_now() - s->mismatch_since < S2MM005_MISMATCH_MS)
 			return 0;
 		dev_warn_ratelimited(&s->client->dev, "role changed outside policy; %s again\n",
 				     usb_role_string(role));
 	}
-	s->mismatch = 0;
+	s->mismatch = false;
 	ret = usb_role_switch_set_role(s->role_sw, role);
 	if (ret) {
 		dev_err_ratelimited(&s->client->dev, "role %s failed: %d\n",
@@ -104,26 +247,24 @@ static int s2mm005_role(struct s2mm005 *s, enum usb_role role)
 		return 0;
 	s->requested = role;
 	typec_set_data_role(s->port, role == USB_ROLE_HOST ? TYPEC_HOST : TYPEC_DEVICE);
-	dev_info(&s->client->dev, "data role %s (read-only, no VBUS writes)\n",
-		 usb_role_string(role));
+	dev_info(&s->client->dev, "data role %s\n", usb_role_string(role));
 	return 0;
 }
 
 static void s2mm005_partner(struct s2mm005 *s, const struct s2mm005_sample *sample)
 {
 	struct typec_partner_desc desc = { .accessory = TYPEC_ACCESSORY_NONE };
+	bool boosting = s2mm005_boosting(&s->policy);
 
-	if (!sample || !(sample->flags & 1)) {
+	if (!sample || (!(sample->flags & 1) && !boosting)) {
 		if (s->partner) {
 			typec_unregister_partner(s->partner);
 			s->partner = NULL;
 		}
 		return;
 	}
-	/* Report observed power direction, never command it. Do not infer a PD
-	 * contract, cable orientation or USB revision from CC numeric values.
-	 */
-	typec_set_pwr_role(s->port, sample->flags & 2 ? TYPEC_SOURCE : TYPEC_SINK);
+	/* Our boost is the only way this port sources VBUS. */
+	typec_set_pwr_role(s->port, boosting ? TYPEC_SOURCE : TYPEC_SINK);
 	if (!s->partner) {
 		s->partner = typec_register_partner(s->port, &desc);
 		if (IS_ERR(s->partner)) {
@@ -134,48 +275,84 @@ static void s2mm005_partner(struct s2mm005 *s, const struct s2mm005_sample *samp
 	}
 }
 
+static void s2mm005_log_facts(struct s2mm005 *s, const struct s2mm005_sample *x)
+{
+	if (s->last_valid && !memcmp(&s->last, x, sizeof(*x)))
+		return;
+	s->last = *x;
+	s->last_valid = true;
+	if (__ratelimit(&s->facts_rs))
+		dev_info(&s->client->dev,
+			 "facts: state %u flags 0x%02x vbus 0x%02x cntl 0x%02x st1 0x%02x st3 0x%02x devt %02x%02x%02x gauge %d (sink %u/3 src %u/%u boost %d)\n",
+			 x->state, x->flags, x->muic_vbus, x->cntl, x->status1,
+			 x->status3, x->devt[0], x->devt[1], x->devt[2],
+			 x->gauge_status, s->policy.sink_polls,
+			 s->policy.source_polls, S2MM005_SOURCE_POLLS,
+			 s->policy.boost);
+}
+
 static void s2mm005_poll(struct work_struct *work)
 {
 	struct s2mm005 *s = container_of(to_delayed_work(work), struct s2mm005, poll);
+	struct s2mm005_decision d;
 	struct s2mm005_sample sample;
-	bool first = !s->first_poll_logged;
+	bool boosting = s2mm005_boosting(&s->policy);
+	bool was_host = s->requested == USB_ROLE_HOST;
 	int ret;
-	bool host;
 
-	if (first)
+	if (!s->first_poll_logged)
 		dev_info(&s->client->dev, "first poll: reading\n");
-	ret = s2mm005_sample(s, &sample);
-	host = s2mm005_sink_host(&s->consecutive, ret ? NULL : &sample);
-	/* Timeline for replug latency: every change of the qualifying facts and
-	 * the moment qualification completes. Rate limited; no effect on policy.
-	 */
-	if (!ret && (!s->last_valid || memcmp(&s->last, &sample, sizeof(sample)))) {
-		dev_info_ratelimited(&s->client->dev,
-				     "facts: state %u flags 0x%02x vbus 0x%02x cntl 0x%02x (qualified %u/3)\n",
-				     sample.state, sample.flags, sample.muic_vbus,
-				     sample.cntl, s->consecutive);
-		s->last = sample;
-		s->last_valid = true;
-	} else if (ret) {
-		s->last_valid = false;
-	}
-	if (host && s->requested != USB_ROLE_HOST)
-		dev_info(&s->client->dev, "qualified 3/3\n");
-	if (first) {
-		s->first_poll_logged = true;
-		if (ret)
-			dev_info(&s->client->dev, "first poll: read error %d\n", ret);
-		else
-			dev_info(&s->client->dev,
-				 "first poll: state %u flags 0x%02x vbus 0x%02x cntl 0x%02x\n",
-				 sample.state, sample.flags, sample.muic_vbus, sample.cntl);
-	}
-
+	ret = s2mm005_sample(s, &sample, !boosting);
 	if (ret)
-		dev_err_ratelimited(&s->client->dev, "status read failed: %d; device\n", ret);
-	if (s2mm005_role(s, host ? USB_ROLE_HOST : USB_ROLE_DEVICE)) {
-		s->consecutive = 0;
-		/* A failed set may have had partial effects. Force device again. */
+		dev_err_ratelimited(&s->client->dev, "status read failed: %d\n", ret);
+	else
+		s2mm005_log_facts(s, &sample);
+	if (!s->first_poll_logged) {
+		s->first_poll_logged = true;
+		dev_info(&s->client->dev, "first poll: %s\n", ret ? "read error" : "ok");
+	}
+	if (ret)
+		s->last_valid = false;
+
+	d = s2mm005_decide(&s->policy, ret ? NULL : &sample, s2mm005_now());
+	switch (d.action) {
+	case S2MM005_ENABLE:
+		ret = s2mm005_boost_on(s);
+		if (!ret) {
+			s2mm005_enabled(&s->policy, s2mm005_now());
+			dev_info(&s->client->dev, "boost on (%s): mode 7 verified\n", d.why);
+			d.host = true;
+		} else {
+			dev_warn(&s->client->dev, "boost on failed: %d; off\n", ret);
+			s2mm005_enable_failed(&s->policy, s2mm005_now());
+			if (s2mm005_boost_off(s))
+				s2mm005_disable_failed(&s->policy);
+		}
+		break;
+	case S2MM005_DISABLE:
+		/* Boost off with readback first, then the data role. */
+		if (s->policy.boost != S2MM005_BOOST_FAULT)
+			dev_info(&s->client->dev, "boost off: %s\n", d.why);
+		if (!s2mm005_boost_off(s)) {
+			s2mm005_disabled(&s->policy);
+			dev_info(&s->client->dev, "boost off: mode 5 verified%s\n",
+				 s->policy.boost == S2MM005_BOOST_STOPPED ?
+				 "; policy stopped until rebind" : "");
+		} else {
+			if (s->policy.boost != S2MM005_BOOST_FAULT)
+				dev_crit(&s->client->dev, "boost off NOT verified; retrying\n");
+			s2mm005_disable_failed(&s->policy);
+		}
+		d.host = false;
+		break;
+	case S2MM005_NONE:
+		break;
+	}
+	if (d.host && !was_host && !s2mm005_boosting(&s->policy))
+		dev_info(&s->client->dev, "qualified 3/3\n");
+
+	if (s2mm005_role(s, d.host ? USB_ROLE_HOST : USB_ROLE_DEVICE)) {
+		/* A failed set may have had partial effects. Force device. */
 		s->requested = USB_ROLE_NONE;
 		s2mm005_role(s, USB_ROLE_DEVICE);
 	}
@@ -183,7 +360,9 @@ static void s2mm005_poll(struct work_struct *work)
 	/* IRQ123 can remain asserted without acknowledgement. Never request it:
 	 * polling remains live without clearing/masking any controller register.
 	 */
-	schedule_delayed_work(&s->poll, msecs_to_jiffies(S2MM005_POLL_MS));
+	schedule_delayed_work(&s->poll, msecs_to_jiffies(
+		s2mm005_boosting(&s->policy) || s->policy.boost == S2MM005_BOOST_FAULT ?
+		S2MM005_BOOST_POLL_MS : S2MM005_POLL_MS));
 }
 
 static int s2mm005_probe(struct i2c_client *client)
@@ -207,6 +386,7 @@ static int s2mm005_probe(struct i2c_client *client)
 		return -ENOMEM;
 	s->client = client;
 	i2c_set_clientdata(client, s);
+	ratelimit_state_init(&s->facts_rs, HZ, 50);
 	INIT_DELAYED_WORK(&s->poll, s2mm005_poll);
 	s->role_sw = usb_role_switch_get(dev);
 	if (IS_ERR(s->role_sw))
@@ -235,34 +415,51 @@ static int s2mm005_probe(struct i2c_client *client)
 		ret = -EOPNOTSUPP;
 		goto put_adapter;
 	}
+	s->gauge = power_supply_get_by_reference(dev_fwnode(dev), "power-supplies");
+	if (IS_ERR_OR_NULL(s->gauge)) {
+		ret = s->gauge ? PTR_ERR(s->gauge) : -EPROBE_DEFER;
+		goto put_adapter;
+	}
+	/* Never inherit a boost: boot-vbus should already have turned it off. */
+	ret = s2mm005_boost_off(s);
+	if (ret)
+		goto put_gauge;
 	cap.fwnode = dev_fwnode(dev);
 	s->port = typec_register_port(dev, &cap);
 	if (IS_ERR(s->port)) {
 		ret = PTR_ERR(s->port);
-		goto put_adapter;
+		goto put_gauge;
 	}
 	ret = s2mm005_role(s, USB_ROLE_DEVICE);
 	if (ret)
 		goto unregister_port;
-	dev_info(dev, "read-only sink-host policy, %d ms polling, IRQ unused\n",
-		 S2MM005_POLL_MS);
+	dev_info(dev, "policy: sink host and battery source, %d/%d ms polling, IRQ unused\n",
+		 S2MM005_POLL_MS, S2MM005_BOOST_POLL_MS);
 	schedule_delayed_work(&s->poll, 0);
 	return 0;
 
 unregister_port:
 	typec_unregister_port(s->port);
+put_gauge:
+	power_supply_put(s->gauge);
 put_adapter:
 	i2c_put_adapter(s->sm5705);
 put_role:
 	usb_role_switch_put(s->role_sw);
-	return dev_err_probe(dev, ret, "read-only policy probe\n");
+	return dev_err_probe(dev, ret, "policy probe\n");
 }
 
+/* Stop sampling, boost off with readback, then device. */
 static int s2mm005_quiesce(struct s2mm005 *s)
 {
+	int ret;
+
 	cancel_delayed_work_sync(&s->poll);
-	s->consecutive = 0;
-	return s2mm005_role(s, USB_ROLE_DEVICE);
+	ret = s2mm005_boost_off(s);
+	if (ret)
+		dev_crit(&s->client->dev, "boost off NOT verified at stop: %d\n", ret);
+	s->policy = (struct s2mm005_policy){ 0 };
+	return s2mm005_role(s, USB_ROLE_DEVICE) ?: ret;
 }
 
 static void s2mm005_shutdown(struct i2c_client *client)
@@ -277,6 +474,7 @@ static void s2mm005_remove(struct i2c_client *client)
 	s2mm005_quiesce(s);
 	s2mm005_partner(s, NULL);
 	typec_unregister_port(s->port);
+	power_supply_put(s->gauge);
 	i2c_put_adapter(s->sm5705);
 	usb_role_switch_put(s->role_sw);
 }
@@ -319,5 +517,5 @@ static struct i2c_driver s2mm005_driver = {
 };
 module_i2c_driver(s2mm005_driver);
 
-MODULE_DESCRIPTION("Galaxy Tab S6 read-only s2mm005 USB data-role policy");
+MODULE_DESCRIPTION("Galaxy Tab S6 USB-C data role and battery source policy");
 MODULE_LICENSE("GPL");
