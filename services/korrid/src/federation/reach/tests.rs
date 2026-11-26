@@ -455,36 +455,7 @@ impl RpcPeer {
             listen_counted(devices._db.clone(), devices.router()).await;
         learn(&devices.da, &remote);
         let device = devices.cb.public_key().unwrap();
-        let recipient = devices.ca.public_key().unwrap();
-        let record = crate::relay::EndpointRecord {
-            device_public_key: device.clone(),
-            owner_public_key: devices.da.snapshot().unwrap()[0]
-                .membership
-                .owner_public_key
-                .clone(),
-            generation: 1,
-            issued_at: unix_time(),
-            endpoint_id: remote.id().to_string(),
-        };
-        let event = devices
-            .cb
-            .identity_snapshot()
-            .unwrap()
-            .encrypt_tagged_event(
-                &recipient,
-                crate::relay::ENDPOINT_EVENT_KIND,
-                vec![
-                    vec!["d".into(), format!("org.korri.endpoint:{recipient}")],
-                    vec!["p".into(), recipient.clone()],
-                ],
-                &serde_json::to_string(&record).unwrap(),
-                record.issued_at,
-            )
-            .unwrap();
-        devices
-            .da
-            .apply_endpoint_event(&devices.da.begin_work().unwrap(), &event.json)
-            .unwrap();
+        remember_endpoint(&devices, remote.id());
         let client = crate::upstream_native::NativeClient::new_secure_candidates(
             Vec::new(),
             device.clone(),
@@ -882,4 +853,90 @@ async fn sixty_five_idle_unbound_connections_do_not_block_a_member() {
     member_task.abort();
     member.close().await;
     drop(server);
+}
+
+/// Device a's directory remembers device b's signed endpoint record naming `id`.
+fn remember_endpoint(devices: &Devices, id: iroh::EndpointId) {
+    let device = devices.cb.public_key().unwrap();
+    let recipient = devices.ca.public_key().unwrap();
+    let record = crate::relay::EndpointRecord {
+        device_public_key: device,
+        owner_public_key: devices.da.snapshot().unwrap()[0]
+            .membership
+            .owner_public_key
+            .clone(),
+        generation: 1,
+        issued_at: unix_time(),
+        endpoint_id: id.to_string(),
+    };
+    let event = devices
+        .cb
+        .identity_snapshot()
+        .unwrap()
+        .encrypt_tagged_event(
+            &recipient,
+            crate::relay::ENDPOINT_EVENT_KIND,
+            vec![
+                vec!["d".into(), format!("org.korri.endpoint:{recipient}")],
+                vec!["p".into(), recipient.clone()],
+            ],
+            &serde_json::to_string(&record).unwrap(),
+            record.issued_at,
+        )
+        .unwrap();
+    devices
+        .da
+        .apply_endpoint_event(&devices.da.begin_work().unwrap(), &event.json)
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_peer_call_does_not_wait_past_its_deadline_for_a_dial_with_no_answer() {
+    let devices = Devices::new();
+    let (local, local_task) = listen(
+        devices.da.clone(),
+        Devices::router_on(devices._a.path(), devices.ca.clone()),
+    )
+    .await;
+    // The peer's endpoint is known, but nothing answers at its address: an
+    // offline device whose record is still remembered.
+    let gone = endpoint().await;
+    let gone_id = gone.id();
+    gone.close().await;
+    let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    local.address_lookup().unwrap().add(
+        iroh::address_lookup::memory::MemoryLookup::from_endpoint_info([iroh::EndpointAddr::new(
+            gone_id,
+        )
+        .with_ip_addr(silent.local_addr().unwrap())]),
+    );
+    remember_endpoint(&devices, gone_id);
+    let device = devices.cb.public_key().unwrap();
+    let client = crate::upstream_native::NativeClient::new_secure_candidates(
+        Vec::new(),
+        device.clone(),
+        devices.ca.clone(),
+    )
+    .with_directory(devices.da.clone())
+    .with_timeout(Duration::from_millis(500));
+    let started = std::time::Instant::now();
+    let result = timeout(Duration::from_secs(20), client.session_status())
+        .await
+        .expect("the call must end on its own deadline");
+    assert!(
+        matches!(result, Err(crate::upstreams::UpstreamError::Unreachable(_))),
+        "{result:?}"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "the dial held the call for {:?}",
+        started.elapsed()
+    );
+    assert!(matches!(
+        devices.da.snapshot().unwrap()[0].state,
+        PeerState::Failed { .. }
+    ));
+    local_task.abort();
+    local.close().await;
+    drop(silent);
 }

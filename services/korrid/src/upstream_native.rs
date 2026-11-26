@@ -820,7 +820,14 @@ impl NativeClient {
         } else if let (Some(directory), Some(key)) =
             (&self.directory, &self.expected_peer_public_key)
         {
-            Some(directory.reach_connection(key).await.map_err(|error| {
+            // The dial is part of this call's deadline. An offline peer whose
+            // endpoint is known otherwise holds the call, and every fan-out
+            // that joins it (the library's catalog), for as long as iroh tries.
+            let dial =
+                tokio::time::timeout(self.operation_timeout, directory.reach_connection(key))
+                    .await
+                    .map_err(|_| UpstreamError::Unreachable("peer dial timed out".into()))?;
+            Some(dial.map_err(|error| {
                 if error.kind() == std::io::ErrorKind::ConnectionAborted {
                     UpstreamError::Tagged {
                         code: "PeerConnectionGone".into(),
