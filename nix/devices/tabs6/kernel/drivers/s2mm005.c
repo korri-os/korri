@@ -71,6 +71,11 @@ struct s2mm005 {
 	bool first_poll_logged;
 	struct s2mm005_sample last;
 	bool last_valid;
+	/* FUNC_STATE bytes 1-2 (CC1/CC2 plug state, PD next state), logged on
+	 * change only: already read every poll, never a policy input.
+	 */
+	u8 cc[2], last_cc[2];
+	bool last_cc_valid;
 	enum usb_role requested;
 	struct ratelimit_state facts_rs;
 	struct ratelimit_state telemetry_rs;
@@ -145,6 +150,8 @@ static int s2mm005_sample(struct s2mm005 *s, struct s2mm005_sample *sample,
 		return ret;
 	sample->state = func[0];
 	sample->flags = func[3];
+	s->cc[0] = func[1];
+	s->cc[1] = func[2];
 	ret = s2mm005_read(s->sm5705, SM5705_MUIC_ADDR, &vbus_reg, 1,
 			   &sample->muic_vbus, 1);
 	*what = "MUIC VBUS 0x15";
@@ -352,8 +359,15 @@ static void s2mm005_poll(struct work_struct *work)
 		s->first_poll_logged = true;
 		dev_info(&s->client->dev, "first poll: %s\n", ret ? "read error" : "ok");
 	}
-	if (ret)
+	if (ret) {
 		s->last_valid = false;
+	} else if (!s->last_cc_valid || memcmp(s->cc, s->last_cc, sizeof(s->cc))) {
+		memcpy(s->last_cc, s->cc, sizeof(s->cc));
+		s->last_cc_valid = true;
+		dev_info_ratelimited(&s->client->dev,
+				     "cc: plug 0x%02x next 0x%02x (state %u)\n",
+				     s->cc[0], s->cc[1], sample.state);
+	}
 
 	d = s2mm005_decide(&s->policy, ret ? NULL : &sample, s2mm005_now());
 	switch (d.action) {
