@@ -769,6 +769,7 @@ impl Shell {
         if active == self.router.active() {
             return;
         }
+        korri_input_trace::record("focus", format_args!("active={active}"));
         let now = self.now();
         let presses = self.router.set_active(active, now);
         self.presses(presses);

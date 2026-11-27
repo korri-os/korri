@@ -172,10 +172,12 @@ impl Rig {
         }
     }
 
-    /// Run until nothing is queued for a short while.
+    /// Run until nothing is queued for a short while, at most five seconds:
+    /// a package that ticks and animates (Velvet) is never quiet.
     fn settle(&mut self) {
         let mut quiet = 0;
-        while quiet < 10 {
+        let started = Instant::now();
+        while quiet < 10 && started.elapsed() < Duration::from_secs(5) {
             Headless::render();
             let events: Vec<Event> = std::mem::take(&mut *self.queue.0.lock().unwrap());
             if events.is_empty() {
@@ -871,6 +873,208 @@ fn native_gamepad_input_moves_and_l1_r1_switches() {
     rig.until("switched by L1+R1", |r| {
         r.shell.current_id() == Some("pico")
     });
+}
+
+/// The frames korrid sends for one InputPlumber pad, as
+/// `services/korrid/src/host/input_coordination.rs` builds them:
+/// `NativeSources::connected` (EV_KEY/EV_ABS, the seat axes with the
+/// contract's flats) and `evdev_values` of a neutral `GamepadState`, ordered
+/// as `publish_device` sends them (by type, then code).
+fn korrid_pad(device: &str) -> Vec<Value> {
+    korrid_pad_resting(device, &[])
+}
+
+/// `korrid_pad` whose baseline holds these ABS values (code, value) instead of 0.
+fn korrid_pad_resting(device: &str, resting: &[(u16, i64)]) -> Vec<Value> {
+    let axes: Vec<Value> = [
+        (0, -32768, 32767, 4096),
+        (1, -32768, 32767, 4096),
+        (2, 0, 255, 32),
+        (3, -32768, 32767, 4096),
+        (4, -32768, 32767, 4096),
+        (5, 0, 255, 32),
+        (16, -1, 1, 0),
+        (17, -1, 1, 0),
+    ]
+    .iter()
+    .map(|&(code, minimum, maximum, flat)| json!({"code": code, "minimum": minimum, "maximum": maximum, "flat": flat}))
+    .collect();
+    let input = |kind: u16, code: u16| {
+        let value = if kind == 3 {
+            resting
+                .iter()
+                .find(|(c, _)| *c == code)
+                .map_or(0, |(_, v)| *v)
+        } else {
+            0
+        };
+        json!({"kind": "input", "deviceId": device, "class": "gamepad", "type": kind, "code": code, "value": value, "timestamp": 0})
+    };
+    let mut keys = [304u16, 305, 307, 308, 310, 311, 314, 315, 316, 317, 318];
+    keys.sort_unstable();
+    let mut frames = vec![
+        json!({"kind": "device-added", "device": {"deviceId": device, "class": "gamepad", "name": "Razer Kishi V2", "capabilities": ["EV_KEY", "EV_ABS"], "axes": axes}}),
+    ];
+    frames.extend(keys.iter().map(|&code| input(1, code)));
+    frames.extend(
+        [0u16, 1, 2, 3, 4, 5, 16, 17]
+            .iter()
+            .map(|&code| input(3, code)),
+    );
+    frames.push(json!({"kind": "device-state-complete", "deviceId": device}));
+    frames
+}
+
+/// One D-pad sample from korrid: only the changed ABS_HAT0Y, then SYN_REPORT
+/// (`NativeSources::state` and `publish_frame`).
+fn korrid_hat_y(device: &str, value: i64) -> Vec<Value> {
+    vec![
+        json!({"kind": "input", "deviceId": device, "class": "gamepad", "type": 3, "code": 17, "value": value, "timestamp": 0}),
+        json!({"kind": "input", "deviceId": device, "class": "gamepad", "type": 0, "code": 0, "value": 0, "timestamp": 0}),
+    ]
+}
+
+fn focus_reports(rig: &Rig) -> Vec<Value> {
+    rig.requests("FocusGame")
+}
+
+impl Rig {
+    /// Deliver queued events and draw for a fixed time. Velvet ticks and
+    /// animates, so it never goes quiet the way `settle` waits for.
+    fn run_for(&mut self, time: Duration) {
+        let started = Instant::now();
+        while started.elapsed() < time {
+            Headless::render();
+            let events: Vec<Event> = std::mem::take(&mut *self.queue.0.lock().unwrap());
+            for event in events {
+                self.shell.handle(event);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+}
+
+/// Velvet's focus report after a Down, or None when no report followed within
+/// two seconds (no neighbour, or the press never arrived).
+fn focus_after(rig: &mut Rig, press: impl FnOnce(&mut Rig)) -> (Option<Value>, Option<Value>) {
+    rig.run_for(Duration::from_secs(2));
+    let before = focus_reports(rig);
+    press(rig);
+    rig.run_for(Duration::from_secs(2));
+    let after = focus_reports(rig);
+    let moved = (after.len() > before.len())
+        .then(|| after.last().cloned())
+        .flatten();
+    (before.last().cloned(), moved)
+}
+
+/// Tab S6, 2026-11-25: a Kishi Down on Velvet's home did not move focus.
+/// Velvet reports every focus change as FocusGame, so the same Down through
+/// korrid's native frames and through the shell's own press must both
+/// report the same new focus; the direct press separates a missing
+/// neighbour from lost delivery.
+#[test]
+fn a_korrid_native_dpad_down_moves_velvet_focus_like_a_direct_press() {
+    let mut direct = rig(&["velvet"], 4, Behaviour::default());
+    let (start, moved) = focus_after(&mut direct, |r| r.shell.press(Button::Down));
+    eprintln!("direct: start {start:?} -> after Down {moved:?}");
+    let moved = moved.expect("a direct Down has no neighbour on this home");
+
+    let mut rig = rig(&["velvet"], 4, Behaviour::default());
+    let connection = rig.fixture.connection();
+    let queue = rig.queue.clone();
+    let _input = korri_shell::input::native::NativeInput::start(
+        connection,
+        true,
+        Box::new(move |event| queue.post(Event::Native(event))),
+    );
+    rig.until("subscribed", |r| r.fixture.input_subscribers() == 1);
+    rig.fixture.send_input(&korrid_pad("kishi"));
+    let (native_start, native) = focus_after(&mut rig, |r| {
+        r.fixture.send_input(&korrid_hat_y("kishi", 1));
+        r.run_for(Duration::from_millis(150));
+        r.fixture.send_input(&korrid_hat_y("kishi", 0));
+    });
+    eprintln!("native: start {native_start:?} -> after Down {native:?}");
+    assert_eq!(native_start, start, "both rigs start on the same focus");
+    assert_eq!(
+        native,
+        Some(moved),
+        "korrid's native Down did not reach Velvet as Down"
+    );
+}
+
+/// The shell arms a pad only from a neutral baseline (mapper.rs `neutral`):
+/// triggers at most minimum + flat (32 of 255), sticks inside 0.6. A pad whose
+/// baseline rests outside that, e.g. a trigger at 128, is delivered but every
+/// Down is silently held back. This is designed behaviour, measured here so a
+/// live resting value can be compared against it.
+#[test]
+fn a_korrid_pad_resting_outside_neutral_never_moves_velvet_focus() {
+    for resting in [[(2u16, 128i64)], [(5, 33)], [(1, 20_000)]] {
+        let mut rig = rig(&["velvet"], 4, Behaviour::default());
+        let connection = rig.fixture.connection();
+        let queue = rig.queue.clone();
+        let _input = korri_shell::input::native::NativeInput::start(
+            connection,
+            true,
+            Box::new(move |event| queue.post(Event::Native(event))),
+        );
+        rig.until("subscribed", |r| r.fixture.input_subscribers() == 1);
+        rig.fixture
+            .send_input(&korrid_pad_resting("kishi", &resting));
+        let (start, moved) = focus_after(&mut rig, |r| {
+            r.fixture.send_input(&korrid_hat_y("kishi", 1));
+            r.run_for(Duration::from_millis(150));
+            r.fixture.send_input(&korrid_hat_y("kishi", 0));
+        });
+        eprintln!("resting {resting:?}: start {start:?} -> after Down {moved:?}");
+        assert_eq!(moved, None, "resting {resting:?} armed the pad");
+    }
+}
+
+/// Tab S6, 2026-11-27, deployed e2735480: Sway maps every new client
+/// unfocused (`no_focus [all]`, 7b1627d78) and korrid then focuses the shell,
+/// so the window reports Focus(false) then Focus(true). Live trace: korrid
+/// wrote ABS_HAT0Y=1 + SYN, the shell's native_ui received both, and the
+/// mapper produced no press. The native subscription must hand the router a
+/// fresh baseline after any focus loss, however quickly focus returns.
+#[test]
+fn a_focus_blip_keeps_native_dpad_down_moving_velvet_focus() {
+    let mut rig = rig(&["velvet"], 4, Behaviour::default());
+    let connection = rig.fixture.connection();
+    let queue = rig.queue.clone();
+    let native = std::sync::Arc::new(std::sync::Mutex::new(
+        korri_shell::input::native::NativeInput::start(
+            connection,
+            true,
+            Box::new(move |event| queue.post(Event::Native(event))),
+        ),
+    ));
+    let follow = native.clone();
+    rig.shell.on_native_active(Box::new(move |active| {
+        follow.lock().unwrap().set_active(active)
+    }));
+    rig.until("subscribed", |r| r.fixture.input_subscribers() == 1);
+    rig.fixture.send_input(&korrid_pad("kishi"));
+    rig.run_for(Duration::from_secs(1));
+    for focused in [false, true] {
+        rig.shell.handle(Event::Host {
+            generation: 0,
+            window: 0,
+            event: HostEvent::Focus(focused),
+        });
+    }
+    let (start, moved) = focus_after(&mut rig, |r| {
+        r.fixture.send_input(&korrid_hat_y("kishi", 1));
+        r.run_for(Duration::from_millis(150));
+        r.fixture.send_input(&korrid_hat_y("kishi", 0));
+    });
+    eprintln!("focus blip: start {start:?} -> after Down {moved:?}");
+    assert!(
+        moved.is_some(),
+        "Down after a focus blip did not move Velvet's focus"
+    );
 }
 
 #[test]

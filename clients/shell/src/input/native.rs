@@ -360,21 +360,27 @@ fn serve(
         socket.send(Message::Text(value.to_string().into())).is_ok()
     };
     while !stop.load(Ordering::SeqCst) {
+        // The router drops every device as soon as focus is lost, so a loss
+        // counts even when focus is back before this thread looks: Sway maps
+        // the shell unfocused and korrid focuses it a moment later
+        // (`no_focus [all]`), and both commands can arrive in one drain.
+        let mut lost_focus = false;
         while let Ok(Command::Active(value)) = commands.try_recv() {
+            lost_focus |= !value;
             *active = value;
         }
-        if *active && attachment.retired && attachment.request.is_none() {
-            // Focus came back while this attachment is retired: never reactivate it;
-            // reconnect for a fresh baseline.
-            return End::Fresh;
-        }
-        if !*active && !attachment.retired {
+        if (lost_focus || !*active) && !attachment.retired {
             // Retire locally first, then ask korrid to release this generation.
             attachment.retired = true;
             if std::mem::take(connected) {
                 events(vec![NativeEvent::Disconnected]);
                 frames = super::frames::Frames::default();
             }
+        }
+        if *active && attachment.retired && attachment.request.is_none() {
+            // Focus came back while this attachment is retired: never reactivate it;
+            // reconnect for a fresh baseline.
+            return End::Fresh;
         }
         if attachment.retired && !attachment.release_requested && attachment.request.is_none() {
             if let Some(generation) = attachment.generation.clone() {

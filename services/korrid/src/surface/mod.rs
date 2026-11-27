@@ -424,6 +424,14 @@ impl SurfaceHub {
                 self.bump();
             }
             SurfaceRequest::FocusGame { game_id } => {
+                // The closed-loop pass signal: a surface moved its selection.
+                korri_input_trace::record(
+                    "surface_focus",
+                    format_args!(
+                        "surface={surface_id} game={}",
+                        game_id.as_deref().unwrap_or("-")
+                    ),
+                );
                 let mut sessions = self.sessions.lock().expect("sessions poisoned");
                 sessions.entry(surface_id.to_owned()).or_default().focused = game_id.clone();
                 drop(sessions);
