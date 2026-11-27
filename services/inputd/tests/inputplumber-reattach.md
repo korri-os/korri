@@ -72,11 +72,16 @@ The tablet's provider-restart workaround was removed on 2026-11-25, restored
 the same day when the automatic-host failure reproduced, and removed again by
 owner decision: a restart that overlapped a Kishi re-enumeration left
 InputPlumber with no composite (startup discovery cached the device before
-udev initialized it; `inputplumber-udev-startup-vm.py`). Evidence for both is
-in `nix/devices/tabs6/usb-role/typec-kernel.md`. The role watcher now restarts
-only the USB gadget on detach, and its tests assert that neither input
-provider is restarted.
+udev initialized it; `inputplumber-udev-startup-vm.py`). The role watcher now
+restarts only the USB gadget on detach, and its tests assert that neither
+input provider is restarted.
 
-No test here proves that the separate automatic-host shell-navigation failure
-is fixed. A tablet replug that re-adds the source but does not restore shell
-navigation is evidence of that failure.
+On 2026-11-27 a dead D-pad on the tablet was traced to the shell, not to
+InputPlumber or inputd: korrid delivered every hat sample, and the shell's
+native-input thread had missed a brief window-focus loss, so its mapper had no
+device (`clients/shell/src/input/native.rs`; shell test
+`a_focus_blip_keeps_native_dpad_down_moving_velvet_focus`). Whether the
+earlier automatic-host failure (#629) was the same is not proven: a USB re-add
+does not change shell focus. Evidence and the open question are in
+`nix/devices/tabs6/usb-role/typec-kernel.md`. Check shell input with
+`KORRI_INPUT_TRACE=1` on korrid and the shell, not enumeration alone.

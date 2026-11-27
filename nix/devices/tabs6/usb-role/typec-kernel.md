@@ -112,65 +112,64 @@ After a revoke caused by a charger, sink host requalifies from zero: DFP
 arrives about 1.9 s after SNK_Ready (measured), so the Kishi re-enumerates
 rather than keeping host across the hand-over.
 
-**Remaining unknown: Kishi pass-through isolation during the overlap.** When
-a charger is plugged into the Kishi pass-through while our boost is on, both
-may drive VBUS until the chip leaves the source states or the charger forces
-mode 5. While boosting, MUIC VBUS (01) and STATUS1 (VBUSPOK) do not
-discriminate our output from the charger, and the gauge cannot see the charger
-(OTG mode does not charge). The evidence that remains valid while boosting is
-the chip leaving the source states, CNTL leaving mode 7, a STATUS1 fault, and
-a MUIC charger signature, if the MUIC classifies the charger at all. Whether
-it does, and how long the overlap lasts, is measured in acceptance.
+**Limitation: a charger plugged into the Kishi while we boost is not
+detected (measured 2026-11-27, build 394qyl2m).** Simon plugged a charger
+into the Kishi pass-through at about 1300 s while boost was on and left it
+for about 11 min. Nothing changed: no boost off, no USB event, CNTL 0x07,
+STATUS 21/00/00/20, MUIC INT 00/00/00, FUNC_STATE only the chip's usual
+0 ↔ 14 cycle, the 32-byte status block at 0x0030 all zero, the gauge
+Discharging throughout. The gauge current averaged about −0.70 A plugged in
+and about −0.55 A after the unplug at about 2000 s (screen state not
+controlled), so the charger did not feed the tablet; no fault was latched.
+That does not prove electrical isolation inside the Kishi.
 
-### Why the fuel gauge is not an interlock (owner decision, 2026-11-24)
+Inference, not proven: the Kishi never changed its CC presentation and never
+sent PD (no PD contract forms: the chip sits in state 14,
+`State_PE_SRC_Wait_New_Capabilities`), so neither our polling nor stock's IRQ
+handler has anything to react to. Stock reads the same FUNC_STATE on its IRQ.
 
-The previous user-space policy and the first kernel builds also required gauge
-Charging. At 100 % battery with the charger in, that check revoked host by
-itself while the chip state held still:
+**Tested order: charger first.** Charging with the Kishi works when the
+charger is already in the Kishi pass-through before the Kishi is attached (or
+at boot): the chip attaches as a sink (state 21) and sink host qualifies. To
+charge during play: take the Kishi off, plug the charger into it, put it back.
+Unplugging the charger during play works: measured unplug at 1264.26 s, boost
+on (verified) at 1264.71 s, Kishi enumerated at 1265.08 s, D-pad working
+afterwards.
 
-| Trace | Gauge | MUIC VBUS / CNTL / PD | Effect of a gauge interlock |
-| --- | --- | --- | --- |
-| `sink-host-full-flap.txt` | Charging → Full for ~0.6 s, every ~30 s (+69 mA) | 01 / 0x05 / unchanged | host → device → host, ~6 s input loss per provider restart |
-| `sink-host-full-discharging-dips.txt` | Full → Discharging for 0.2–0.4 s (current around the 50 mA deadband) | 01 / 0x05 / unchanged | five device dips in about 4 minutes |
+**Read-error revokes in normal battery play (measured, ix1pnpcl boots,
+2026-11-27).** Five revokes in four boots, all `boost off: read error`, each
+dropping the Kishi for about 3 s (re-enable after the fixed 3 s retry). Four
+of the five failed on the dummy read of 0x0008 (`-6` twice, `-5` twice), one
+on FUNC_STATE (`-5`). Stock issues the same dummy read before its status reads
+and does not check its result (`process_cc_water`). Revoking on any failed
+read is an owner decision (2026-11-25); changing it is not done here.
 
-`sm5705_fg` derives status from current alone: Charging above +50 mA,
-Discharging below −50 mA, otherwise Full (SOC ≥ 99) or Not charging. With a
-full battery the charger tapers, so the current crosses the deadband and the
-gauge cannot tell "charger in, battery full" from "on battery".
+The driver now logs FUNC_STATE bytes 1–2 on change (`cc: plug … next …`):
+CC1/CC2 plug state and the PD next state, already read every poll and not a
+policy input. They are a candidate signal for the next attempt.
 
-The gauge was a redundant power check. `typec-phase-b.md` records that this
-board sources VBUS only through SM5705 mode 7, never through the dwc3 role
-switch. While CNTL reads mode 5, MUIC VBUS=01 together with SNK_Ready,
-attached and source=0 therefore means the charger supplies the port, and the
-data role cannot source it. The policy keeps those six checks, three fresh
-samples and immediate revocation on any of them or on a read error. The
-battery source (above) reads the gauge again, but only as an enable condition.
+**Checking removal on battery after the fact.** The Kishi coming off while we
+boost must turn boost off within 2.5 s (state-0 episode limit). The persistent
+journal shows it; pick the boot with `journalctl --list-boots`:
 
-## Register and resource grounding
+```sh
+journalctl -k -b 0 -o short-monotonic --no-pager \
+  | grep -E 's2mm005.*boost (on|off)|usb 1-1: USB disconnect' \
+  | awk -F'[][]' '{now = $2 + 0}
+      /boost on/ {t = 0}
+      /USB disconnect/ {t = now}
+      /boost off: / && !/mode 5|NOT verified/ {
+        why = $0; sub(/.*boost off: /, "", why)
+        printf "%.3f boost off: %s; ", now, why
+        if (t) printf "USB disconnect %.3f s before\n", now - t; else print "no disconnect before"
+        t = 0 }'
+```
 
-The vendor source and stock DT evidence are listed in `typec.md`, at Samsung
-commit `37cf30da0578a6378a3e3ef5e17aede89233defe`.
-
-| Read/resource | Grounding and choice |
-| --- | --- |
-| s2mm005 0x33 on `&i2c15`, 0xc94000 | Stock DTBO fragment 130 and boot symbols. A product-only client node uses `samsung,s2mm005-read-only`. No vendor probe/initialization code is ported. |
-| 0x0008, one byte | `s2mm005.h` SW_VERSION_1, ordinary dummy/status read retained from the observer. No firmware access command. |
-| 0x0020, four bytes | `s2mm005.h` FUNC_STATE_Type and `s2mm005_cc.c` process_cc_attach. Byte0 is state; byte3 bits0/1/2 are attached/source/DFP. |
-| Two-byte address, MSB first | `s2mm005.c` s2mm005_read_byte. Exactly two completed I2C messages are required; short transfers are errors. |
-| SM5705 adapter `&i2c4`, 0x890000 | Stock DTBO fragment 133. `samsung,sm5705-i2c` phandle resolves the adapter, never a Linux adapter number. |
-| MUIC 0x25, 0x15, one byte | `muic_regmap_sm5705.c`, REG_RSVDID1 / RSVDID1_VBUS_VALID. The existing policy requires the whole byte to equal 01. |
-| Charger 0x49, STATUS1–4 0x08–0x0b and CNTL 0x0c, one five-byte read | `include/linux/mfd/sm5705/sm5705.h`; STATUS1 VBUSPOK/UVLO/OVP/LIMIT/WPCIN bits 0–5, STATUS3 OTGFAIL bit 2, CNTL bits 2:0 mode. Status registers, not the read-to-clear INT1–4 at 0x00–0x03 (never read). |
-| MUIC 0x25, DEVT1–3 0x0a–0x0c | `muic_regmap_sm5705.c` DEVT1_* (OTG bit7, dedicated/USB/car charger bits 6/5/4, UART bit3, USB bit2), DEVT2, DEVT3 (AFC/U200 chargers). |
-| Gauge `&sm5705_fg` (`power-supplies`) | Fresh STATUS through `power_supply_get_by_reference`; enable-only. |
-| dwc3 | `usb-role-switch = <&usb_1_dwc3>` on the typec node; `usb_role_switch_get` resolves the phandle and defers until the switch exists. `usb_1_dwc3` is unchanged (no graph port, no default-mode property; dwc3 defaults to peripheral). An earlier OF-graph link made fw_devlink report a dwc3 ↔ typec@33 cycle and was the prime suspect for the trial fallbacks. |
-
-The charger and MUIC addresses are deliberately **not** reserved with dummy
-clients. They have no kernel drivers. Adapter-locked combined reads coexist
-with the unchanged charge-maintenance and boot boost-off i2c-dev services,
-which would otherwise fail with EBUSY. No forced I2C access is used. This board
-specific driver must be revisited if either address gains a kernel owner.
-Cross-chip reads are sequential, as before; they are not a hardware-atomic
-snapshot. Every poll gets new facts, and no observer log grants permission.
+A removal prints `boost off: detach` with the USB disconnect at most about
+2.5 s before it. A longer gap is a failure; so is a disconnect with no later
+`boost off` while boost was on. A `read error` revoke happens before its
+disconnect (the revoke powers the Kishi down), so it prints "no disconnect
+before".
 
 ## User-space remainder
 
@@ -194,18 +193,19 @@ matched, so there was no composite and no input until the next replug.
 `inputplumber-startup-udev-init.patch` makes startup discovery wait for udev
 (VM check `inputplumber-udev-startup-vm`).
 
-Case B stays reproduced and open. On battery, repeated USB detach/re-add
-(boost cycling and runtime module swaps) each logged InputPlumber "Found
-missing input device, adding source device evdev://event9 to existing
-composite device". inputd re-applied the profile (rejected → ready) after some
-re-adds (1386, 1402, 1434, 1466, 1482, 1530, 1546 s) and after others did
-nothing (1417, 1449, 1497, 1513, 1561, 1575, 1733 s); after the last ones the
-D-pad stayed dead although the composite still listed the source, targets,
-profile and InterceptMode 0. Restarting both providers restored input. The
-InputPlumber EBUSY re-add fix (`services/inputd/tests/inputplumber-reattach.md`)
-does not cover this; the cause in inputd's reconciliation is open. A replug
-that does not restore shell input is evidence of it. Check shell input, not
-enumeration alone.
+Case B (#629) is not reproduced since the shell fix, and its cause is not
+proven. The dead-input failure found on 2026-11-27 was in the shell: Sway maps
+every client unfocused (`no_focus [all]`) and korrid then focuses the shell,
+so the window reports focus lost then regained. The router dropped every
+gamepad on the loss, and the native-input thread read both changes at once and
+never reconnected, so korrid's frames reached a mapper that knew no device
+(fixed in `clients/shell/src/input/native.rs`, closed-loop verified). A USB
+re-add alone does not cause a shell focus change, so case B (re-adds on
+2026-11-25, input dead after some, providers' restart recovered it) may be a
+different failure; that boot had no shell trace. On 394qyl2m a re-add on
+battery (charger unplug, 1264–1265 s) kept input working. A replug that does
+not restore shell input is evidence of case B; capture `KORRI_INPUT_TRACE`
+(korrid and shell) before restarting anything.
 
 The driver logs each change of the qualifying facts (`facts: state … flags …
 vbus … cntl … (qualified n/3)`, rate limited) and `qualified 3/3`, so the time
