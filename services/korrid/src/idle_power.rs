@@ -81,10 +81,11 @@ impl IdlePower {
     pub(crate) fn activity(&self) {
         self.activity_at(Instant::now());
     }
-    fn activity_at(&self, now: Instant) {
+    /// True when this activity moved the timer forward.
+    fn activity_at(&self, now: Instant) -> bool {
         let mut state = self.state.lock().expect("idle power mutex poisoned");
         if now <= state.last_activity {
-            return;
+            return false;
         }
         state.last_activity = now;
         let changed = matches!(state.phase, Phase::Warning { .. });
@@ -93,6 +94,7 @@ impl IdlePower {
         if changed {
             self.changed();
         }
+        true
     }
     pub(crate) fn check(&self, now: Instant, eligible: bool) -> Decision {
         if !eligible {
@@ -241,7 +243,10 @@ async fn signals(state: &crate::AppState) -> Signals {
     let (known, game) = match &state.mode {
         crate::ServerMode::Host(host) => {
             if let Some(at) = host.last_input_activity() {
-                state.idle_power.activity_at(at);
+                if state.idle_power.activity_at(at) {
+                    // Off the battery the timer restarts every second anyway.
+                    korri_input_trace::record("idle_input_activity", format_args!(""));
+                }
             }
             match host.session_status().await {
                 Ok(S::NoActive | S::Completed { .. } | S::Failed { .. }) => {
