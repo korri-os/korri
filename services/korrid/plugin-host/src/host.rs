@@ -6655,6 +6655,41 @@ mod tests {
         assert_eq!(receipt.desired, Desired::Enabled);
         assert_eq!(receipt.previous.unwrap().package, installed.package);
         assert!(runtime.running.borrow().contains(&installed.id));
+        assert_eq!(
+            runtime.owned_packages.borrow().get(&installed.id),
+            Some(&next.package)
+        );
+    }
+
+    /// An installed unsigned sideload is never replaced this way, not even by
+    /// a signed build of the same plugin under that build's exact approval.
+    #[test]
+    fn a_signed_sideload_does_not_replace_an_installed_unsigned_sideload() {
+        let root = tempfile::tempdir().unwrap();
+        let installed = sideload_report("@test:viewer", "viewer-v1", false);
+        let mut next = sideload_report("@test:viewer", "viewer-v2", true);
+        next.provenance = Provenance::Sideload {
+            archive_sha256: "b".repeat(64),
+            platform: current_platform().into(),
+            signed: true,
+        };
+        let host = Host::for_test(
+            root.path(),
+            PathBuf::from("/unavailable-nix"),
+            permitted_policy(),
+            runtime(&[installed.clone(), next.clone()]),
+        )
+        .unwrap();
+        host.install_reviewed(installed.clone(), &installed.approval)
+            .unwrap();
+        assert_eq!(
+            host.install_reviewed(next.clone(), &next.approval)
+                .unwrap_err(),
+            "plugin is installed; use update or explicit source switch"
+        );
+        let receipt = host.status(&installed.id).unwrap().unwrap();
+        assert_eq!(receipt.package, installed.package);
+        assert_eq!(receipt.provenance, installed.provenance);
     }
 
     fn repository_report(id: &str, suffix: &str, source: &str, release: &str) -> Report {
