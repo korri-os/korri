@@ -30,6 +30,7 @@
  * but the active presentation path is SDL NV12.
  */
 #include "video.h"
+#include "../frame_times.h"
 #include "../util.h"
 
 #include <stdio.h>
@@ -690,9 +691,10 @@ static void direct_update_dmabuf_quad_if_needed(AVFrame *frame, int import_h) {
   direct_quad_visible_h = frame->height;
 }
 
-/* Forward decls for the dispatching draw_frame(). */
-static void draw_frame_drm_prime(AVFrame *frame);
-static void draw_frame_nv12(AVFrame *frame);
+/* Forward decls for the dispatching draw_frame(). Each returns whether it
+ * presented the frame. */
+static bool draw_frame_drm_prime(AVFrame *frame);
+static bool draw_frame_nv12(AVFrame *frame);
 
 static int stream_width, stream_height;
 static int create_window(int width, int height);
@@ -734,10 +736,11 @@ static void draw_frame(AVFrame *frame) {
     SDL_SetWindowSize(window, previous_width, previous_height);
   }
   update_render_geometry(visible_w, visible_h);
+  bool presented = false;
   if (frame->format == AV_PIX_FMT_DRM_PRIME) {
-    draw_frame_drm_prime(frame);
+    presented = draw_frame_drm_prime(frame);
   } else if (frame->format == AV_PIX_FMT_NV12) {
-    draw_frame_nv12(frame);
+    presented = draw_frame_nv12(frame);
   } else {
     static bool warned = false;
     if (!warned) {
@@ -746,11 +749,16 @@ static void draw_frame(AVFrame *frame) {
       warned = true;
     }
   }
+  /* The start's first-frame mark and the lifecycle's FirstFrame, which
+   * korrid waits for before it reveals the stream (ADR 0098, #639). This
+   * presenter keeps no per-frame record, so the pts writes no row. */
+  if (presented)
+    frame_times_displayed(frame->pts);
 }
 
-static void draw_frame_nv12(AVFrame *frame) {
+static bool draw_frame_nv12(AVFrame *frame) {
   if (!sdl_renderer)
-    return;
+    return false;
 
   if (!sdl_nv12_texture || sdl_tex_w != frame->width || sdl_tex_h != frame->height) {
     if (sdl_nv12_texture) {
@@ -764,7 +772,7 @@ static void draw_frame_nv12(AVFrame *frame) {
     if (!sdl_nv12_texture) {
       LOG("SDL_CreateTexture(NV12 %dx%d) failed: %s",
           frame->width, frame->height, SDL_GetError());
-      return;
+      return false;
     }
     sdl_tex_w = frame->width;
     sdl_tex_h = frame->height;
@@ -775,13 +783,14 @@ static void draw_frame_nv12(AVFrame *frame) {
                           frame->data[0], frame->linesize[0],
                           frame->data[1], frame->linesize[1]) != 0) {
     LOG("SDL_UpdateNVTexture failed: %s", SDL_GetError());
-    return;
+    return false;
   }
 
   SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 255);
   SDL_RenderClear(sdl_renderer);
   SDL_RenderCopy(sdl_renderer, sdl_nv12_texture, &(SDL_Rect){(int)frame->crop_left, (int)frame->crop_top, frame_visible_width(frame), frame_visible_height(frame)}, &sdl_dst_rect);
   SDL_RenderPresent(sdl_renderer);
+  return true;
 }
 static void prime_cache_clear(void) {
   for (int i = 0; i < prime_cache_count; i++) {
@@ -900,14 +909,14 @@ static PrimeCacheEntry *prime_cache_lookup(const AVFrame *frame,
   return e;
 }
 
-static void draw_frame_drm_prime(AVFrame *frame) {
+static bool draw_frame_drm_prime(AVFrame *frame) {
   static bool warned = false;
   if (!request_mode || !gl_ctx) {
     if (!warned) {
       LOG("draw_frame: DRM_PRIME frame received but SDL renderer path is active; frame discarded");
       warned = true;
     }
-    return;
+    return false;
   }
   const AVDRMFrameDescriptor *desc = (const AVDRMFrameDescriptor *) frame->data[0];
   const AVDRMLayerDescriptor *layer = desc ? &desc->layers[0] : NULL;
@@ -922,7 +931,7 @@ static void draw_frame_drm_prime(AVFrame *frame) {
           layer ? layer->nb_planes : -1, modifier);
       warned = true;
     }
-    return;
+    return false;
   }
 
   /* The capture buffer holds the coded size and the UV plane starts
@@ -932,13 +941,13 @@ static void draw_frame_drm_prime(AVFrame *frame) {
   int import_w = frame->width & ~1;
   int import_h = frame->height & ~1;
   if (import_w <= 0 || import_h <= 0 || import_w > (int) layer->planes[0].pitch)
-    return;
+    return false;
 
   if (gl_init_nv12(import_w, import_h) != 0)
-    return;
+    return false;
   PrimeCacheEntry *e = prime_cache_lookup(frame, desc, import_w, import_h);
   if (!e)
-    return;
+    return false;
 
   direct_update_dmabuf_quad_if_needed(frame, import_h);
 
@@ -977,6 +986,7 @@ static void draw_frame_drm_prime(AVFrame *frame) {
   glDisableVertexAttribArray(0);
   glDisableVertexAttribArray(1);
   SDL_GL_SwapWindow(window);
+  return true;
 }
 /* ------------------------------------------------------------------ */
 /* Display thread                                                     */

@@ -288,7 +288,9 @@ let
           pkgs.xvfb-run
           pkgs.ffmpeg
         ];
-        buildInputs = libraries;
+        # libdrm for the handheld presenter's check below; the product links
+        # it on aarch64 only.
+        buildInputs = libraries ++ [ pkgs.libdrm ];
       }
       ''
           cc -std=gnu11 -Wall -Wextra -Werror -Wno-unused-parameter -I${source}/picture -I${network}/include \
@@ -332,6 +334,22 @@ let
           LIBGL_ALWAYS_SOFTWARE=1 __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_DRIVERS_PATH=${pkgs.mesa}/lib/dri \
           SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software \
           xvfb-run -a -s '-screen 0 640x480x24 -nolisten tcp' ./check-sdl frames.h264 portrait.h264
+        # The handheld (v4l2m2m) presenter reports its first presented frame,
+        # so korrid reveals the stream then and not at its deadline (#639).
+        cc -std=gnu11 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-function \
+          -I${source}/picture -I${network}/include \
+          ${source}/tests/test-v4l2m2m-first-frame.c ${source}/picture/frame_times.c ${source}/picture/util.c \
+          $(pkg-config --cflags --libs libavcodec libavutil sdl2 egl glesv2 libdrm) \
+          -L${network}/lib -Wl,-rpath,${network}/lib -lmoonlight-common-c -pthread -lm -o check-v4l2m2m-first-frame
+        LD_LIBRARY_PATH=${
+          pkgs.lib.makeLibraryPath [
+            network
+            pkgs.libglvnd
+            pkgs.mesa
+          ]
+        } \
+          SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software \
+          xvfb-run -a -s '-screen 0 640x480x24 -nolisten tcp' ./check-v4l2m2m-first-frame
         touch "$out"
       '';
   # The viewer with none of the Rust parts: the C network core, presenter,
