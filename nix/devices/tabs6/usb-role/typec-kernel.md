@@ -129,6 +129,14 @@ sent PD (no PD contract forms: the chip sits in state 14,
 `State_PE_SRC_Wait_New_Capabilities`), so neither our polling nor stock's IRQ
 handler has anything to react to. Stock reads the same FUNC_STATE on its IRQ.
 
+Consequence measured the same day: the undetected charger does not stop the
+battery-inactivity power-off (`services/korrid/src/idle_power.rs`, 15 min
+without input on battery). Boot -4 on 2026-11-27 (394qyl2m) ended at 16:38
+with `poweroff requested from client … ('korrid')` at 1044.6 s monotonic,
+while the charger sat in the Kishi: the gauge read Discharging, so korrid
+treated the tablet as on battery. Leaving the tablet charging through the
+Kishi this way powers it off after 15 min idle instead of charging it.
+
 **Tested order: charger first.** Charging with the Kishi works when the
 charger is already in the Kishi pass-through before the Kishi is attached (or
 at boot): the chip attaches as a sink (state 21) and sink host qualifies. To
