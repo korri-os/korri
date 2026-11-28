@@ -141,8 +141,12 @@ static int s2mm005_sample(struct s2mm005 *s, struct s2mm005_sample *sample,
 	ret = s2mm005_read(s->client->adapter, s->client->addr,
 			   dummy_reg, sizeof(dummy_reg), &dummy, 1);
 	*what = "s2mm005 0x0008";
-	if (ret)
+	if (ret && s2mm005_read_failure_voids(S2MM005_READ_DUMMY))
 		return ret;
+	if (ret)
+		dev_warn_ratelimited(&s->client->dev,
+				     "dummy read failed, ignored as stock: s2mm005 0x0008: %d\n",
+				     ret);
 	ret = s2mm005_read(s->client->adapter, s->client->addr,
 			   func_reg, sizeof(func_reg), func, sizeof(func));
 	*what = "s2mm005 FUNC_STATE 0x0020";

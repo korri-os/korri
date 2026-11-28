@@ -77,6 +77,26 @@ static inline bool s2mm005_source_state(unsigned char state)
 /* MUIC: none, passive UART (measured with the unpowered Kishi) or OTG.
  * Every charger, PC or unknown classification denies.
  */
+/* The reads of one sample, in order. Only the s2mm005 dummy read of 0x0008
+ * may fail without voiding the sample: stock issues it before its status reads
+ * and never checks its result (process_cc_water); measured 2026-11-27 as -6
+ * and -5 about every 5-10 min of battery play, each revoke dropping the Kishi
+ * for ~3 s. Every real status read still voids the sample (a read error).
+ */
+enum s2mm005_read {
+	S2MM005_READ_DUMMY,
+	S2MM005_READ_FUNC_STATE,
+	S2MM005_READ_MUIC_VBUS,
+	S2MM005_READ_MUIC_DEVT,
+	S2MM005_READ_CHARGER,
+	S2MM005_READ_GAUGE,
+};
+
+static inline bool s2mm005_read_failure_voids(enum s2mm005_read read)
+{
+	return read != S2MM005_READ_DUMMY;
+}
+
 static inline bool s2mm005_muic_quiet(const struct s2mm005_sample *s)
 {
 	return (s->devt[0] == 0 || s->devt[0] == 0x08 || s->devt[0] == 0x80) &&

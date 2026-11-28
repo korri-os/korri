@@ -71,7 +71,8 @@ Enable, boost off, two consecutive fresh samples with **all** of:
 | Boost off | CNTL mode 5 |
 | Not backing off | see below |
 
-Revoke at once, every poll while boosting: read error; CNTL no longer mode 7
+Revoke at once, every poll while boosting: read error (any failed status
+read; a failed dummy read of 0x0008 is logged and ignored, as stock); CNTL no longer mode 7
 (including the charger forcing mode 5 on incoming VBUS); OTGFAIL, VBUSOVP,
 VBUSLIMIT or wireless input; any MUIC charger/PC signature; and any state
 outside the source set: 17, 18, 20, 21, 29, 52 or unknown. State 0 is a
@@ -141,8 +142,11 @@ afterwards.
 dropping the Kishi for about 3 s (re-enable after the fixed 3 s retry). Four
 of the five failed on the dummy read of 0x0008 (`-6` twice, `-5` twice), one
 on FUNC_STATE (`-5`). Stock issues the same dummy read before its status reads
-and does not check its result (`process_cc_water`). Revoking on any failed
-read is an owner decision (2026-11-25); changing it is not done here.
+and does not check its result (`process_cc_water`). Since 2026-11-27 (parent
+decision, replacing the 2026-11-25 rule) a failed dummy read is logged
+(`dummy read failed, ignored as stock: s2mm005 0x0008: <errno>`) and the
+sample continues; every real status read (FUNC_STATE, MUIC, charger, gauge)
+still revokes at once on failure. The policy test replays both.
 
 The driver now logs FUNC_STATE bytes 1–2 on change (`cc: plug … next …`):
 CC1/CC2 plug state and the PD next state, already read every poll and not a

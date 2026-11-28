@@ -401,6 +401,55 @@ static void settle(struct s2mm005_policy *p, unsigned long *now);
  * confirmed non-source state revokes, and two suspect reads in a row are a
  * read error.
  */
+/* The driver's sample: reads in order; the first failing read voids it unless
+ * s2mm005_read_failure_voids() says otherwise (s2mm005.c s2mm005_sample).
+ */
+static const struct s2mm005_sample *sampled(const struct s2mm005_sample *good,
+					    int failing)
+{
+	for (int r = S2MM005_READ_DUMMY; r <= S2MM005_READ_GAUGE; r++)
+		if (r == failing && s2mm005_read_failure_voids(r))
+			return NULL;
+	return good;
+}
+
+/* Battery play, 2026-11-27: the dummy read of 0x0008 failed (-6, -5) about
+ * every 5-10 min and each revoke dropped the Kishi for ~3 s. A failed dummy
+ * read followed by good reads holds boost; any failed status read revokes.
+ */
+static void dummy_read_failures(void)
+{
+	struct s2mm005_sample s = boosted_kishi();
+	struct s2mm005_policy p = { 0 };
+	struct s2mm005_decision d;
+	unsigned long now = 0;
+
+	start(&p, &now);
+	settle(&p, &now);
+	for (int i = 0; i < 50; i++) {
+		d = s2mm005_decide(&p, sampled(&s, i % 5 ? -1 : S2MM005_READ_DUMMY),
+				   now += 20);
+		assert(d.action == S2MM005_NONE && d.host);
+	}
+	assert(s2mm005_boosting(&p));
+	for (int r = S2MM005_READ_FUNC_STATE; r <= S2MM005_READ_GAUGE; r++) {
+		memset(&p, 0, sizeof(p));
+		now = 0;
+		start(&p, &now);
+		settle(&p, &now);
+		d = s2mm005_decide(&p, sampled(&s, r), now += 20);
+		assert(d.action == S2MM005_DISABLE && !strcmp(d.why, "read error"));
+		s2mm005_disabled(&p);
+	}
+	/* boost off: a failed dummy read neither blocks nor counts twice */
+	memset(&p, 0, sizeof(p));
+	now = 0;
+	s = unpowered_kishi();
+	assert(s2mm005_decide(&p, sampled(&s, S2MM005_READ_DUMMY), now += 100).action ==
+	       S2MM005_NONE);
+	assert(s2mm005_decide(&p, sampled(&s, -1), now += 100).action == S2MM005_ENABLE);
+}
+
 static void suspect_reads(void)
 {
 	struct s2mm005_sample s, glitch;
@@ -740,6 +789,7 @@ int main(int argc, char **argv)
 	detach_and_window();
 	every_revoke_path();
 	suspect_reads();
+	dummy_read_failures();
 	puts("s2mm005 policy: sink host, battery source, every revoke path, traces passed");
 	return 0;
 }
