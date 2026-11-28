@@ -286,7 +286,9 @@ let
           pkgs.stdenv.cc
           pkgs.pkg-config
           pkgs.xvfb-run
-          pkgs.ffmpeg
+          # The viewer's own FFmpeg (the V4L2 Request one on aarch64), so the
+          # handheld presenter's check below sees one FFmpeg's headers.
+          ffmpeg
         ];
         # libdrm for the handheld presenter's check below; the product links
         # it on aarch64 only.
