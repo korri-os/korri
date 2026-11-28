@@ -189,7 +189,8 @@ describe("stream meanwhile", () => {
   test("the curtain asks; the way out is first, focused, and Back gives the same answer", () => {
     const run = play(scenario("install-meanwhile"))
     expect(run.view.curtain.kind).toBe("ask")
-    expect(run.view.curtainKicker).toEqual(["ABOUT 7 MINUTES TO INSTALL"])
+    expect(run.view.curtain.heading).toBe("About 7 minutes to install")
+    expect(run.view.curtain.name).toBe("")
     expect((run.view.curtainButtons as any[]).map(button => `${button.label}${button.focused ? "*" : ""}`)).toEqual(["Wait for the install*", "Stream while it installs"])
     expect(own(run.press("back"))).toEqual([{ _tag: "AnswerStreamMeanwhile", installId: "dev:glass", stream: false }])
   })

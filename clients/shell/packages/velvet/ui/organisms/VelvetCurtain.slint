@@ -67,8 +67,8 @@ export component VelvetCurtain inherits Rectangle {
             }
         }
         if !root.curtain.logo-shown: Rectangle {
-            height: caps.block + (root.curtain.kind == "problem" ? root.body * 1.8 : 0px);
-            if root.curtain.kind == "problem": VelvetIcon {
+            height: caps.block + (root.curtain.kind == "problem" && root.curtain.heading == "" ? root.body * 1.8 : 0px);
+            if root.curtain.kind == "problem" && root.curtain.heading == "": VelvetIcon {
                 x: (parent.width - self.width) / 2;
                 y: 0;
                 name: "note";
@@ -82,6 +82,27 @@ export component VelvetCurtain inherits Rectangle {
                 lines: root.kicker;
                 size: root.curtain.kicker-size * root.u;
                 centred: true;
+            }
+        }
+        // Under a game's mark, Korri's kicker: what happened, said once.
+        if root.curtain.heading != "": VerticalLayout {
+            spacing: root.body * 0.5;
+            if root.curtain.kind == "problem": HorizontalLayout {
+                alignment: center;
+                VelvetIcon {
+                    name: "note";
+                    size: root.body * 1.3;
+                    ink: Tokens.exit;
+                }
+            }
+            Text {
+                text: root.curtain.heading;
+                color: Tokens.house-light;
+                font-family: Tokens.text;
+                font-weight: Tokens.strong-weight;
+                // src/curtain.ts (headingLines) breaks it into lines; their count is the layout's.
+                font-size: root.body * 1.3;
+                horizontal-alignment: center;
             }
         }
         if root.curtain.more-up: Text {

@@ -97,7 +97,10 @@ function firstOf(actions: readonly SurfaceAction[], decline: string | undefined,
 function statusCurtain(state: State, model: Model): CurtainSpec | undefined {
   const status = model.status
   const game = "gameId" in status ? gameById(state.lists, model, status.gameId) ?? (state.detail?.game.id === status.gameId ? state.detail?.game : undefined) : undefined
-  const named = game === undefined ? {} : { game, name: game.title }
+  // A curtain about a game wears the game's mark, its logo or else its title (owner,
+  // 2026-11-27: "if we have the logo, we're showing it"), so no line names it again; a
+  // game Korri names that the library does not hold keeps its name in words.
+  const named = (title?: string) => game !== undefined ? { game } : title === undefined ? {} : { name: title }
   const decline = declineOf(status)
   switch (status._tag) {
     case "Browsing":
@@ -136,35 +139,35 @@ function statusCurtain(state: State, model: Model): CurtainSpec | undefined {
     }
     case "Confirm":
       return {
-        key: `confirm:${status.kicker}`, kind: "ask", kicker: status.kicker, ...named, words: status.detail === undefined ? [] : [status.detail], progress: NO_PROGRESS,
+        key: `confirm:${status.kicker}`, kind: "ask", kicker: status.kicker, ...named(), words: status.detail === undefined ? [] : [status.detail], progress: NO_PROGRESS,
         buttons: actionButtons(status.actions), first: firstOf(status.actions, decline), back: decline === undefined ? "swallow" : run(decline),
       }
     case "ChooseSave": {
       const sides: CurtainButton[] = status.sides.map(side => ({ label: side.device, note: `${saved(side.endedAt, model.publishedAt)}, ${duration(side.durationSeconds)} session`, act: run(side.actionId) }))
       return {
-        key: `saves:${status.gameId}`, kind: "ask", kicker: status.kicker, ...named, words: status.detail === undefined ? [] : [status.detail], progress: NO_PROGRESS,
+        key: `saves:${status.gameId}`, kind: "ask", kicker: status.kicker, ...named(), words: status.detail === undefined ? [] : [status.detail], progress: NO_PROGRESS,
         buttons: [...sides, ...actionButtons(status.actions)], first: firstOf(status.actions, decline, sides.length), column: true,
         back: decline === undefined ? "swallow" : run(decline),
       }
     }
     case "Paused":
       return {
-        key: `paused:${status.kicker}`, kind: "ask", kicker: status.kicker, ...named, words: status.detail === undefined ? [] : [status.detail], progress: NO_PROGRESS,
+        key: `paused:${status.kicker}`, kind: "ask", kicker: status.kicker, ...named(), words: status.detail === undefined ? [] : [status.detail], progress: NO_PROGRESS,
         buttons: actionButtons(status.actions), first: firstOf(status.actions, decline), back: decline === undefined ? "swallow" : run(decline),
       }
     case "Running":
-      return { key: `running:${status.gameId ?? ""}`, kind: "running", kicker: status.kicker, ...named, words: [], progress: NO_PROGRESS, buttons: [], first: 0, back: "swallow" }
+      return { key: `running:${status.gameId ?? ""}`, kind: "running", kicker: status.kicker, ...named(), words: [], progress: NO_PROGRESS, buttons: [], first: 0, back: "swallow" }
     case "Ended": {
       const dismiss = send({ _tag: "Dismiss" })
       return {
-        key: `ended:${status.reason}`, kind: "problem", kicker: status.kicker, ...(status.gameTitle === undefined ? named : { ...named, name: status.gameTitle }),
+        key: `ended:${status.reason}`, kind: "problem", kicker: status.kicker, ...named(status.gameTitle),
         words: [status.reason], progress: NO_PROGRESS, buttons: [{ label: "Dismiss", act: dismiss }], first: 0, back: dismiss,
       }
     }
     case "Problem": {
       const dismiss = send({ _tag: "Dismiss" })
       return {
-        key: `problem:${status.kicker}:${status.reason}`, kind: "problem", kicker: status.kicker, ...(status.gameTitle === undefined ? named : { ...named, name: status.gameTitle }),
+        key: `problem:${status.kicker}:${status.reason}`, kind: "problem", kicker: status.kicker, ...named(status.gameTitle),
         words: [status.reason], progress: NO_PROGRESS,
         buttons: [{ label: "Dismiss", act: dismiss }, ...(status.canRetry ? [{ label: "Try again", act: send({ _tag: "Retry" }) }] : [])], first: 0, back: dismiss,
       }
@@ -256,6 +259,19 @@ export interface CurtainLayout {
 }
 
 /** How the curtain's words and buttons stand in the plan's window. */
+/** A curtain heading's size and line height, in body sizes and heading sizes. */
+export const HEADING_SIZE = 1.3
+export const HEADING_LINE = 1.25
+
+/**
+ * A curtain about a game that is not its launch wears the mark, and Korri's kicker stands under
+ * it as a heading, broken into lines here so that the view and the layout count the same lines.
+ */
+export function headingLines(spec: CurtainSpec, plan: Plan): string[] {
+  if (spec.game === undefined || spec.kind === "busy") return []
+  return breakLines(spec.kicker, plan.body * HEADING_SIZE, plan.curtainW, true)
+}
+
 export function curtainLayout(spec: CurtainSpec, plan: Plan): CurtainLayout {
   const lines = spec.words.flatMap(paragraph => breakLines(paragraph, plan.body, plan.curtainW))
   const pill = (label: string) => plan.button * (textWidth(label, true) + 2.9)
@@ -269,8 +285,9 @@ export function curtainLayout(spec: CurtainSpec, plan: Plan): CurtainLayout {
   // window's foot does not.
   const gap = plan.body * (spec.kind === "busy" && spec.game !== undefined ? CURTAIN_GAP_SOLID : CURTAIN_GAP)
   const fixedParts = [
-    spec.name === undefined ? 0 : plan.body * 1.2,
+    spec.name === undefined || spec.game !== undefined ? 0 : plan.body * 1.2,
     plan.kicker * 2 + (spec.kind === "problem" ? plan.body * 1.8 : 0),
+    headingLines(spec, plan).length * plan.body * HEADING_SIZE * HEADING_LINE,
     spec.steps === undefined ? 0 : plan.body * 2.8,
     spec.progress.kind === "none" ? 0 : plan.body * 2,
     buttons,

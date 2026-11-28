@@ -18,7 +18,7 @@ import type { SurfaceModel as Model } from "../../../../../contracts/generated/s
 import { gameCard, marqueeOf, NO_IMAGE, NO_MARQUEE, pictures, stageOf, take, type Pictures, type StageView } from "./art"
 import { detailGame, detailView, focusedGame, homeExits, homeView, NO_PILL, pill, pillsStack, setExits, setView, type PillView } from "./browse"
 import { clusterIn, clusterOf, NO_CLUSTER, PAUSE_CLUSTER_SHARE, CLUSTER_GAP } from "./cluster"
-import { curtainLayout, curtainOf } from "./curtain"
+import { curtainLayout, curtainOf, headingLines } from "./curtain"
 import { breakLines, fitCaps } from "./fit"
 import { keyGrid } from "./keys"
 import { gameById, homeOf } from "./lists"
@@ -152,11 +152,13 @@ function keyboardView(state: State, live: boolean) {
 function curtainView(asked: Pictures, state: State, model: Model, p: Plan) {
   const spec = curtainOf(state, model)
   if (spec === undefined) return { curtain: NO_CURTAIN, kicker: [], lines: [], steps: [], buttons: [] }
-  // A game on its way: its mark as the prototype's launch sets it, the logo when the game
-  // has one, else its title at the pick's size, in three fifths of the width.
+  // A curtain about a game wears its mark as the prototype's launch sets it: the logo when the
+  // game has one, else its title at the pick's size. A launch has three fifths of the width;
+  // any other curtain its column, with Korri's kicker as the heading under the mark.
   const launch = spec.kind === "busy" && spec.game !== undefined
-  const mark = launch
-    ? marqueeOf(asked, spec.game!, { width: Math.min(p.width * 0.6, p.width - 2 * p.padX), logoH: Math.round(Math.max(56, Math.min(220 * p.kt, p.height * 0.2))), title: p.title, fact: p.fact, mark: true, badge: false }, model.publishedAt, [])
+  const heading = headingLines(spec, p).join("\n")
+  const mark = spec.game !== undefined
+    ? marqueeOf(asked, spec.game, { width: launch ? Math.min(p.width * 0.6, p.width - 2 * p.padX) : p.curtainW, logoH: Math.round(Math.max(56, Math.min(220 * p.kt, p.height * 0.2))), title: p.title, fact: p.fact, mark: true, badge: false }, model.publishedAt, [])
     : undefined
   const layout = curtainLayout(spec, p)
   const line = Math.max(0, Math.min(state.curtain.line, Math.max(0, layout.lines.length - layout.room)))
@@ -170,7 +172,9 @@ function curtainView(asked: Pictures, state: State, model: Model, p: Plan) {
       shown: true,
       kind: spec.kind,
       kickerSize: kicker.size,
-      name: spec.name ?? "",
+      // The mark names the game; a name in words is for a game the library does not hold.
+      name: spec.game === undefined ? spec.name ?? "" : "",
+      heading,
       moreUp: line > 0,
       moreDown: line + layout.room < layout.lines.length,
       // The segments show which step of how many; one line says what is happening (src/curtain.ts).

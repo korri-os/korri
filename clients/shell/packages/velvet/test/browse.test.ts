@@ -465,6 +465,31 @@ describe("the launch curtain (the prototype's)", () => {
     expect(view.curtainKicker.join(" ")).toBe(game.title.toUpperCase())
     expect(view.curtain.kickerSize).toBeGreaterThan(view.screen.kicker)
   })
+  // Owner, 2026-11-27: "if we have the logo, we're showing it. If we don't, there's a fallback."
+  test("every curtain about a game wears its mark, and Korri's kicker is the heading under it", () => {
+    const base = model("problem")
+    const about = (pick: (games: any[]) => any) => {
+      const game = pick(base.catalog.games)
+      const status = { _tag: "Problem", kicker: "Can't start yet", reason: "Korri needs this screen's size.", canRetry: false, gameId: game.id, gameTitle: game.title }
+      return { view: new Play({ ...base, status }).view as any, game }
+    }
+    const logo = about(games => games.find(game => game.id === "ember-road"))
+    expect(logo.view.curtain.solid).toBe(false)
+    expect(logo.view.curtain.logoShown).toBe(true)
+    expect(logo.view.curtain.name).toBe("")
+    expect(logo.view.curtainKicker).toEqual([])
+    expect(logo.view.curtain.heading).toBe("Can't start yet")
+    const plain = about(games => games.find(game => !(game.media ?? []).some((media: any) => media.kind === "logo")))
+    expect(plain.view.curtain.logoShown).toBe(false)
+    expect(plain.view.curtainKicker.join(" ")).toBe(plain.game.title.toUpperCase())
+    expect(plain.view.curtain.heading).toBe("Can't start yet")
+    // A game the library does not hold keeps its name in words and Korri's kicker in caps.
+    const unknown = new Play({ ...base, status: { _tag: "Problem", kicker: "Can't start yet", reason: "…", canRetry: false, gameId: "no-such-game", gameTitle: "Elsewhere" } }).view as any
+    expect(unknown.curtain.logoShown).toBe(false)
+    expect(unknown.curtain.name).toBe("Elsewhere")
+    expect(unknown.curtain.heading).toBe("")
+    expect(unknown.curtainKicker).toEqual(["CAN'T START YET"])
+  })
   test("anything else Korri is busy with dims the screen and keeps its kicker", () => {
     const run = new Play(model("busy-plain"))
     expect((run.view as any).curtain.solid).toBe(false)
@@ -483,8 +508,9 @@ describe("a launch that waits on another device's save", () => {
     const view = asking().view as any
     expect(view.curtain.shown).toBe(true)
     expect(view.curtain.kind).toBe("ask")
-    expect(view.curtain.name).toBe("Tide Pool")
-    expect(view.curtainKicker.join(" ")).toBe("YOUR SAVE ON ANOTHER DEVICE HASN'T FINISHED UPLOADING")
+    expect(view.curtain.name).toBe("")
+    expect(view.curtain.logoShown).toBe(true)
+    expect(view.curtain.heading.replace(/\n/g, " ")).toBe("Your save on another device hasn't finished uploading")
     expect(view.curtainLines.join(" ")).toContain("Living room")
     expect(view.curtainButtons.map((button: any) => button.label)).toEqual(["Play anyway", "Retry"])
     expect(view.curtainButtons.filter((button: any) => button.focused).map((button: any) => button.label)).toEqual(["Play anyway"])
