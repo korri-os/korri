@@ -35,6 +35,18 @@ fn same_selection(receipt: &Receipt, report: &Report) -> bool {
     receipt.package == report.package && receipt.provenance == report.provenance
 }
 
+/// A signed sideload has no repository to update from, so a newer signed
+/// archive of the same plugin is its only update. Unsigned sideloads stay out.
+fn signed_sideload_update(receipt: &Receipt, report: &Report) -> bool {
+    matches!(
+        (&receipt.provenance, &report.provenance),
+        (
+            Provenance::Sideload { signed: true, .. },
+            Provenance::Sideload { signed: true, .. }
+        )
+    )
+}
+
 #[derive(Clone)]
 struct HostPaths {
     roots: PathBuf,
@@ -1636,18 +1648,19 @@ impl Host {
     }
 
     /// Install a reviewed selection from the admin socket. For an installed
-    /// plugin, accept only a new review of the exact installed package and
-    /// provenance, for example after the host policy changed its approval.
-    /// That is the existing update intent and keeps the desired state. Any
-    /// other selection for an installed plugin needs `repository update`
-    /// (the socket's `Update`) or `repository switch`, which it does not offer.
+    /// plugin, accept a new review of the exact installed package and
+    /// provenance, for example after the host policy changed its approval,
+    /// and a signed sideload archive over an installed signed sideload. Both
+    /// are the existing update intent and keep the desired state. Any other
+    /// selection for an installed plugin needs `repository update` (the
+    /// socket's `Update`) or `repository switch`, which it does not offer.
     pub fn install_reviewed(&self, report: Report, approval: &str) -> Result<(), Refusal> {
         self.graph_update_pending()?;
         validate_id(&report.id)?;
         let id = report.id.clone();
         match self.receipt(&id)? {
             None => self.install(report, approval, SelectionIntent::Install),
-            Some(old) if same_selection(&old, &report) => {
+            Some(old) if same_selection(&old, &report) || signed_sideload_update(&old, &report) => {
                 self.install(report, approval, SelectionIntent::Update { id: &id })
             }
             Some(_) => Err("plugin is installed; use update or explicit source switch".into()),
@@ -6570,6 +6583,78 @@ mod tests {
             }),
         ));
         assert_eq!(code, CODE_REFUSED);
+    }
+
+    fn sideload_report(id: &str, suffix: &str, signed: bool) -> Report {
+        let mut selected = report(id, suffix);
+        selected.provenance = Provenance::Sideload {
+            archive_sha256: "a".repeat(64),
+            platform: current_platform().into(),
+            signed,
+        };
+        selected
+    }
+
+    /// A signed sideload has no repository, so a newer signed archive of the
+    /// same plugin replaces it under its own exact approval and keeps its
+    /// on/off state. Unsigned sideloads and other sources stay refused.
+    #[test]
+    fn a_signed_sideload_replaces_an_installed_signed_sideload_and_keeps_its_state() {
+        let root = tempfile::tempdir().unwrap();
+        let installed = sideload_report("@test:viewer", "viewer-v1", true);
+        let mut next = sideload_report("@test:viewer", "viewer-v2", true);
+        next.provenance = Provenance::Sideload {
+            archive_sha256: "b".repeat(64),
+            platform: current_platform().into(),
+            signed: true,
+        };
+        let unsigned = sideload_report("@test:viewer", "viewer-v3", false);
+        let repository = repository_report(
+            "@test:viewer",
+            "viewer-v4",
+            "https://plugins.example/catalog.json",
+            "v4",
+        );
+        let runtime = runtime(&[
+            installed.clone(),
+            next.clone(),
+            unsigned.clone(),
+            repository.clone(),
+        ]);
+        let host = Host::for_test(
+            root.path(),
+            PathBuf::from("/unavailable-nix"),
+            permitted_policy(),
+            runtime.clone(),
+        )
+        .unwrap();
+        host.install_reviewed(installed.clone(), &installed.approval)
+            .unwrap();
+        host.set_enabled(&installed.id, true).unwrap();
+        for candidate in [unsigned, repository] {
+            let approval = candidate.approval.clone();
+            assert_eq!(
+                host.install_reviewed(candidate, &approval).unwrap_err(),
+                "plugin is installed; use update or explicit source switch"
+            );
+        }
+        // The installed build's digest does not approve the new archive.
+        assert!(host
+            .install_reviewed(next.clone(), &installed.approval)
+            .unwrap_err()
+            .contains("approval does not match"));
+        assert_eq!(
+            host.status(&installed.id).unwrap().unwrap().package,
+            installed.package
+        );
+        host.install_reviewed(next.clone(), &next.approval).unwrap();
+        let receipt = host.status(&installed.id).unwrap().unwrap();
+        assert_eq!(receipt.package, next.package);
+        assert_eq!(receipt.provenance, next.provenance);
+        assert_eq!(receipt.approval, next.approval);
+        assert_eq!(receipt.desired, Desired::Enabled);
+        assert_eq!(receipt.previous.unwrap().package, installed.package);
+        assert!(runtime.running.borrow().contains(&installed.id));
     }
 
     fn repository_report(id: &str, suffix: &str, source: &str, release: &str) -> Report {
